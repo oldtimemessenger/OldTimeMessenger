@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Old Time",
+    "slug": "old-time-messenger",
+    "scheme": "oldtime",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B2F82"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.oldtime.messenger",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Old Time uses your microphone for voice notes and calls.",
+        "NSCameraUsageDescription": "Old Time uses your camera to share photos, video, and your status.",
+        "NSPhotoLibraryUsageDescription": "Old Time uses your photo library to share images in chats.",
+        "NSContactsUsageDescription": "Old Time uses your contacts to find friends already on Old Time.",
+        "NSLocationWhenInUseUsageDescription": "Old Time uses your location to share live location in a chat."
+      }
+    },
+    "android": {
+      "package": "com.oldtime.messenger",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B2F82"
+      },
+      "permissions": [
+        "RECORD_AUDIO",
+        "CAMERA",
+        "READ_CONTACTS",
+        "ACCESS_FINE_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
