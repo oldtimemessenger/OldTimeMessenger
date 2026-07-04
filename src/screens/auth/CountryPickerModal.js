@@ -1,11 +1,12 @@
 import React from 'react';
 import { View, FlatList, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import countries from '../../data/countries';
+import { COUNTRIES } from '../../data/countries';
 
 export default function CountryPickerModal({ navigation, route }) {
   const { theme } = useTheme();
   const onSelect = route.params?.onSelect;
+  const countries = COUNTRIES.map(([flag, name, dial_code]) => ({ flag, name, dial_code, code: `${name}-${dial_code}` }));
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}> 
