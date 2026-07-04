@@ -25,12 +25,8 @@
       }
     },
     "android": {
-      "package": "com.oldtime.messenger",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B2F82"
-      },
-      "permissions": [
+  "package": "com.oldtime.messenger",
+  "permissions": [
         "RECORD_AUDIO",
         "CAMERA",
         "READ_CONTACTS",
