@@ -23,7 +23,7 @@ export default function ProfileSetupScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}> 
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Text style={[styles.title, { color: theme.text }]}>Set up your profile</Text>
       <TextInput
         value={displayName}

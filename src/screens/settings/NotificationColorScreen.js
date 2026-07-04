@@ -6,7 +6,7 @@ export default function NotificationColorScreen() {
   const { theme } = useTheme();
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}> 
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Text style={{ color: theme.text }}>Choose a notification color</Text>
     </View>
   );

@@ -25,7 +25,7 @@ export default function OtpScreen({ navigation, route }) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}> 
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Text style={[styles.title, { color: theme.text }]}>Verification code</Text>
       <Text style={{ color: theme.muted, marginBottom: 14 }}>Sent to {phone}</Text>
       <TextInput

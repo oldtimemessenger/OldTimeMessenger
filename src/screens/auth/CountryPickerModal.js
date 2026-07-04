@@ -9,7 +9,7 @@ export default function CountryPickerModal({ navigation, route }) {
   const countries = COUNTRIES.map(([flag, name, dial_code]) => ({ flag, name, dial_code, code: `${name}-${dial_code}` }));
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}> 
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <FlatList
         data={countries}
         keyExtractor={(item) => item.code}

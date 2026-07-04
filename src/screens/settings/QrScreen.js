@@ -6,7 +6,7 @@ export default function QrScreen() {
   const { theme } = useTheme();
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}> 
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Text style={{ color: theme.text }}>Your QR profile code will appear here.</Text>
     </View>
   );

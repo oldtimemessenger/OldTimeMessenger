@@ -8,7 +8,7 @@ export default function StatusViewerScreen({ navigation, route }) {
   const status = route.params?.status;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}> 
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Header title="Status" onBack={() => navigation.goBack()} />
       <View style={styles.body}>
         <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>

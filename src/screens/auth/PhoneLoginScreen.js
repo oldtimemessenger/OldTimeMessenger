@@ -24,7 +24,7 @@ export default function PhoneLoginScreen({ navigation }) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}> 
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <Text style={[styles.title, { color: theme.text }]}>Enter your phone number</Text>
       <TextInput
         value={phone}
