@@ -4,7 +4,7 @@ export default {
   ...appJson,
   expo: {
     ...appJson.expo,
-    owner: 'oldtimemessengers-team',
+    owner: 'oldtimemessengerteams-team',
     extra: {
       ...appJson.expo.extra,
       eas: {
