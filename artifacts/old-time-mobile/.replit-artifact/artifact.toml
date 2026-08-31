@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/old-time-mobile/"
+title = "Old Time"
+description = "A native mobile messenger and social app with direct chats, disappearing updates, camera capture, voice and video call flows, location sharing, creator updates, saved messages, and a complete settings experience."
+version = "1.0.0"
+id = "artifacts/old-time-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/old-time-mobile/" ]
+localPort = 22883
+
+[services.development]
+run = "pnpm --filter @workspace/old-time-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/old-time-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/old-time-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "22883"
+BASE_PATH = "/old-time-mobile/"

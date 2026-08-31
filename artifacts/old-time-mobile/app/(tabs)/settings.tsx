@@ -1,0 +1,435 @@
+import { Ionicons } from '@expo/vector-icons';
+import React, { useState, useMemo } from 'react';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
+import { File, Paths } from 'expo-file-system';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Avatar, PrimaryButton, Screen } from '@/components/ui';
+import { useApp } from '@/context/app-state';
+import { useColors } from '@/hooks/useColors';
+import { useLogout } from '@workspace/api-client-react';
+import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
+
+type Panel = 'profile' | 'storage' | 'appearance' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
+
+export default function SettingsScreen() {
+  const colors = useColors();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const logout = useLogout();
+  const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, setSession, resetLocalData } = useApp();
+
+  const [panel, setPanel] = useState<Panel>(null);
+  const [query, setQuery] = useState('');
+  const [cacheStatus, setCacheStatus] = useState<'idle' | 'clearing' | 'cleared' | 'error'>('idle');
+
+  // Profile state
+  const [draftName, setDraftName] = useState(profile.name);
+  const [draftUsername, setDraftUsername] = useState(profile.username);
+
+  const faqs = [
+    { q: 'What is Old Time?', a: 'A private messenger with chats, status updates, device location sharing, and phone calls to your contacts.' },
+    { q: 'How are chats protected?', a: 'Old Time requires an active signed-in session before chat data can be requested.' },
+    { q: 'How long do status updates last?', a: 'Status updates remain available on this device for 24 hours after they are created.' }
+  ];
+  const [faqOpen, setFaqOpen] = useState(-1);
+
+  const [savedInput, setSavedInput] = useState('');
+
+  function toggle(key: keyof typeof settings) {
+    updateSettings({ [key]: !settings[key] } as Partial<typeof settings>);
+  }
+
+  function signOut() {
+    logout.mutate(undefined, {
+      onSettled: () => {
+        setSession(null);
+        resetLocalData();
+        queryClient.clear();
+        router.replace('/');
+      },
+    });
+  }
+
+  async function chooseProfilePhoto() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      const selectedUri = result.assets[0].uri;
+      try {
+        if (Platform.OS === 'web') {
+          updateProfile({ avatarUri: selectedUri });
+          return;
+        }
+        const source = new File(selectedUri);
+        const destination = new File(Paths.document, `old-time-profile-${session?.id ?? 'local'}${source.extension || '.jpg'}`);
+        if (destination.exists) destination.delete();
+        source.copy(destination);
+        updateProfile({ avatarUri: destination.uri });
+      } catch {
+        Alert.alert('Photo not saved', 'Old Time could not store that photo. Choose another image and try again.');
+      }
+    }
+  }
+
+  async function clearCache() {
+    setCacheStatus('clearing');
+    try {
+      queryClient.clear();
+      await Promise.all([Image.clearMemoryCache(), Image.clearDiskCache()]);
+      setCacheStatus('cleared');
+    } catch {
+      setCacheStatus('error');
+    }
+  }
+
+  const groups = useMemo(() => ([
+    { items: [
+      { key: "profile", icon: "person", bg: "#FF7A59", label: "My Profile", value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setPanel('profile'); } },
+    ]},
+    { items: [
+      { key: "saved", icon: "bookmark", bg: "#4C9CF5", label: "Saved Messages", value: String(savedMessages.length), onPress: () => setPanel('saved') },
+      { key: "calls", icon: "call", bg: "#34C77E", label: "Recent Calls", onPress: () => setPanel('calls') },
+    ]},
+    { items: [
+      { key: "storage", icon: "server", bg: "#34C77E", label: "Data and Storage", value: "On device", onPress: () => setPanel('storage') },
+      { key: "appearance", icon: "color-palette", bg: "#26A69A", label: "Appearance", onPress: () => setPanel('appearance') },
+    ]},
+    { title: "Chats", items: [
+      { key: "chatSettings", icon: "chatbubbles", bg: "#26A69A", label: "Chats", onPress: () => setPanel('chatSettings') },
+      { key: "faq", icon: "help-circle", bg: "#26A69A", label: "Old Time FAQ", onPress: () => setPanel('faq') },
+    ]},
+    { items: [
+      { key: "logout", icon: "log-out", bg: "#F0537A", label: "Log Out", danger: true, onPress: () => Alert.alert('Log out?', 'You can sign back in with the same phone number.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: signOut }]) },
+    ]},
+  ] as const), [profile, savedMessages.length, settings, logout]);
+
+  const filteredGroups = useMemo(() => {
+    if (!query.trim()) return groups;
+    const q = query.toLowerCase();
+    return groups
+      .map((g) => ({ ...g, items: g.items.filter((i) => i.label.toLowerCase().includes(q)) }))
+      .filter((g) => g.items.length > 0);
+  }, [groups, query]);
+
+  function renderPanel() {
+    switch (panel) {
+      case 'profile':
+        return (
+          <DetailShell title="Edit Profile" onBack={() => setPanel(null)}>
+            <PanelSection>
+              <View style={[styles.profileEditor, { backgroundColor: colors.card }]}>
+                <View style={styles.profileEditorAvatar}>
+                  <Avatar name={draftName || 'User'} size={96} color={colors.primary} uri={profile.avatarUri} />
+                  <View style={[styles.profileEditorCamera, { backgroundColor: colors.primary, borderColor: colors.card }]}>
+                    <Ionicons name="camera" size={16} color="#fff" />
+                  </View>
+                </View>
+                <TextInput
+                  value={draftName}
+                  onChangeText={setDraftName}
+                  style={[styles.profileEditorNameInput, { color: colors.foreground, borderBottomColor: colors.primary }]}
+                  textAlign="center"
+                />
+                <Text style={[styles.profileEditorPhone, { color: colors.mutedForeground }]}>{session?.phone}</Text>
+                <PrimaryButton label="Save Profile" onPress={() => { updateProfile({ name: draftName }); setPanel(null); }} />
+              </View>
+            </PanelSection>
+            <PanelSection>
+              <Pressable onPress={() => void chooseProfilePhoto()} style={[styles.panelRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+                <View style={[styles.settingIcon, { backgroundColor: '#4C9CF5' }]}><Ionicons name="camera" size={16} color="#fff" /></View>
+                <Text style={[styles.panelRowLabel, { flex: 1, color: colors.foreground, marginLeft: 16 }]}>Set Profile Photo</Text>
+                <Text style={[styles.panelActionText, { color: colors.primary }]}>Choose</Text>
+              </Pressable>
+              <View style={[styles.panelRow, { borderBottomColor: 'transparent', backgroundColor: colors.card }]}>
+                <View style={[styles.settingIcon, { backgroundColor: '#8B5CF6' }]}><Ionicons name="at" size={16} color="#fff" /></View>
+                <TextInput
+                  value={draftUsername}
+                  onChangeText={setDraftUsername}
+                  placeholder="username"
+                  autoCapitalize="none"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={{ flex: 1, fontSize: 16, color: colors.foreground, marginLeft: 16 }}
+                />
+                <Pressable onPress={() => updateProfile({ username: draftUsername })}>
+                  <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>Save</Text>
+                </Pressable>
+              </View>
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'saved':
+        return (
+          <DetailShell title="Saved Messages" onBack={() => setPanel(null)}>
+            <View style={{ flex: 1 }}>
+              <View style={[styles.saveComposer, { backgroundColor: colors.background }]}>
+                <TextInput
+                  value={savedInput}
+                  onChangeText={setSavedInput}
+                  placeholder="Save a message..."
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[styles.saveInput, { backgroundColor: colors.card, color: colors.foreground, borderColor: colors.border }]}
+                />
+                <Pressable onPress={() => { if(savedInput.trim()){ addSavedMessage(savedInput.trim()); setSavedInput(''); } }} style={[styles.saveBtn, { backgroundColor: colors.primary }]}>
+                  <Ionicons name="send" size={16} color="#fff" />
+                </Pressable>
+              </View>
+              {savedMessages.length === 0 ? (
+                 <Text style={{ padding: 16, color: colors.mutedForeground, textAlign: 'center' }}>Keep reminders, recipes, and anything you want to find later.</Text>
+              ) : savedMessages.map((msg, i) => (
+                <View key={i} style={[styles.savedBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={{ color: colors.foreground, fontSize: 15 }}>{msg}</Text>
+                </View>
+              ))}
+            </View>
+          </DetailShell>
+        );
+
+      case 'calls':
+        return (
+          <DetailShell title="Recent Calls" onBack={() => setPanel(null)}>
+            <PanelSection>
+              {calls.length === 0 ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Text style={{ color: colors.mutedForeground }}>No recent calls.</Text>
+                </View>
+              ) : calls.map((c, i) => (
+                <View key={c.id} style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: i === calls.length - 1 ? 'transparent' : colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, color: c.direction === 'missed' ? colors.destructive : colors.foreground }}>{c.name}</Text>
+                    <Text style={{ fontSize: 13, color: colors.mutedForeground, marginTop: 2 }}>{new Date(c.createdAt).toLocaleString()} {c.duration ? `• ${c.duration}` : ''}</Text>
+                  </View>
+                  <Ionicons name={c.type === 'video' ? 'videocam' : 'call'} size={18} color={colors.mutedForeground} />
+                </View>
+              ))}
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'chatSettings':
+        return (
+          <DetailShell title="Chats" onBack={() => setPanel(null)}>
+            <PanelSection>
+              <PanelToggleRow label="Enter to send" value={settings.enterToSend} onChange={() => toggle('enterToSend')} />
+              <PanelToggleRow label="Autoplay media" value={settings.autoplay} onChange={() => toggle('autoplay')} isLast />
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'faq':
+        return (
+          <DetailShell title="Old Time FAQ" onBack={() => setPanel(null)}>
+            <PanelSection>
+              {faqs.map((f, i) => (
+                <View key={i} style={{ backgroundColor: colors.card, borderBottomWidth: i === faqs.length - 1 ? 0 : StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+                  <Pressable onPress={() => setFaqOpen(faqOpen === i ? -1 : i)} style={[styles.panelRow, { borderBottomWidth: 0 }]}>
+                    <Text style={{ flex: 1, fontSize: 15, fontWeight: '500', color: colors.foreground }}>{f.q}</Text>
+                    <Ionicons name="chevron-down" size={18} color={colors.mutedForeground} style={{ transform: [{ rotate: faqOpen === i ? '180deg' : '0deg' }] }} />
+                  </Pressable>
+                  {faqOpen === i && (
+                    <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+                      <Text style={{ fontSize: 14, lineHeight: 20, color: colors.mutedForeground }}>{f.a}</Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'storage':
+        return (
+          <DetailShell title="Data and Storage" onBack={() => setPanel(null)}>
+            <PanelSection>
+              <Pressable disabled={cacheStatus === 'clearing'} onPress={() => void clearCache()} style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: 'transparent' }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, color: cacheStatus === 'cleared' ? '#34C77E' : '#F0537A' }}>
+                    {cacheStatus === 'clearing' ? 'Clearing Cache…' : cacheStatus === 'cleared' ? 'Cache Cleared' : 'Clear Cache'}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: colors.mutedForeground, marginTop: 2 }}>
+                    {cacheStatus === 'error' ? 'Cache could not be cleared. Try again.' : cacheStatus === 'cleared' ? 'Temporary images and API data were removed.' : 'Remove temporary images and cached API data'}
+                  </Text>
+                </View>
+                <Ionicons name={cacheStatus === 'cleared' ? 'checkmark-circle' : 'trash'} size={18} color={cacheStatus === 'cleared' ? '#34C77E' : '#F0537A'} />
+              </Pressable>
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'appearance':
+        return (
+          <DetailShell title="Appearance" onBack={() => setPanel(null)}>
+            <PanelSection title="Theme">
+              <PanelToggleRow label="Dark Mode" sub="Switch app theme" value={settings.darkMode} onChange={() => toggle('darkMode')} isLast />
+            </PanelSection>
+            <PanelSection title="Accent Color">
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, padding: 16, backgroundColor: colors.card }}>
+                {['#63BFFB', '#5B6EF5', '#34C77E', '#F0537A', '#8B5CF6', '#E8963C'].map((accent) => (
+                  <Pressable key={accent} onPress={() => updateSettings({ accent })} style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: settings.accent === accent ? 2 : 0, borderColor: accent }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: accent, alignItems: 'center', justifyContent: 'center' }}>
+                      {settings.accent === accent && <Ionicons name="checkmark" size={18} color="#fff" />}
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            </PanelSection>
+          </DetailShell>
+        );
+
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <Screen title="Settings" scroll={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, paddingTop: 14 }}>
+
+        <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Ionicons name="search" size={18} color={colors.mutedForeground} style={{ marginLeft: 12 }} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.foreground }]}
+            placeholder="Search settings"
+            placeholderTextColor={colors.mutedForeground}
+            value={query}
+            onChangeText={setQuery}
+          />
+          {query.length > 0 && (
+            <Pressable onPress={() => setQuery('')} style={{ padding: 12 }}>
+              <Ionicons name="close-circle" size={18} color={colors.mutedForeground} />
+            </Pressable>
+          )}
+        </View>
+
+        {filteredGroups.map((g, i) => (
+          <View key={i} style={{ marginBottom: 24 }}>
+            {'title' in g && g.title && (
+              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>{g.title.toUpperCase()}</Text>
+            )}
+            <View style={[styles.group, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {g.items.map((item, j) => (
+                <SettingRow key={item.key} item={item} isLast={j === g.items.length - 1} colors={colors} />
+              ))}
+            </View>
+          </View>
+        ))}
+
+      </ScrollView>
+
+      <Modal visible={panel !== null} animationType="slide" onRequestClose={() => setPanel(null)}>
+        {panel && renderPanel()}
+      </Modal>
+    </Screen>
+  );
+}
+
+// ---------------- Supporting Components ----------------
+
+function SettingRow({ item, isLast, colors }: any) {
+  return (
+    <Pressable onPress={item.onPress} style={({pressed}) => [styles.settingRow, { borderBottomColor: isLast ? 'transparent' : colors.border, backgroundColor: pressed ? colors.muted : 'transparent' }]}>
+       <View style={[styles.settingIcon, { backgroundColor: item.bg }]}>
+         <Ionicons name={item.icon as any} size={16} color="#fff" />
+       </View>
+       <Text style={[styles.settingLabel, { color: item.danger ? colors.destructive : colors.foreground }]}>{item.label}</Text>
+       {item.value ? <Text style={[styles.settingValue, { color: colors.mutedForeground }]}>{item.value}</Text> : null}
+       {!item.danger && <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />}
+    </Pressable>
+  )
+}
+
+function DetailShell({ title, onBack, children, rightAction }: any) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[{ flex: 1, backgroundColor: colors.background }]}>
+      <View style={[styles.shellHeader, { paddingTop: insets.top, backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+         <Pressable onPress={onBack} style={styles.shellBack}>
+           <Ionicons name="chevron-back" size={28} color={colors.primary} />
+           <Text style={[styles.shellBackText, { color: colors.primary }]}>Settings</Text>
+         </Pressable>
+         {rightAction}
+      </View>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 60 }}>
+         <Text style={[styles.shellTitle, { color: colors.foreground }]}>{title}</Text>
+         {children}
+      </ScrollView>
+    </View>
+  )
+}
+
+function PanelToggleRow({ label, sub, value, onChange, isLast }: any) {
+  const colors = useColors();
+  return (
+    <View style={[styles.panelRow, { borderBottomColor: isLast ? 'transparent' : colors.border, backgroundColor: colors.card }]}>
+      <View style={{ flex: 1, marginRight: 16 }}>
+        <Text style={[styles.panelRowLabel, { color: colors.foreground }]}>{label}</Text>
+        {sub && <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>{sub}</Text>}
+      </View>
+      <Switch value={value} onValueChange={onChange} trackColor={{ false: colors.muted, true: '#34C759' }} />
+    </View>
+  )
+}
+
+function PanelSection({ title, children }: any) {
+  const colors = useColors();
+  return (
+    <View style={styles.panelSection}>
+      {title && <Text style={[styles.panelSectionTitle, { color: colors.mutedForeground }]}>{title.toUpperCase()}</Text>}
+      <View style={[styles.panelSectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+         {children}
+      </View>
+    </View>
+  )
+}
+
+// ---------------- Styles ----------------
+
+const styles = StyleSheet.create({
+  searchContainer: { flexDirection: 'row', alignItems: 'center', height: 44, borderRadius: 10, borderWidth: 1, marginBottom: 20 },
+  searchInput: { flex: 1, paddingHorizontal: 10, fontSize: 16, height: '100%' },
+  sectionTitle: { textTransform: 'uppercase', fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginLeft: 4, marginBottom: 6, marginTop: 4 },
+  group: { borderRadius: 11, overflow: 'hidden', borderWidth: 1 },
+  settingRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth },
+  settingIcon: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  settingLabel: { flex: 1, fontSize: 16.5, marginLeft: 14 },
+  settingValue: { fontSize: 15, marginRight: 8 },
+
+  shellHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  shellBack: { flexDirection: 'row', alignItems: 'center', height: 44, paddingRight: 16 },
+  shellBackText: { fontSize: 17, marginLeft: -4 },
+  shellTitle: { fontSize: 28, fontWeight: '800', marginVertical: 14, marginLeft: 4 },
+
+  panelSection: { marginBottom: 20 },
+  panelSectionTitle: { textTransform: 'uppercase', fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginLeft: 16, marginBottom: 6 },
+  panelSectionCard: { borderRadius: 11, overflow: 'hidden', borderWidth: 1 },
+  panelRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth },
+  panelRowLabel: { fontSize: 16 },
+  panelRowSub: { fontSize: 13, marginTop: 2 },
+  panelActionText: { fontSize: 16 },
+
+  profileEditor: { alignItems: 'center', paddingVertical: 24 },
+  profileEditorAvatar: { position: 'relative', marginBottom: 16 },
+  profileEditorCamera: { position: 'absolute', bottom: 0, right: 0, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
+  profileEditorNameInput: { fontSize: 22, fontWeight: '700', borderBottomWidth: 2, paddingVertical: 4, minWidth: '60%', marginBottom: 6 },
+  profileEditorPhone: { fontSize: 15, marginBottom: 20 },
+
+  walletCard: { alignItems: 'center', paddingVertical: 32 },
+  walletSub: { fontSize: 14, marginBottom: 4 },
+  walletBalance: { fontSize: 36, fontWeight: '800', marginBottom: 20 },
+  walletActions: { flexDirection: 'row', gap: 12 },
+  walletBtn: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24 },
+  walletBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  saveComposer: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12, marginBottom: 16 },
+  saveInput: { flex: 1, height: 44, borderRadius: 22, borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
+  saveBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  savedBubble: { padding: 14, borderRadius: 16, borderWidth: 1, marginBottom: 8, alignSelf: 'flex-start', maxWidth: '85%' },
+});

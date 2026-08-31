@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Old Time",
+    "slug": "old-time-mobile",
+    "version": "1.0.0",
+    "description": "Old Time is a private messenger for chats, updates, calls, and shared moments.",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "old-time-mobile",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F2F2F7"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {},
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Old Time to access your camera to capture moments for your story.",
+          "microphonePermission": "Allow Old Time to access your microphone to record audio with your videos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Old Time to access your photos to share them with your friends."
+        }
+      ],
+      "expo-video"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

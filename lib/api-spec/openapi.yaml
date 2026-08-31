@@ -1,0 +1,684 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+security:
+  - bearerAuth: []
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Phone verification and sessions
+  - name: users
+    description: People and inbox data
+  - name: chats
+    description: Direct conversations and messages
+  - name: storage
+    description: Private media upload and serving
+paths:
+  /healthz:
+    get:
+      security: []
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /readyz:
+    get:
+      security: []
+      operationId: readinessCheck
+      tags: [health]
+      summary: Production dependency readiness
+      description: Confirms database, storage, session secret, and SMS verification configuration.
+      responses:
+        "200":
+          description: Ready for real users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: A production dependency is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /auth/request-otp:
+    post:
+      security: []
+      operationId: requestOtp
+      tags: [auth]
+      summary: Send a phone verification code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpRequest"
+      responses:
+        "200":
+          description: Verification code sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpResponse"
+        "400":
+          description: Invalid phone number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/verify-otp:
+    post:
+      security: []
+      operationId: verifyOtp
+      tags: [auth]
+      summary: Verify a phone code and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerification"
+      responses:
+        "200":
+          description: Verified user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticatedUser"
+        "400":
+          description: Invalid OTP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Revoke the current session
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
+        "401":
+          description: Invalid session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users available to message
+      parameters:
+        - $ref: "#/components/parameters/ViewerId"
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+  /users/{userId}/inbox:
+    get:
+      operationId: getInbox
+      tags: [users]
+      summary: Get the viewer's inbox previews
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Inbox previews
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InboxItem"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/direct/{userOneId}/{userTwoId}:
+    get:
+      operationId: getDirectChat
+      tags: [chats]
+      summary: Find or create a direct chat preview
+      parameters:
+        - $ref: "#/components/parameters/UserOneId"
+        - $ref: "#/components/parameters/UserTwoId"
+      responses:
+        "200":
+          description: Direct chat preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectChat"
+        "400":
+          description: Invalid users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats:
+    post:
+      operationId: createChat
+      tags: [chats]
+      summary: Create a direct chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatInput"
+      responses:
+        "201":
+          description: Created chat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chat"
+        "400":
+          description: Invalid participants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{chatId}/messages:
+    get:
+      operationId: listMessages
+      tags: [chats]
+      summary: List messages in a chat
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+        - name: viewerId
+          in: query
+          required: true
+          schema:
+            type: number
+            minimum: 1
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+        "403":
+          description: Viewer is not a participant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createMessage
+      tags: [chats]
+      summary: Send a message
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Sent message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          description: Invalid message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Sender is not a participant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{chatId}/read:
+    post:
+      operationId: markChatRead
+      tags: [chats]
+      summary: Mark another user's messages as read
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReadInput"
+      responses:
+        "200":
+          description: Read count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadResult"
+        "403":
+          description: Viewer is not a participant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /messages/{messageId}/open:
+    post:
+      operationId: openMessage
+      tags: [chats]
+      summary: Open a received message and begin its retention period
+      parameters:
+        - $ref: "#/components/parameters/MessageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageActionInput"
+      responses:
+        "200":
+          description: Opened message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "403":
+          description: Only the recipient may open this message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /messages/{messageId}/save:
+    post:
+      operationId: saveMessage
+      tags: [chats]
+      summary: Save a received message permanently
+      parameters:
+        - $ref: "#/components/parameters/MessageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageActionInput"
+      responses:
+        "200":
+          description: Saved message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "403":
+          description: Only the recipient may save this message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a protected media upload endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "400":
+          description: Invalid upload metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /storage/objects/{objectPath}:
+    get:
+      operationId: getStorageObject
+      tags: [storage]
+      summary: Serve a protected message attachment
+      parameters:
+        - name: objectPath
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Object content
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: Caller cannot access this object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    UserOneId:
+      name: userOneId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    UserTwoId:
+      name: userTwoId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    ChatId:
+      name: chatId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    MessageId:
+      name: messageId
+      in: path
+      required: true
+      schema:
+        type: number
+        minimum: 1
+    ViewerId:
+      name: viewerId
+      in: query
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    OtpRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          minLength: 7
+          maxLength: 24
+      required: [phone]
+    OtpVerification:
+      type: object
+      properties:
+        phone:
+          type: string
+          minLength: 7
+          maxLength: 24
+        otp:
+          type: string
+          minLength: 4
+          maxLength: 10
+        challengeId:
+          type: string
+          minLength: 1
+      required: [phone, otp, challengeId]
+    OtpResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        challengeId:
+          type: string
+        expiresAt:
+          type: number
+      required: [success, challengeId, expiresAt]
+    LogoutResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required: [success]
+    User:
+      type: object
+      properties:
+        id:
+          type: number
+        phone:
+          type: string
+        name:
+          type: string
+        online:
+          type: boolean
+        lastSeen:
+          type: number
+      required: [id, phone, name, online, lastSeen]
+    AuthenticatedUser:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          properties:
+            authToken:
+              type: string
+          required: [authToken]
+    Attachment:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [image, video, file]
+        objectPath:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+        mimeType:
+          type: string
+          minLength: 1
+        size:
+          type: number
+          minimum: 1
+        width:
+          type: number
+          minimum: 1
+        height:
+          type: number
+          minimum: 1
+        duration:
+          type: number
+          minimum: 0
+      required: [type, objectPath, name, mimeType, size]
+    Message:
+      type: object
+      properties:
+        id:
+          type: number
+        chatId:
+          type: number
+        senderId:
+          type: number
+        content:
+          type: string
+        timestamp:
+          type: number
+        read:
+          type: boolean
+        attachment:
+          anyOf:
+            - $ref: "#/components/schemas/Attachment"
+            - type: "null"
+        openedAt:
+          anyOf:
+            - type: number
+            - type: "null"
+        expiresAt:
+          anyOf:
+            - type: number
+            - type: "null"
+        saved:
+          type: boolean
+      required: [id, chatId, senderId, content, timestamp, read, attachment, openedAt, expiresAt, saved]
+    Chat:
+      type: object
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+        isGroup:
+          type: boolean
+        createdAt:
+          type: number
+        participantIds:
+          type: array
+          items:
+            type: number
+      required: [id, name, isGroup, createdAt, participantIds]
+    DirectChat:
+      type: object
+      properties:
+        chat:
+          anyOf:
+            - $ref: "#/components/schemas/Chat"
+            - type: "null"
+        lastMessage:
+          anyOf:
+            - $ref: "#/components/schemas/Message"
+            - type: "null"
+      required: [chat, lastMessage]
+    InboxItem:
+      type: object
+      properties:
+        chat:
+          $ref: "#/components/schemas/Chat"
+        contact:
+          $ref: "#/components/schemas/User"
+        lastMessage:
+          anyOf:
+            - $ref: "#/components/schemas/Message"
+            - type: "null"
+        unreadCount:
+          type: number
+      required: [chat, contact, lastMessage, unreadCount]
+    ChatInput:
+      type: object
+      properties:
+        userIds:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: number
+      required: [userIds]
+    MessageInput:
+      type: object
+      properties:
+        senderId:
+          type: number
+        content:
+          type: string
+          maxLength: 2000
+        attachment:
+          $ref: "#/components/schemas/Attachment"
+      required: [senderId]
+      anyOf:
+        - required: [content]
+        - required: [attachment]
+    MessageActionInput:
+      type: object
+      properties:
+        recipientId:
+          type: number
+      required: [recipientId]
+    UploadUrlRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        size:
+          type: number
+          minimum: 1
+        contentType:
+          type: string
+          minLength: 1
+      required: [name, size, contentType]
+    UploadUrlResponse:
+      type: object
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+      required: [uploadURL, objectPath]
+    ReadInput:
+      type: object
+      properties:
+        viewerId:
+          type: number
+      required: [viewerId]
+    ReadResult:
+      type: object
+      properties:
+        updated:
+          type: number
+      required: [updated]
+

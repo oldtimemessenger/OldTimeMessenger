@@ -1,0 +1,229 @@
+Yes 😭 I understand exactly what you’re describing. And that actually makes your cost structure much better, because you’re intentionally designing the app so that you aren’t becoming everyone’s permanent cloud storage provider.
+
+I’d make one important distinction, though: 24-hour deletion should happen on your server, while “save to phone” should be a separate client-side action.
+
+Your message system
+
+For a free user:
+
+Message sent → server temporarily stores it → recipient receives it → 24 hours later → server deletes it.
+
+If the recipient taps Save, the message/media gets saved locally on their device.
+
+So your database doesn’t become a giant archive.
+
+For example:
+
+👤 Jay: “What’s up?”
+
+⏱️ 23h 59m
+
+🗑️ Automatically deleted from server
+
+But:
+
+Save
+
+→ copy remains on the recipient’s device.
+
+And if they don’t save it:
+
+Gone.
+
+Media is even better
+
+I would do:
+
+Sender → R2 temporarily → recipient downloads → expiration timer → R2 deletion
+
+You don’t need to keep somebody’s 2 GB video forever.
+
+And for media that the recipient saves:
+
+R2 copy expires
+↓
+Phone’s local copy remains
+
+That’s a very cost-efficient architecture.
+
+One caveat: you should make it clear that “saved to phone” doesn’t mean the recipient can never make another copy. Screenshots, screen recording, backups, forwarding, etc. can still happen depending on the platform.
+
+⸻
+
+And YES, I understand your advertising idea
+
+You’re basically combining TikTok’s native-feed advertising behavior with Twitter/X-style feed placement, while avoiding obnoxious full-screen interruptions.
+
+You’d have something like:
+
+Updates feed
+
+👤 Sarah
+New update...
+[photo]
+❤️  💬  ↗️
+────────────
+SPONSORED
+Brand X
+[video/ad]
+❤️  💬  ↗️
+────────────
+👤 Mike
+Another update...
+[photo]
+
+The user is simply scrolling.
+
+They see the ad, but they’re not trapped.
+
+Swipe:
+
+ad → next post
+
+No problem.
+
+⸻
+
+But if they actually interact with the ad
+
+That’s where your retention requirement comes in.
+
+For example:
+
+User taps the sponsored video:
+
+▶️ Ad begins
+
+They have to remain engaged for the required viewing period before the action you’re offering becomes available.
+
+That could be something like:
+
+“Watch 10 seconds to unlock offer”
+
+rather than forcing somebody to sit through a 30-second ad just because they accidentally tapped it.
+
+And I’d be careful about making this your own “retention time” requirement for all ads. Ad networks generally have their own rules about how ads can be displayed and interacted with. You don’t want to build something that accidentally encourages invalid ad clicks or violates the network’s policies.
+
+⸻
+
+Your monetization could actually be REALLY clean
+
+I’d structure your app into three experiences:
+
+🟢 Free
+
+Messages
+
+* Delete after 24 hours
+* Save locally to phone
+
+Media
+
+* Temporary server storage
+* Automatically removed
+* Save locally
+
+Calls
+
+* Normal limits
+
+Updates
+
+* Ads
+
+Live
+
+* Limited participation/features
+* Ads around the experience
+
+⸻
+
+🟣 Premium
+
+Something like:
+
+$4.99/month
+
+* Messages don’t automatically expire
+* Permanent cloud message history
+* Cloud media storage
+* No ads
+* Larger groups
+* More customization
+* Premium live-room features
+* Higher limits
+
+And here’s the beautiful part:
+
+Premium users actually cost you MORE to store data.
+
+But they are also the users paying you every month.
+
+Free users:
+
+“Use it → temporary storage → delete → show ads.”
+
+Premium users:
+
+“Pay us → we’ll store your stuff.”
+
+That’s a much healthier economic model.
+
+⸻
+
+One thing I’d change from your original idea
+
+You said:
+
+“I don’t care, no media will be saved in my cloud.”
+
+I’d actually make that a feature, not just a cost-saving measure.
+
+Market it as:
+
+“Your conversations don’t live forever on our servers.”
+
+That’s a pretty powerful privacy proposition.
+
+You could even give users a setting:
+
+Message expiration
+
+* 24 hours — Free default
+* 7 days — Premium
+* 30 days — Premium
+* Never — Premium
+
+And for media:
+
+Automatically delete cloud copy after delivery
+
+That gives your app a very different identity from traditional messaging apps.
+
+⸻
+
+The architecture becomes REALLY cheap
+
+Your storage flow would basically be:
+
+Message
+
+Sender → Server → Recipient → 24h timer → DELETE
+
+Photo/video
+
+Sender → R2 → Recipient → expiration → DELETE
+
+Saved media
+
+Recipient → Phone storage
+
+Premium
+
+Sender → R2/Database → Long-term storage
+
+So you’re not paying indefinitely for millions of inactive users’ old conversations.
+
+And that’s exactly the kind of architecture I’d want if the goal is to keep this thing financially sustainable while you grow.
+
+The next thing I’d work out is how much 100K users would actually cost you under this 24-hour model, because it could be dramatically cheaper than a conventional WhatsApp clone.
