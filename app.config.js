@@ -12,7 +12,7 @@ module.exports = {
       ...(expo.extra ?? {}),
       eas: {
         ...((expo.extra && expo.extra.eas) ?? {}),
-        projectId,
+        ...(projectId ? { projectId } : {}),
       },
     },
   },
