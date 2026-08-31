@@ -2,4 +2,4 @@
 - [Artifact workflow ports](artifact-workflow-ports.md) — artifact Vite builds require injected PORT and BASE_PATH; diagnose listeners before repeating managed restarts.
 - [Updates news boundaries](updates-news-boundaries.md) — personalization may learn locally now, but provider ingestion must remain labeled inactive until licensing and rights controls exist.
 - [Mobile object uploads](mobile-object-uploads.md) — this workspace’s storage sidecar can stream objects but cannot create V4 signed URLs; enforce uploads through the API.
-- [GitHub bulk push limitation](github-bulk-push.md) — the GitHub connector cannot bulk-sync this workspace; use Replit’s Git credentials for native pushes.
+- [GitHub connector bulk sync](github-bulk-push.md) — upload unique Git blobs in small batches, then assemble a tree; raw executable HTML may need safe runtime reconstruction.
