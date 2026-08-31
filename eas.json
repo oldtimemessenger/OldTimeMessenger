@@ -30,7 +30,6 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "jamesvercettii@gmail.com",
         "ascApiKeyId": "4U48Z8ST98",
         "ascApiKeyIssuerId": "f94da7b7-687b-4039-8e0f-4ecb238c52c9",
         "appleTeamId": "FC6ZRKNS2N"
