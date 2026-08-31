@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Old Time",
-    "slug": "old-time-messenger",
+    "slug": "oldtimemessenger",
     "scheme": "oldtime",
     "version": "1.0.0",
     "orientation": "portrait",
