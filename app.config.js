@@ -8,7 +8,7 @@ export default {
     extra: {
       ...appJson.expo.extra,
       eas: {
-        projectId: '5d0acf68-ca5f-479f-8fa6-2fbf81342ebb',
+        projectId: '03a08b75-fbf6-4183-b356-90fe21034a42',
       },
     },
   },
