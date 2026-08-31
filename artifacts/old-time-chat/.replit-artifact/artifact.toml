@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Old Time Chat"
+description = "Old Time is a private mobile and web messenger with SMS phone verification, direct conversations, protected attachments, disappearing messages, updates, and status sharing."
+version = "1.0.0"
+id = "artifacts/old-time-chat"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24379
+
+[services.development]
+run = "pnpm --filter @workspace/old-time-chat run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/old-time-chat", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/old-time-chat/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24379"
+BASE_PATH = "/"
