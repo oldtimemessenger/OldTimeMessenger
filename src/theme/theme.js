@@ -1,13 +1,33 @@
 export const BASE = {
   dark: {
-    bg: '#0B1717', panel: '#111E1E', header: '#1B2B2B', elevated: '#1E3131',
-    text: '#E9EDEF', muted: '#8FA3A3', divider: '#213636', online: '#25D366', away: '#FFC107',
-    danger: '#F15C5C', inputBorder: 'transparent', bubbleThem: '#1E3131',
+    bg: '#0B141A',
+    panel: '#111B21',
+    header: '#1F2C34',
+    elevated: '#1F2C34',
+    text: '#E9EDEF',
+    muted: '#8696A0',
+    divider: '#2A3942',
+    online: '#00A884',
+    away: '#FFC107',
+    danger: '#EA4335',
+    inputBorder: 'transparent',
+    bubbleThem: '#1F2C34',
+    card: '#111B21',
   },
   light: {
-    bg: '#FFFFFF', panel: '#F5F9F9', header: '#F5F9F9', elevated: '#EDF5F5',
-    text: '#111B21', muted: '#5E7676', divider: '#E4EFEF', online: '#25D366', away: '#E8A20B',
-    danger: '#D9483C', inputBorder: '#E4EFEF', bubbleThem: '#FFFFFF',
+    bg: '#F0F2F5',
+    panel: '#FFFFFF',
+    header: '#FFFFFF',
+    elevated: '#FFFFFF',
+    text: '#111B21',
+    muted: '#667781',
+    divider: '#E9EDEF',
+    online: '#00A884',
+    away: '#E8A20B',
+    danger: '#EA4335',
+    inputBorder: '#E9EDEF',
+    bubbleThem: '#FFFFFF',
+    card: '#FFFFFF',
   },
 };
 
@@ -18,7 +38,7 @@ export const ACCENTS = {
 };
 
 export function buildTheme(mode, accentKey) {
-  const base = BASE[mode] || BASE.dark;
+  const base = BASE[mode] || BASE.light;
   const accent = ACCENTS[accentKey] || ACCENTS.blue;
   return {
     ...base,
