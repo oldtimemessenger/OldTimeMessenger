@@ -45,20 +45,28 @@ export default function ChatViewScreen({ navigation, route }) {
   };
 
   const onLongPressMessage = (m) => {
-    if (m.sender_id !== user.id || m.deleted_for_everyone) return;
-    const options = ['Delete for me', 'Delete for everyone', 'Cancel'];
+    if (m.deleted_for_everyone) return;
+    const isMine = m.sender_id === user.id;
+    const options = isMine
+      ? ['Delete for me', 'Delete for everyone', 'Cancel']
+      : ['Delete for me', 'Cancel'];
+    const cancelIdx = isMine ? 2 : 1;
     const act = (idx) => {
       if (idx === 0) { deleteForMe(m.id, user.id).then(() => setMsgs((p) => p.filter((x) => x.id !== m.id))); }
-      if (idx === 1) { deleteForEveryone(m.id, user.id).then(load); }
+      if (idx === 1 && isMine) { deleteForEveryone(m.id, user.id).then(load); }
     };
     if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: 1, cancelButtonIndex: 2 }, act);
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, ...(isMine ? { destructiveButtonIndex: 1 } : {}), cancelButtonIndex: cancelIdx },
+        act
+      );
     } else {
-      Alert.alert('Message options', undefined, [
+      const buttons = [
         { text: options[0], onPress: () => act(0) },
-        { text: options[1], style: 'destructive', onPress: () => act(1) },
+        ...(isMine ? [{ text: options[1], style: 'destructive', onPress: () => act(1) }] : []),
         { text: 'Cancel', style: 'cancel' },
-      ]);
+      ];
+      Alert.alert('Message options', undefined, buttons);
     }
   };
 
@@ -72,6 +80,7 @@ export default function ChatViewScreen({ navigation, route }) {
       >
         <View style={[
           styles.bubble,
+          fromMe ? styles.bubbleMe : styles.bubbleThem,
           { backgroundColor: fromMe ? theme.bubbleMe : theme.bubbleThem, borderColor: theme.divider, borderWidth: fromMe ? 0 : 1 },
         ]}>
           {item.deleted_for_everyone ? (
@@ -146,7 +155,9 @@ export default function ChatViewScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, gap: 4 },
-  bubble: { maxWidth: '78%', padding: 8, borderRadius: 14, borderBottomRightRadius: 3 },
+  bubble: { maxWidth: '78%', padding: 8, borderRadius: 14 },
+  bubbleMe: { borderBottomRightRadius: 3 },
+  bubbleThem: { borderBottomLeftRadius: 3 },
   encryptedBanner: { flexDirection: 'row', alignSelf: 'center', maxWidth: '90%', borderRadius: 8, marginBottom: 10, alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8 },
   inputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 9 },
   inputWrap: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, flexDirection: 'row', alignItems: 'center' },
