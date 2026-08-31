@@ -15,14 +15,18 @@ export default function SettingsScreen({ navigation }) {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }}>
       <Text style={{ color: theme.text, fontSize: 28, fontWeight: '700', padding: 20, paddingBottom: 16 }}>Settings</Text>
-      <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingBottom: 18 }}>
-        <Avatar name={profile?.display_name || 'You'} color="#C97B4A" size={62} status="online" />
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: theme.text, fontSize: 18.5, fontWeight: '600' }}>{profile?.display_name || 'Set up your profile'}</Text>
-          <Text style={{ color: theme.muted, fontSize: 13.5, marginTop: 2 }}>{profile?.bio || profile?.phone || ''}</Text>
-        </View>
-        <QrCode size={20} color={theme.muted} onPress={() => navigation.navigate('Qr')} />
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingBottom: 18 }}>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
+          <Avatar name={profile?.display_name || 'You'} color="#C97B4A" size={62} status="online" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: theme.text, fontSize: 18.5, fontWeight: '600' }}>{profile?.display_name || 'Set up your profile'}</Text>
+            <Text style={{ color: theme.muted, fontSize: 13.5, marginTop: 2 }}>{profile?.bio || profile?.phone || ''}</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Qr')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <QrCode size={20} color={theme.muted} />
+        </TouchableOpacity>
+      </View>
 
       <Section>
         <SettingsRow icon={Bell} color="#D9714A" label="Notifications" onPress={() => navigation.navigate('Notifications')} />
