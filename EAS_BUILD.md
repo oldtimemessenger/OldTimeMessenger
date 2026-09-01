@@ -30,7 +30,7 @@ git branch and commit being built before it starts.
 If you still want to run the CLI directly, use:
 
 ```sh
-cd /home/runner/work/OldTimeMessenger/OldTimeMessenger/artifacts/old-time-mobile
+cd artifacts/old-time-mobile
 npx eas-cli build --profile development --platform ios
 ```
 
