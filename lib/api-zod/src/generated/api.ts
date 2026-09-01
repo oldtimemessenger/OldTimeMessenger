@@ -487,13 +487,15 @@ export const GetSocialFeedQueryParams = zod.object({
   "limit": zod.coerce.number().min(1).max(getSocialFeedQueryLimitMax).default(getSocialFeedQueryLimitDefault)
 })
 
+export const getSocialFeedResponseItemsItemVisibilityDefault = `friends`;
+
 export const GetSocialFeedResponse = zod.object({
   "mode": zod.enum(['for-you', 'following']),
   "items": zod.array(zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
   "content": zod.string(),
-  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(getSocialFeedResponseItemsItemVisibilityDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
@@ -541,7 +543,7 @@ export const GetSocialFeedResponse = zod.object({
 export const createSocialPostBodyContentMax = 2000;
 
 export const createSocialPostBodyKindDefault = `text`;
-export const createSocialPostBodyVisibilityDefault = `public`;
+export const createSocialPostBodyVisibilityDefault = `friends`;
 export const createSocialPostBodyMediaMax = 8;
 
 export const createSocialPostBodyLinkTitleMax = 300;
@@ -568,11 +570,13 @@ export const CreateSocialPostBody = zod.object({
   "linkImageUrl": zod.string().optional()
 })
 
+export const createSocialPostResponseVisibilityDefault = `friends`;
+
 export const CreateSocialPostResponse = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
   "content": zod.string(),
-  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(createSocialPostResponseVisibilityDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
@@ -852,6 +856,8 @@ export const SearchSocialQueryParams = zod.object({
   "q": zod.coerce.string().min(searchSocialQueryQMin).max(searchSocialQueryQMax)
 })
 
+export const searchSocialResponsePostsItemVisibilityDefault = `friends`;
+
 export const SearchSocialResponse = zod.object({
   "users": zod.array(zod.object({
   "id": zod.number(),
@@ -862,7 +868,7 @@ export const SearchSocialResponse = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
   "content": zod.string(),
-  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(searchSocialResponsePostsItemVisibilityDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
@@ -961,6 +967,52 @@ export const UnfollowSocialUserResponse = zod.object({
 
 
 /**
+ * @summary List people excluded from the signed-in user's social sharing
+ */
+export const GetSocialPrivacyExclusionsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}))
+})
+
+
+/**
+ * @summary Exclude a person from all social and location sharing
+ */
+
+
+
+export const ExcludeSocialPrivacyUserParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const ExcludeSocialPrivacyUserResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a person from social and location sharing exclusions
+ */
+
+
+
+export const IncludeSocialPrivacyUserParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const IncludeSocialPrivacyUserResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
  * @summary Block a user and remove follow relationships
  */
 
@@ -1051,12 +1103,14 @@ export const ReportSocialContentResponse = zod.object({
 /**
  * @summary List posts saved by the authenticated user
  */
+export const getSavedSocialPostsResponseItemsItemVisibilityDefault = `friends`;
+
 export const GetSavedSocialPostsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
   "content": zod.string(),
-  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(getSavedSocialPostsResponseItemsItemVisibilityDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
