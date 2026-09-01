@@ -1,12 +1,8 @@
 name: assemble-lockfile
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "lockfile-parts/**"
-      - ".github/workflows/assemble-lockfile.yml"
 jobs:
-  assemble:
+  regen:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -14,23 +10,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: replit-complete-app
-      - name: Concatenate parts into pnpm-lock.yaml
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install and write lockfile
         run: |
           set -euo pipefail
-          if [ ! -d lockfile-parts ]; then
-            echo "no lockfile-parts yet"
-            exit 0
-          fi
-          cat lockfile-parts/part-* > pnpm-lock.yaml
-          echo "----- head -----"
+          pnpm install --lockfile-only || pnpm install --no-frozen-lockfile
           head -n 3 pnpm-lock.yaml
           test "$(head -n 1 pnpm-lock.yaml)" = "lockfileVersion: '9.0'"
+      - name: Commit lockfile
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pnpm-lock.yaml
           if git diff --cached --quiet; then
-            echo "no lockfile change"
+            echo "lockfile unchanged"
             exit 0
           fi
           git commit -m "chore: regenerate pnpm-lock.yaml for brace-expansion overrides"
-          git push origin replit-complete-app
+          git push origin HEAD:replit-complete-app
