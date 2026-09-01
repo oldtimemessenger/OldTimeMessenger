@@ -2,6 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
+const OVERRIDE_BLOCK = `overrides:
+  brace-expansion: 5.0.9
+  fast-uri: 3.1.5
+  js-yaml: 4.3.1
+  postcss: 8.5.18
+  uuid: 11.1.1
+  '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
+  esbuild: 0.27.3
+`;
+
 const candidates = [
   process.cwd(),
   path.resolve(process.cwd(), '..'),
@@ -9,22 +19,39 @@ const candidates = [
   path.resolve(process.cwd(), '../../..'),
 ];
 
-const patched = new Set();
-
-for (const dir of candidates) {
-  const npmrc = path.join(dir, '.npmrc');
-  const workspace = path.join(dir, 'pnpm-workspace.yaml');
-  if (!fs.existsSync(workspace) && !fs.existsSync(npmrc)) {
-    continue;
-  }
-  let text = fs.existsSync(npmrc) ? fs.readFileSync(npmrc, 'utf8') : '';
-  if (!/(^|\n)frozen-lockfile\s*=/.test(text)) {
-    if (text.length > 0 && !text.endsWith('\n')) {
-      text += '\n';
+function findWorkspaceRoot() {
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
+      return dir;
     }
-    text += 'frozen-lockfile=false\n';
-    fs.writeFileSync(npmrc, text);
-    patched.add(npmrc);
+  }
+  return process.cwd();
+}
+
+const root = findWorkspaceRoot();
+const npmrc = path.join(root, '.npmrc');
+let npmrcText = fs.existsSync(npmrc) ? fs.readFileSync(npmrc, 'utf8') : '';
+if (!/(^|\n)frozen-lockfile\s*=/.test(npmrcText)) {
+  if (npmrcText.length > 0 && !npmrcText.endsWith('\n')) {
+    npmrcText += '\n';
+  }
+  npmrcText += 'frozen-lockfile=false\n';
+  fs.writeFileSync(npmrc, npmrcText);
+  console.log(`EAS pnpm: wrote frozen-lockfile=false to ${npmrc}`);
+}
+
+const lockfile = path.join(root, 'pnpm-lock.yaml');
+if (fs.existsSync(lockfile)) {
+  const original = fs.readFileSync(lockfile, 'utf8');
+  const updated = original.replace(
+    /^overrides:\n(?:[ \t].*\n)*/m,
+    OVERRIDE_BLOCK,
+  );
+  if (updated !== original) {
+    fs.writeFileSync(lockfile, updated);
+    console.log(`EAS pnpm: rewrote overrides in ${lockfile}`);
+  } else {
+    console.log('EAS pnpm: lockfile overrides already match');
   }
 }
 
@@ -72,11 +99,6 @@ try {
   // ignore
 }
 
-console.log(
-  patched.size
-    ? `EAS pnpm: wrote frozen-lockfile=false to ${[...patched].join(', ')}`
-    : 'EAS pnpm: frozen-lockfile already configured',
-);
 console.log(
   wrapped.size
     ? `EAS pnpm: wrapped binaries ${[...wrapped].join(', ')}`
