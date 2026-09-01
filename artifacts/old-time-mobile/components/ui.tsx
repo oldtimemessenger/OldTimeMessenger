@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,25 +16,28 @@ export function Screen({ children, title, right, scroll = false }: { children: R
   const content = scroll ? <View style={[styles.scroll, { paddingBottom: insets.bottom + 100 }]}>{children}</View> : children;
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      {title ? <View style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
-        {right}
-      </View> : null}
+      {title ? (
+        <LinearGradient colors={['#63BFFB', '#3B8FD6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <View>
+            <Text style={styles.brandMark}>Old Time.</Text>
+            <Text style={styles.title}>{title}</Text>
+          </View>
+          <View style={styles.headerRight}>{right}</View>
+        </LinearGradient>
+      ) : null}
       {content}
     </View>
   );
 }
 
 export function Avatar({ name, size = 48, color, uri }: { name: string; size?: number; color?: string; uri?: string }) {
-  const colors = useColors();
   const tones = ['#3B8FD6', '#D65A66', '#4C9B85', '#8A6BBE', '#D18A43', '#5B82AF'];
   const tone = color ?? tones[name.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0) % tones.length];
   return <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: tone, overflow: 'hidden' }]}>{uri ? <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" /> : <Text style={[styles.avatarText, { fontSize: Math.max(12, size * 0.3) }]}>{initials(name)}</Text>}</View>;
 }
 
 export function IconButton({ name, onPress, color, size = 22, label }: { name: keyof typeof Ionicons.glyphMap; onPress: () => void; color?: string; size?: number; label?: string }) {
-  const colors = useColors();
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.6 : 1 }]}><Ionicons name={name} size={size} color={color ?? colors.foreground} /></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.6 : 1 }]}><Ionicons name={name} size={size} color={color ?? '#FFFFFF'} /></Pressable>;
 }
 
 export function PrimaryButton({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
@@ -63,8 +67,10 @@ export function Row({ icon, label, detail, onPress, destructive = false, right }
 
 export const styles = StyleSheet.create({
   screen: { flex: 1 },
-  header: { minHeight: 60, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
-  title: { fontSize: 24, fontWeight: '700', letterSpacing: -0.5 },
+  header: { minHeight: 72, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  brandMark: { color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase' },
+  title: { fontSize: 26, fontWeight: '800', letterSpacing: -0.6, color: '#FFFFFF', marginTop: 2 },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
   scroll: { paddingHorizontal: 16, paddingTop: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loadingAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#ddd', marginBottom: 14, opacity: 0.8 },
