@@ -25,6 +25,15 @@ import {
   socialPostSavesTable,
   socialPostsTable,
   socialReportsTable,
+  socialStoriesTable,
+  socialStoryViewersTable,
+  socialStoryReactionsTable,
+  socialStoryRepliesTable,
+  socialCloseFriendsTable,
+  socialHighlightsTable,
+  socialHighlightItemsTable,
+  socialNotificationsTable,
+  uploadSlotsTable,
   usersTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
@@ -72,6 +81,23 @@ const commentInput = z.object({
   content: z.string().trim().min(1).max(1_000),
   parentId: z.number().int().positive().nullable().optional(),
 });
+
+const storyVisibility = z.enum(["public", "friends", "followers", "close_friends", "private"]);
+const storyInput = z.object({
+  content: z.string().trim().max(2_000).default(""),
+  visibility: storyVisibility.default("friends"),
+  media: z.object({
+    type: z.enum(["image", "video"]),
+    objectPath: z.string().min(1).max(500),
+    mimeType: z.string().min(1).max(120),
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
+    duration: z.number().nonnegative().optional(),
+  }).nullable().optional(),
+  expiresAt: z.number().int().positive().optional(),
+});
+const storyReplyInput = z.object({ content: z.string().trim().min(1).max(1_000) });
+const storyReactionInput = z.object({ reaction: z.string().trim().min(1).max(32).default("❤️") });
 
 type SocialPost = typeof socialPostsTable.$inferSelect;
 
@@ -921,6 +947,209 @@ router.get("/social/saved", async (req, res): Promise<void> => {
     .orderBy(desc(socialPostSavesTable.createdAt))
     .limit(50);
   res.json({ items: await serializePosts(rows.map((row) => row.post), viewerId) });
+});
+
+type Story = typeof socialStoriesTable.$inferSelect;
+
+async function canSeeStory(viewerId: number, story: Story): Promise<boolean> {
+  if (story.authorId === viewerId) return true;
+  if (story.deleted || story.expiresAt <= Date.now() || await isBlocked(viewerId, story.authorId)) return false;
+  if (story.visibility === "public") return true;
+  if (story.visibility === "private") return false;
+  const following = await followingUserIds(viewerId);
+  if (story.visibility === "followers") return following.has(story.authorId);
+  if (story.visibility === "close_friends") {
+    const [member] = await db.select({ ownerId: socialCloseFriendsTable.ownerId }).from(socialCloseFriendsTable)
+      .where(and(eq(socialCloseFriendsTable.ownerId, story.authorId), eq(socialCloseFriendsTable.memberId, viewerId))).limit(1);
+    return Boolean(member);
+  }
+  if (!following.has(story.authorId)) return false;
+  const [reciprocal] = await db.select({ followerId: socialFollowsTable.followerId }).from(socialFollowsTable)
+    .where(and(eq(socialFollowsTable.followerId, story.authorId), eq(socialFollowsTable.followingId, viewerId))).limit(1);
+  return Boolean(reciprocal);
+}
+
+async function storyById(storyId: number): Promise<Story | undefined> {
+  const [story] = await db.select().from(socialStoriesTable).where(eq(socialStoriesTable.id, storyId)).limit(1);
+  return story;
+}
+
+async function serializeStories(stories: Story[], viewerId: number) {
+  if (!stories.length) return [];
+  const storyIds = stories.map((story) => story.id);
+  const authorIds = [...new Set(stories.map((story) => story.authorId))];
+  const [authors, views, reactions, mine] = await Promise.all([
+    db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, authorIds)),
+    db.select({ storyId: socialStoryViewersTable.storyId, count: sql<number>`count(*)` }).from(socialStoryViewersTable).where(inArray(socialStoryViewersTable.storyId, storyIds)).groupBy(socialStoryViewersTable.storyId),
+    db.select({ storyId: socialStoryReactionsTable.storyId, count: sql<number>`count(*)` }).from(socialStoryReactionsTable).where(inArray(socialStoryReactionsTable.storyId, storyIds)).groupBy(socialStoryReactionsTable.storyId),
+    db.select({ storyId: socialStoryViewersTable.storyId }).from(socialStoryViewersTable).where(and(eq(socialStoryViewersTable.viewerId, viewerId), inArray(socialStoryViewersTable.storyId, storyIds))),
+  ]);
+  const authorById = new Map(authors.map((author) => [author.id, author]));
+  const viewsById = new Map(views.map((row) => [row.storyId, Number(row.count)]));
+  const reactionsById = new Map(reactions.map((row) => [row.storyId, Number(row.count)]));
+  const viewed = new Set(mine.map((row) => row.storyId));
+  return stories.map((story) => {
+    const author = authorById.get(story.authorId);
+    return {
+      id: story.id, kind: story.kind, content: story.content, visibility: story.visibility, media: story.media,
+      createdAt: story.createdAt, expiresAt: story.expiresAt,
+      author: author ? { id: author.id, name: author.name, username: handleForUser(author) } : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}` },
+      viewer: { viewed: viewed.has(story.id), isOwner: story.authorId === viewerId },
+      counts: { views: viewsById.get(story.id) ?? 0, reactions: reactionsById.get(story.id) ?? 0 },
+    };
+  });
+}
+
+async function accessibleStory(req: Request, res: Response): Promise<{ viewerId: number; story: Story } | null> {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return null;
+  const storyId = parseId(req.params.storyId);
+  if (storyId === null) {
+    res.status(400).json({ error: "A valid story ID is required." });
+    return null;
+  }
+  const story = await storyById(storyId);
+  if (!story || !(await canSeeStory(viewerId, story))) {
+    res.status(404).json({ error: "Story not found." });
+    return null;
+  }
+  return { viewerId, story };
+}
+
+router.get("/social/stories", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const candidates = await db.select().from(socialStoriesTable)
+    .where(and(eq(socialStoriesTable.deleted, false), gt(socialStoriesTable.expiresAt, Date.now())))
+    .orderBy(desc(socialStoriesTable.createdAt)).limit(200);
+  const visible: Story[] = [];
+  for (const story of candidates) if (await canSeeStory(viewerId, story)) visible.push(story);
+  res.json({ items: await serializeStories(visible, viewerId) });
+});
+
+router.post("/social/stories", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const parsed = storyInput.safeParse(req.body);
+  if (viewerId === null) return;
+  if (!parsed.success || (!parsed.data.content && !parsed.data.media)) {
+    res.status(400).json({ error: "Add text or media before publishing a story." }); return;
+  }
+  const input = parsed.data;
+  if (input.media) {
+    const [upload] = await db.select().from(uploadSlotsTable).where(and(eq(uploadSlotsTable.objectPath, input.media.objectPath), eq(uploadSlotsTable.userId, viewerId), eq(uploadSlotsTable.status, "uploaded"))).limit(1);
+    if (!upload || upload.contentType !== input.media.mimeType.toLowerCase()) {
+      res.status(400).json({ error: "Story media must be an uploaded file you own." }); return;
+    }
+  }
+  const now = Date.now();
+  const expiresAt = input.expiresAt ?? now + 24 * 60 * 60 * 1000;
+  if (expiresAt <= now || expiresAt > now + 7 * 24 * 60 * 60 * 1000) {
+    res.status(400).json({ error: "Story expiry must be in the next seven days." }); return;
+  }
+  const [created] = await db.insert(socialStoriesTable).values({ authorId: viewerId, kind: input.media?.type ?? "text", content: input.content, visibility: input.visibility, media: input.media ?? null, createdAt: now, expiresAt }).returning();
+  res.status(201).json((await serializeStories([created], viewerId))[0]);
+});
+
+router.get("/social/stories/:storyId", async (req, res): Promise<void> => {
+  const access = await accessibleStory(req, res); if (!access) return;
+  res.json((await serializeStories([access.story], access.viewerId))[0]);
+});
+router.delete("/social/stories/:storyId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const storyId = parseId(req.params.storyId); if (storyId === null) { res.status(400).json({ error: "A valid story ID is required." }); return; }
+  const [deleted] = await db.update(socialStoriesTable).set({ deleted: true }).where(and(eq(socialStoriesTable.id, storyId), eq(socialStoriesTable.authorId, viewerId), eq(socialStoriesTable.deleted, false))).returning({ id: socialStoriesTable.id });
+  if (!deleted) { res.status(404).json({ error: "Story not found or not owned by you." }); return; }
+  res.json({ success: true });
+});
+router.put("/social/stories/:storyId/view", async (req, res): Promise<void> => {
+  const access = await accessibleStory(req, res); if (!access) return;
+  if (access.story.authorId !== access.viewerId) await db.insert(socialStoryViewersTable).values({ storyId: access.story.id, viewerId: access.viewerId, viewedAt: Date.now() }).onConflictDoNothing();
+  res.json({ success: true });
+});
+router.put("/social/stories/:storyId/reaction", async (req, res): Promise<void> => {
+  const access = await accessibleStory(req, res); if (!access) return;
+  const parsed = storyReactionInput.safeParse(req.body); if (!parsed.success) { res.status(400).json({ error: "Invalid reaction." }); return; }
+  await db.insert(socialStoryReactionsTable).values({ storyId: access.story.id, userId: access.viewerId, reaction: parsed.data.reaction, createdAt: Date.now() }).onConflictDoUpdate({ target: [socialStoryReactionsTable.storyId, socialStoryReactionsTable.userId], set: { reaction: parsed.data.reaction, createdAt: Date.now() } });
+  if (access.story.authorId !== access.viewerId) await db.insert(socialNotificationsTable).values({ recipientId: access.story.authorId, actorId: access.viewerId, type: "story_reaction", storyId: access.story.id, createdAt: Date.now() });
+  res.json({ success: true, active: true });
+});
+router.delete("/social/stories/:storyId/reaction", async (req, res): Promise<void> => {
+  const access = await accessibleStory(req, res); if (!access) return;
+  await db.delete(socialStoryReactionsTable).where(and(eq(socialStoryReactionsTable.storyId, access.story.id), eq(socialStoryReactionsTable.userId, access.viewerId)));
+  res.json({ success: true, active: false });
+});
+router.post("/social/stories/:storyId/replies", async (req, res): Promise<void> => {
+  const access = await accessibleStory(req, res); if (!access) return;
+  const parsed = storyReplyInput.safeParse(req.body); if (!parsed.success) { res.status(400).json({ error: "A valid reply is required." }); return; }
+  const [reply] = await db.insert(socialStoryRepliesTable).values({ storyId: access.story.id, authorId: access.viewerId, content: parsed.data.content, createdAt: Date.now() }).returning();
+  if (access.story.authorId !== access.viewerId) await db.insert(socialNotificationsTable).values({ recipientId: access.story.authorId, actorId: access.viewerId, type: "story_reply", storyId: access.story.id, replyId: reply.id, createdAt: Date.now() });
+  res.status(201).json(reply);
+});
+router.get("/social/stories/:storyId/viewers", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const storyId = parseId(req.params.storyId); if (storyId === null) { res.status(400).json({ error: "A valid story ID is required." }); return; }
+  const story = await storyById(storyId);
+  if (!story || story.authorId !== viewerId) { res.status(404).json({ error: "Story not found." }); return; }
+  const viewers = await db.select({ id: usersTable.id, name: usersTable.name, viewedAt: socialStoryViewersTable.viewedAt }).from(socialStoryViewersTable).innerJoin(usersTable, eq(usersTable.id, socialStoryViewersTable.viewerId)).where(eq(socialStoryViewersTable.storyId, storyId)).orderBy(desc(socialStoryViewersTable.viewedAt));
+  res.json({ items: viewers.map((item) => ({ ...item, username: handleForUser(item) })) });
+});
+
+router.put("/social/close-friends/:userId", async (req, res): Promise<void> => {
+  const target = await relationshipTarget(req, res); if (!target) return;
+  await db.insert(socialCloseFriendsTable).values({ ownerId: target.viewerId, memberId: target.targetId, createdAt: Date.now() }).onConflictDoNothing();
+  res.json({ success: true, active: true });
+});
+router.delete("/social/close-friends/:userId", async (req, res): Promise<void> => {
+  const target = await relationshipTarget(req, res); if (!target) return;
+  await db.delete(socialCloseFriendsTable).where(and(eq(socialCloseFriendsTable.ownerId, target.viewerId), eq(socialCloseFriendsTable.memberId, target.targetId)));
+  res.json({ success: true, active: false });
+});
+router.get("/social/close-friends", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const rows = await db.select({ id: usersTable.id, name: usersTable.name }).from(socialCloseFriendsTable).innerJoin(usersTable, eq(usersTable.id, socialCloseFriendsTable.memberId)).where(eq(socialCloseFriendsTable.ownerId, viewerId));
+  res.json({ items: rows.map((row) => ({ ...row, username: handleForUser(row) })) });
+});
+
+router.post("/social/highlights", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); const parsed = z.object({ title: z.string().trim().min(1).max(80), coverObjectPath: z.string().max(500).nullable().optional() }).safeParse(req.body); if (viewerId === null || !parsed.success) { if (!parsed.success) res.status(400).json({ error: "A highlight title is required." }); return; }
+  const now = Date.now(); const [highlight] = await db.insert(socialHighlightsTable).values({ ownerId: viewerId, title: parsed.data.title, coverObjectPath: parsed.data.coverObjectPath ?? null, createdAt: now, updatedAt: now }).returning(); res.status(201).json(highlight);
+});
+router.put("/social/highlights/:highlightId/stories/:storyId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const highlightId = parseId(req.params.highlightId); const storyId = parseId(req.params.storyId);
+  if (highlightId === null || storyId === null) { res.status(400).json({ error: "Valid highlight and story IDs are required." }); return; }
+  const [highlight] = await db.select().from(socialHighlightsTable).where(and(eq(socialHighlightsTable.id, highlightId), eq(socialHighlightsTable.ownerId, viewerId), eq(socialHighlightsTable.deleted, false))).limit(1);
+  const story = await storyById(storyId);
+  if (!highlight || !story || story.authorId !== viewerId) { res.status(404).json({ error: "Highlight or owned story not found." }); return; }
+  await db.insert(socialHighlightItemsTable).values({ highlightId, storyId, addedAt: Date.now() }).onConflictDoNothing(); await db.update(socialHighlightsTable).set({ updatedAt: Date.now() }).where(eq(socialHighlightsTable.id, highlightId)); res.json({ success: true });
+});
+router.delete("/social/highlights/:highlightId/stories/:storyId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const highlightId = parseId(req.params.highlightId); const storyId = parseId(req.params.storyId);
+  if (highlightId === null || storyId === null) { res.status(400).json({ error: "Valid highlight and story IDs are required." }); return; }
+  const [highlight] = await db.select({ id: socialHighlightsTable.id }).from(socialHighlightsTable).where(and(eq(socialHighlightsTable.id, highlightId), eq(socialHighlightsTable.ownerId, viewerId), eq(socialHighlightsTable.deleted, false))).limit(1); if (!highlight) { res.status(404).json({ error: "Highlight not found." }); return; }
+  await db.delete(socialHighlightItemsTable).where(and(eq(socialHighlightItemsTable.highlightId, highlightId), eq(socialHighlightItemsTable.storyId, storyId))); res.json({ success: true });
+});
+router.get("/social/highlights", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const highlights = await db.select().from(socialHighlightsTable).where(and(eq(socialHighlightsTable.ownerId, viewerId), eq(socialHighlightsTable.deleted, false))).orderBy(desc(socialHighlightsTable.updatedAt));
+  const ids = highlights.map((row) => row.id); const items = ids.length ? await db.select().from(socialHighlightItemsTable).where(inArray(socialHighlightItemsTable.highlightId, ids)) : [];
+  res.json({ items: highlights.map((highlight) => ({ ...highlight, storyIds: items.filter((item) => item.highlightId === highlight.id).map((item) => item.storyId) })) });
+});
+router.get("/social/notifications", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const rows = await db.select({ notification: socialNotificationsTable, name: usersTable.name }).from(socialNotificationsTable).innerJoin(usersTable, eq(usersTable.id, socialNotificationsTable.actorId)).where(eq(socialNotificationsTable.recipientId, viewerId)).orderBy(desc(socialNotificationsTable.createdAt)).limit(parseLimit(req.query.limit));
+  res.json({ items: rows.map(({ notification, name }) => ({ ...notification, actor: { id: notification.actorId, name, username: handleForUser({ id: notification.actorId, name }) } })) });
+});
+router.put("/social/notifications/:notificationId/read", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const notificationId = parseId(req.params.notificationId); if (notificationId === null) { res.status(400).json({ error: "A valid notification ID is required." }); return; }
+  await db.update(socialNotificationsTable).set({ readAt: Date.now() }).where(and(eq(socialNotificationsTable.id, notificationId), eq(socialNotificationsTable.recipientId, viewerId))); res.json({ success: true });
+});
+router.post("/social/stories/cleanup", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const result = await db.update(socialStoriesTable).set({ deleted: true }).where(and(eq(socialStoriesTable.authorId, viewerId), eq(socialStoriesTable.deleted, false), lt(socialStoriesTable.expiresAt, Date.now()))).returning({ id: socialStoriesTable.id });
+  res.json({ success: true, removed: result.length });
 });
 
 export default router;

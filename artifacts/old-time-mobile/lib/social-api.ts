@@ -63,6 +63,13 @@ export type SearchResults = {
   users: SocialUser[];
   posts: SocialPost[];
 };
+export type Story = {
+  id: number; kind: 'text' | 'image' | 'video'; content: string;
+  visibility: 'public' | 'friends' | 'followers' | 'close_friends' | 'private';
+  media: { type: 'image' | 'video'; objectPath: string; mimeType: string; width?: number; height?: number; duration?: number } | null;
+  createdAt: number; expiresAt: number; author: SocialUser;
+  viewer: { viewed: boolean; isOwner: boolean }; counts: { views: number; reactions: number };
+};
 
 function baseUrl(): string {
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -231,3 +238,11 @@ export function searchSocial(token: string, query: string) {
     `/api/social/users/search?q=${encodeURIComponent(query)}`,
   );
 }
+export function getStories(token: string) { return request<{ items: Story[] }>(token, '/api/social/stories'); }
+export function createStory(token: string, input: { content: string; visibility: Story['visibility']; media?: Story['media'] }) {
+  return request<Story>(token, '/api/social/stories', { method: 'POST', body: JSON.stringify(input) });
+}
+export function viewStory(token: string, storyId: number) { return request<{ success: boolean }>(token, `/api/social/stories/${storyId}/view`, { method: 'PUT' }); }
+export function reactToStory(token: string, storyId: number, reaction: string) { return request<{ success: boolean }>(token, `/api/social/stories/${storyId}/reaction`, { method: 'PUT', body: JSON.stringify({ reaction }) }); }
+export function replyToStory(token: string, storyId: number, content: string) { return request<{ id: number }>(token, `/api/social/stories/${storyId}/replies`, { method: 'POST', body: JSON.stringify({ content }) }); }
+export function getStoryViewers(token: string, storyId: number) { return request<{ items: Array<SocialUser & { viewedAt: number }> }>(token, `/api/social/stories/${storyId}/viewers`); }

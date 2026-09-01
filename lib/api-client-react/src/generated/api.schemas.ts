@@ -522,6 +522,145 @@ export interface MapPinReportInput {
   reason: MapPinReportInputReason;
 }
 
+export type StoryKind = typeof StoryKind[keyof typeof StoryKind];
+
+
+export const StoryKind = {
+  text: 'text',
+  image: 'image',
+  video: 'video',
+} as const;
+
+export type StoryVisibility = typeof StoryVisibility[keyof typeof StoryVisibility];
+
+
+export const StoryVisibility = {
+  public: 'public',
+  friends: 'friends',
+  followers: 'followers',
+  close_friends: 'close_friends',
+  private: 'private',
+} as const;
+
+/**
+ * @nullable
+ */
+export type StoryMedia = { [key: string]: unknown } | null;
+
+export type StoryViewer = {
+  viewed: boolean;
+  isOwner: boolean;
+};
+
+export type StoryCounts = {
+  views: number;
+  reactions: number;
+};
+
+export interface Story {
+  id: number;
+  kind: StoryKind;
+  content: string;
+  visibility: StoryVisibility;
+  /** @nullable */
+  media?: StoryMedia;
+  createdAt: number;
+  expiresAt: number;
+  author: SocialUser;
+  viewer: StoryViewer;
+  counts: StoryCounts;
+}
+
+export interface SocialUserList {
+  items: SocialUser[];
+}
+
+export type StoryInputVisibility = typeof StoryInputVisibility[keyof typeof StoryInputVisibility];
+
+
+export const StoryInputVisibility = {
+  public: 'public',
+  friends: 'friends',
+  followers: 'followers',
+  close_friends: 'close_friends',
+  private: 'private',
+} as const;
+
+/**
+ * @nullable
+ */
+export type StoryInputMedia = { [key: string]: unknown } | null;
+
+export interface StoryInput {
+  /** @maxLength 2000 */
+  content?: string;
+  visibility?: StoryInputVisibility;
+  /** @nullable */
+  media?: StoryInputMedia;
+  expiresAt?: number;
+}
+
+export interface StoryReactionInput {
+  /**
+     * @minLength 1
+     * @maxLength 32
+     */
+  reaction?: string;
+}
+
+export interface StoryReplyInput {
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  content: string;
+}
+
+export interface StoryReply {
+  id: number;
+  storyId: number;
+  authorId: number;
+  content: string;
+  createdAt: number;
+}
+
+export interface StoryList {
+  items: Story[];
+}
+
+export type StoryViewerListItemsItem = { [key: string]: unknown };
+
+export interface StoryViewerList {
+  items: StoryViewerListItemsItem[];
+}
+
+export interface HighlightInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  title: string;
+  /** @nullable */
+  coverObjectPath?: string | null;
+}
+
+export interface Highlight { [key: string]: unknown }
+
+export interface HighlightList {
+  items: Highlight[];
+}
+
+export type NotificationListItemsItem = { [key: string]: unknown };
+
+export interface NotificationList {
+  items: NotificationListItemsItem[];
+}
+
+export interface CleanupResult {
+  success: boolean;
+  removed: number;
+}
+
 export type ViewerIdParameter = number;
 
 export type ListUsersParams = {

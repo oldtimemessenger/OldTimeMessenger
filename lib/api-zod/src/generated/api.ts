@@ -1098,6 +1098,356 @@ export const GetSavedSocialPostsResponse = zod.object({
 
 
 /**
+ * @summary List active stories visible to the caller
+ */
+export const GetStoriesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'image', 'video']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
+  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "createdAt": zod.number(),
+  "expiresAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "viewer": zod.object({
+  "viewed": zod.boolean(),
+  "isOwner": zod.boolean()
+}),
+  "counts": zod.object({
+  "views": zod.number(),
+  "reactions": zod.number()
+})
+}))
+})
+
+
+/**
+ * @summary Publish an expiring text or protected-media story
+ */
+export const createStoryBodyContentMax = 2000;
+
+
+
+export const CreateStoryBody = zod.object({
+  "content": zod.string().max(createStoryBodyContentMax).optional(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']).optional(),
+  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "expiresAt": zod.number().optional()
+})
+
+export const CreateStoryResponse = zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'image', 'video']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
+  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "createdAt": zod.number(),
+  "expiresAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "viewer": zod.object({
+  "viewed": zod.boolean(),
+  "isOwner": zod.boolean()
+}),
+  "counts": zod.object({
+  "views": zod.number(),
+  "reactions": zod.number()
+})
+})
+
+
+/**
+ * @summary Remove the caller's expired stories
+ */
+export const CleanupExpiredStoriesResponse = zod.object({
+  "success": zod.boolean(),
+  "removed": zod.number()
+})
+
+
+/**
+ * @summary Get a visible active story
+ */
+
+
+
+export const GetStoryParams = zod.object({
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const GetStoryResponse = zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'image', 'video']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
+  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "createdAt": zod.number(),
+  "expiresAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "viewer": zod.object({
+  "viewed": zod.boolean(),
+  "isOwner": zod.boolean()
+}),
+  "counts": zod.object({
+  "views": zod.number(),
+  "reactions": zod.number()
+})
+})
+
+
+/**
+ * @summary Delete a story owned by the caller
+ */
+
+
+
+export const DeleteStoryParams = zod.object({
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const DeleteStoryResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Idempotently mark a visible story viewed
+ */
+
+
+
+export const ViewStoryParams = zod.object({
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const ViewStoryResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Set an idempotent story reaction
+ */
+
+
+
+export const ReactToStoryParams = zod.object({
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const reactToStoryBodyReactionMax = 32;
+
+
+
+export const ReactToStoryBody = zod.object({
+  "reaction": zod.string().min(1).max(reactToStoryBodyReactionMax).optional()
+})
+
+export const ReactToStoryResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a story reaction
+ */
+
+
+
+export const RemoveStoryReactionParams = zod.object({
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const RemoveStoryReactionResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Reply to a visible story
+ */
+
+
+
+export const ReplyToStoryParams = zod.object({
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const replyToStoryBodyContentMax = 1000;
+
+
+
+export const ReplyToStoryBody = zod.object({
+  "content": zod.string().min(1).max(replyToStoryBodyContentMax)
+})
+
+export const ReplyToStoryResponse = zod.object({
+  "id": zod.number(),
+  "storyId": zod.number(),
+  "authorId": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.number()
+})
+
+
+/**
+ * @summary List viewers of a caller-owned story
+ */
+
+
+
+export const GetStoryViewersParams = zod.object({
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const GetStoryViewersResponse = zod.object({
+  "items": zod.array(zod.record(zod.string(), zod.unknown()))
+})
+
+
+/**
+ * @summary List the caller's close friends
+ */
+export const GetCloseFriendsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}))
+})
+
+
+/**
+ * @summary Add a close friend
+ */
+
+
+
+export const AddCloseFriendParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const AddCloseFriendResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a close friend
+ */
+
+
+
+export const RemoveCloseFriendParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const RemoveCloseFriendResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary List caller-owned highlights
+ */
+export const GetHighlightsResponse = zod.object({
+  "items": zod.array(zod.record(zod.string(), zod.unknown()))
+})
+
+
+/**
+ * @summary Create a highlight
+ */
+export const createHighlightBodyTitleMax = 80;
+
+
+
+export const CreateHighlightBody = zod.object({
+  "title": zod.string().min(1).max(createHighlightBodyTitleMax),
+  "coverObjectPath": zod.string().nullish()
+})
+
+export const CreateHighlightResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
+ * @summary Add an owned story to an owned highlight
+ */
+
+
+
+
+export const AddStoryToHighlightParams = zod.object({
+  "highlightId": zod.coerce.number().min(1),
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const AddStoryToHighlightResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Remove a story from an owned highlight
+ */
+
+
+
+
+export const RemoveStoryFromHighlightParams = zod.object({
+  "highlightId": zod.coerce.number().min(1),
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const RemoveStoryFromHighlightResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary List persisted story notifications
+ */
+export const GetSocialNotificationsResponse = zod.object({
+  "items": zod.array(zod.record(zod.string(), zod.unknown()))
+})
+
+
+/**
+ * @summary Mark a notification read
+ */
+
+
+
+export const MarkSocialNotificationReadParams = zod.object({
+  "notificationId": zod.coerce.number().min(1)
+})
+
+export const MarkSocialNotificationReadResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
  * @summary List visible unexpired pins near a coordinate
  */
 export const getNearbyMapPinsQueryLatitudeMin = -90;

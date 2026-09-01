@@ -174,9 +174,165 @@ export const socialReportsTable = pgTable(
   }),
 );
 
+/**
+ * Ephemeral social content. Object paths always point at private storage; the
+ * storage route resolves the story and applies its audience policy before
+ * serving a file.
+ */
+export const socialStoriesTable = pgTable(
+  "social_stories",
+  {
+    id: serial("id").primaryKey(),
+    authorId: integer("author_id").notNull(),
+    kind: text("kind").notNull().default("text"),
+    content: text("content").notNull().default(""),
+    visibility: text("visibility").notNull().default("friends"),
+    media: jsonb("media").$type<{
+      type: "image" | "video";
+      objectPath: string;
+      mimeType: string;
+      width?: number;
+      height?: number;
+      duration?: number;
+    } | null>(),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    expiresAt: pgBigint("expires_at", { mode: "number" }).notNull(),
+    deleted: boolean("deleted").notNull().default(false),
+  },
+  (table) => ({
+    audienceIndex: index("social_stories_audience_idx").on(
+      table.deleted,
+      table.expiresAt,
+      table.createdAt,
+    ),
+    authorCreatedIndex: index("social_stories_author_created_idx").on(
+      table.authorId,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const socialStoryViewersTable = pgTable(
+  "social_story_viewers",
+  {
+    storyId: integer("story_id").notNull(),
+    viewerId: integer("viewer_id").notNull(),
+    viewedAt: pgBigint("viewed_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.storyId, table.viewerId] }),
+    viewerIndex: index("social_story_viewers_viewer_idx").on(table.viewerId),
+  }),
+);
+
+export const socialStoryReactionsTable = pgTable(
+  "social_story_reactions",
+  {
+    storyId: integer("story_id").notNull(),
+    userId: integer("user_id").notNull(),
+    reaction: text("reaction").notNull(),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.storyId, table.userId] }),
+    userIndex: index("social_story_reactions_user_idx").on(table.userId),
+  }),
+);
+
+export const socialStoryRepliesTable = pgTable(
+  "social_story_replies",
+  {
+    id: serial("id").primaryKey(),
+    storyId: integer("story_id").notNull(),
+    authorId: integer("author_id").notNull(),
+    content: text("content").notNull(),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    deleted: boolean("deleted").notNull().default(false),
+  },
+  (table) => ({
+    storyCreatedIndex: index("social_story_replies_story_created_idx").on(
+      table.storyId,
+      table.createdAt,
+    ),
+    authorIndex: index("social_story_replies_author_idx").on(table.authorId),
+  }),
+);
+
+export const socialCloseFriendsTable = pgTable(
+  "social_close_friends",
+  {
+    ownerId: integer("owner_id").notNull(),
+    memberId: integer("member_id").notNull(),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.ownerId, table.memberId] }),
+    memberIndex: index("social_close_friends_member_idx").on(table.memberId),
+  }),
+);
+
+export const socialHighlightsTable = pgTable(
+  "social_highlights",
+  {
+    id: serial("id").primaryKey(),
+    ownerId: integer("owner_id").notNull(),
+    title: text("title").notNull(),
+    coverObjectPath: text("cover_object_path"),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: pgBigint("updated_at", { mode: "number" }).notNull(),
+    deleted: boolean("deleted").notNull().default(false),
+  },
+  (table) => ({
+    ownerUpdatedIndex: index("social_highlights_owner_updated_idx").on(
+      table.ownerId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+export const socialHighlightItemsTable = pgTable(
+  "social_highlight_items",
+  {
+    highlightId: integer("highlight_id").notNull(),
+    storyId: integer("story_id").notNull(),
+    addedAt: pgBigint("added_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.highlightId, table.storyId] }),
+    storyIndex: index("social_highlight_items_story_idx").on(table.storyId),
+  }),
+);
+
+export const socialNotificationsTable = pgTable(
+  "social_notifications",
+  {
+    id: serial("id").primaryKey(),
+    recipientId: integer("recipient_id").notNull(),
+    actorId: integer("actor_id").notNull(),
+    type: text("type").notNull(),
+    storyId: integer("story_id"),
+    replyId: integer("reply_id"),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    readAt: pgBigint("read_at", { mode: "number" }),
+  },
+  (table) => ({
+    recipientCreatedIndex: index("social_notifications_recipient_created_idx").on(
+      table.recipientId,
+      table.createdAt,
+    ),
+    storyIndex: index("social_notifications_story_idx").on(table.storyId),
+  }),
+);
+
 export const insertSocialPostSchema = createInsertSchema(socialPostsTable).omit({
   id: true,
 });
 
 export type SocialPost = typeof socialPostsTable.$inferSelect;
 export type SocialComment = typeof socialCommentsTable.$inferSelect;
+export type SocialStory = typeof socialStoriesTable.$inferSelect;
+export type SocialStoryViewer = typeof socialStoryViewersTable.$inferSelect;
+export type SocialStoryReaction = typeof socialStoryReactionsTable.$inferSelect;
+export type SocialStoryReply = typeof socialStoryRepliesTable.$inferSelect;
+export type SocialHighlight = typeof socialHighlightsTable.$inferSelect;
+export type SocialNotification = typeof socialNotificationsTable.$inferSelect;

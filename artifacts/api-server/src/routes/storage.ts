@@ -2,12 +2,16 @@ import { RequestUploadUrlBody, RequestUploadUrlResponse } from "@workspace/api-z
 import { randomUUID } from "node:crypto";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   chatParticipantsTable,
   db,
   messagesTable,
+  socialBlocksTable,
+  socialCloseFriendsTable,
+  socialFollowsTable,
+  socialStoriesTable,
   uploadSlotsTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
@@ -149,7 +153,39 @@ router.get("/storage/objects/*objectPath", async (req, res): Promise<void> => {
     .from(messagesTable)
     .innerJoin(chatParticipantsTable, eq(chatParticipantsTable.chatId, messagesTable.chatId))
     .where(eq(chatParticipantsTable.userId, userId));
-  if (!messages.some((message) => message.attachment?.objectPath === objectPath)) {
+  const chatAuthorized = messages.some((message) => message.attachment?.objectPath === objectPath);
+  const [story] = await db
+    .select()
+    .from(socialStoriesTable)
+    .where(and(
+      eq(socialStoriesTable.deleted, false),
+      gt(socialStoriesTable.expiresAt, Date.now()),
+      sql`${socialStoriesTable.media}->>'objectPath' = ${objectPath}`,
+    ))
+    .limit(1);
+  let storyAuthorized = false;
+  if (story) {
+    if (story.authorId === userId) {
+      storyAuthorized = true;
+    } else {
+      const [block, follows, reciprocal, closeFriend] = await Promise.all([
+        db.select({ blockerId: socialBlocksTable.blockerId }).from(socialBlocksTable).where(or(
+          and(eq(socialBlocksTable.blockerId, userId), eq(socialBlocksTable.blockedId, story.authorId)),
+          and(eq(socialBlocksTable.blockerId, story.authorId), eq(socialBlocksTable.blockedId, userId)),
+        )).limit(1),
+        db.select({ followerId: socialFollowsTable.followerId }).from(socialFollowsTable).where(and(eq(socialFollowsTable.followerId, userId), eq(socialFollowsTable.followingId, story.authorId))).limit(1),
+        db.select({ followerId: socialFollowsTable.followerId }).from(socialFollowsTable).where(and(eq(socialFollowsTable.followerId, story.authorId), eq(socialFollowsTable.followingId, userId))).limit(1),
+        db.select({ ownerId: socialCloseFriendsTable.ownerId }).from(socialCloseFriendsTable).where(and(eq(socialCloseFriendsTable.ownerId, story.authorId), eq(socialCloseFriendsTable.memberId, userId))).limit(1),
+      ]);
+      if (!block.length) {
+        storyAuthorized = story.visibility === "public"
+          || (story.visibility === "followers" && follows.length > 0)
+          || (story.visibility === "friends" && follows.length > 0 && reciprocal.length > 0)
+          || (story.visibility === "close_friends" && closeFriend.length > 0);
+      }
+    }
+  }
+  if (!chatAuthorized && !storyAuthorized) {
     res.status(403).json({ error: "You cannot access this attachment." });
     return;
   }

@@ -1,6 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCreateChat } from '@workspace/api-client-react';
+import { useCreateChat, useRequestUploadUrl } from '@workspace/api-client-react';
+import { File } from 'expo-file-system';
+import { fetch as expoFetch } from 'expo/fetch';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -37,6 +40,13 @@ import {
   setUserBlocked,
   setUserMuted,
   socialMediaUrl,
+  createStory,
+  getStories,
+  getStoryViewers,
+  reactToStory,
+  replyToStory,
+  viewStory,
+  type Story,
   type SearchResults,
   type SocialComment,
   type SocialPost,
@@ -76,6 +86,9 @@ export default function SocialUpdatesScreen() {
   const [commentPost, setCommentPost] = useState<SocialPost | null>(null);
   const [cardUserId, setCardUserId] = useState<number | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [storyOpen, setStoryOpen] = useState<Story | null>(null);
+  const [storyComposeOpen, setStoryComposeOpen] = useState(false);
 
   const token = session?.authToken ?? '';
 
@@ -108,6 +121,13 @@ export default function SocialUpdatesScreen() {
       setError(null);
     }).catch((requestError) => setError(errorText(requestError))).finally(() => setLoading(false));
   }, [mode, token]);
+  useEffect(() => {
+    if (!token) return;
+    void getStories(token).then((page) => setStories(page.items)).catch(() => setStories([]));
+  }, [token]);
+  useEffect(() => {
+    if (storyOpen && token && !storyOpen.viewer.isOwner) void viewStory(token, storyOpen.id);
+  }, [storyOpen, token]);
 
   function updatePost(postId: number, update: (post: SocialPost) => SocialPost) {
     setPosts((current) => current.map((post) => (post.id === postId ? update(post) : post)));
@@ -224,6 +244,7 @@ export default function SocialUpdatesScreen() {
           </Pressable>
         ))}
       </View>
+      <StoryRail stories={stories} colors={colors} onCreate={() => setStoryComposeOpen(true)} onOpen={setStoryOpen} />
       {error ? (
         <Pressable onPress={() => void loadFeed(true)} style={[styles.errorBar, { backgroundColor: colors.muted }]}>
           <Ionicons name="cloud-offline-outline" size={18} color={colors.destructive} />
@@ -284,6 +305,11 @@ export default function SocialUpdatesScreen() {
       )}
 
       <ComposeSheet visible={composeOpen} colors={colors} onClose={() => setComposeOpen(false)} onPublish={publish} />
+      <StoryComposeSheet visible={storyComposeOpen} token={token} colors={colors} onClose={() => setStoryComposeOpen(false)} onPublish={async (content, visibility, media) => {
+        const created = await createStory(token, { content, visibility, media });
+        setStories((current) => [created, ...current]);
+      }} />
+      <StoryViewer story={storyOpen} token={token} colors={colors} onClose={() => setStoryOpen(null)} />
       <CommentsSheet
         post={commentPost}
         token={token}
@@ -333,6 +359,68 @@ export default function SocialUpdatesScreen() {
       />
     </Screen>
   );
+}
+
+function StoryRail({ stories, colors, onCreate, onOpen }: { stories: Story[]; colors: any; onCreate: () => void; onOpen: (story: Story) => void }) {
+  return <FlatList horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 12, gap: 12 }}
+    data={[null, ...stories]} keyExtractor={(item, index) => item ? String(item.id) : `add-${index}`}
+    renderItem={({ item }) => item ? <Pressable onPress={() => onOpen(item)} style={{ width: 66, alignItems: 'center' }}>
+      <View style={{ width: 58, height: 58, borderRadius: 29, borderWidth: 2, borderColor: item.viewer.viewed ? colors.border : colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted }}><Avatar name={item.author.name} size={50} /></View>
+      <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 11, marginTop: 4 }}>{item.author.name}</Text>
+    </Pressable> : <Pressable onPress={onCreate} style={{ width: 66, alignItems: 'center' }}><View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: colors.muted, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="add" size={28} color={colors.primary} /></View><Text style={{ color: colors.foreground, fontSize: 11, marginTop: 4 }}>Your story</Text></Pressable>} />;
+}
+
+function StoryComposeSheet({ visible, token, colors, onClose, onPublish }: { visible: boolean; token: string; colors: any; onClose: () => void; onPublish: (content: string, visibility: Story['visibility'], media?: Story['media']) => Promise<void> }) {
+  const requestUploadUrl = useRequestUploadUrl();
+  const [content, setContent] = useState(''); const [visibility, setVisibility] = useState<Story['visibility']>('friends'); const [saving, setSaving] = useState(false);
+  const [asset, setAsset] = useState<{ uri: string; name: string; mimeType: string; size: number; type: 'image' | 'video'; width?: number; height?: number; duration?: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function selectMedia() {
+    if (saving) return;
+    setError(null);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], quality: 0.9, selectionLimit: 1 });
+      if (result.canceled) return;
+      const picked = result.assets[0];
+      setAsset({ uri: picked.uri, name: picked.fileName ?? `story-${Date.now()}.${picked.type === 'video' ? 'mp4' : 'jpg'}`, mimeType: picked.mimeType ?? (picked.type === 'video' ? 'video/mp4' : 'image/jpeg'), size: picked.fileSize ?? 1, type: picked.type === 'video' ? 'video' : 'image', width: picked.width, height: picked.height, duration: picked.duration ?? undefined });
+    } catch (cause) { setError(errorText(cause)); }
+  }
+  async function publish() {
+    if ((!content.trim() && !asset) || saving) return;
+    setSaving(true); setError(null);
+    try {
+      let media: Story['media'] | undefined;
+      if (asset) {
+        const localFile = new File(asset.uri);
+        const upload = await requestUploadUrl.mutateAsync({ data: { name: asset.name, size: Math.max(1, asset.size || localFile.size || 1), contentType: asset.mimeType } });
+        const domain = process.env.EXPO_PUBLIC_DOMAIN;
+        const uploadUrl = upload.uploadURL.startsWith('/') && domain ? `https://${domain}${upload.uploadURL}` : upload.uploadURL;
+        const response = await expoFetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': asset.mimeType, Authorization: `Bearer ${token}` }, body: localFile });
+        if (!response.ok) throw new Error(`Upload failed (${response.status}).`);
+        media = { type: asset.type, objectPath: upload.objectPath, mimeType: asset.mimeType, width: asset.width, height: asset.height, duration: asset.duration };
+      }
+      await onPublish(content.trim(), visibility, media);
+      setContent(''); setAsset(null); onClose();
+    } catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
+  }
+  return <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}><View style={[styles.modalPage, { backgroundColor: colors.background, padding: 20 }]}><View style={styles.modalHeader}><IconButton name="close" onPress={onClose} /><Text style={[styles.modalTitle, { color: colors.foreground }]}>New story</Text><Pressable disabled={(!content.trim() && !asset) || saving} onPress={() => void publish()}><Text style={{ color: colors.primary, fontWeight: '700', opacity: (!content.trim() && !asset) || saving ? 0.4 : 1 }}>{saving ? (asset ? 'Uploading…' : 'Sharing…') : 'Share'}</Text></Pressable></View><TextInput autoFocus multiline maxLength={2000} value={content} onChangeText={setContent} placeholder="Share a moment" placeholderTextColor={colors.mutedForeground} style={[styles.composer, { color: colors.foreground }]} /><Pressable disabled={saving} onPress={() => void selectMedia()} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary, fontWeight: '700' }}>{asset ? 'Change photo or video' : 'Add photo or video'}</Text></Pressable>{asset ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>{asset.type === 'image' ? <Image source={{ uri: asset.uri }} style={{ width: 54, height: 54, borderRadius: 8 }} contentFit="cover" /> : <Ionicons name="videocam-outline" size={30} color={colors.primary} />}<Text style={{ color: colors.foreground, flex: 1 }} numberOfLines={1}>{asset.name}</Text><IconButton name="close-circle" label="Remove attachment" onPress={() => setAsset(null)} /></View> : null}{error ? <Text style={{ color: colors.destructive, marginBottom: 10 }}>{error}</Text> : null}<View style={styles.audienceRow}>{(['friends', 'followers', 'public', 'close_friends', 'private'] as Story['visibility'][]).map((value) => <Pressable key={value} disabled={saving} onPress={() => setVisibility(value)} style={[styles.audience, { backgroundColor: visibility === value ? colors.primary : colors.muted }]}><Text style={{ color: visibility === value ? '#fff' : colors.foreground, fontSize: 11 }}>{value.replace('_', ' ')}</Text></Pressable>)}</View></View></Modal>;
+}
+
+function StoryViewer({ story, token, colors, onClose }: { story: Story | null; token: string; colors: any; onClose: () => void }) {
+  const [reply, setReply] = useState('');
+  if (!story) return null;
+  const storyId = story.id;
+  async function sendReply() { if (!reply.trim()) return; try { await replyToStory(token, storyId, reply.trim()); setReply(''); } catch (error) { Alert.alert('Could not reply', errorText(error)); } }
+  const media = story.media;
+  return <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <View style={{ flex: 1, backgroundColor: '#111', padding: 20, justifyContent: 'space-between' }}>
+      <View><View style={{ height: 3, backgroundColor: colors.primary, borderRadius: 2, marginBottom: 16 }} /><View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: '#fff', fontWeight: '700' }}>{story.author.name}</Text><IconButton name="close" color="#fff" onPress={onClose} /></View></View>
+      <Pressable onPress={onClose} style={{ flex: 1, justifyContent: 'center' }}>
+        {media?.type === 'image' ? <Image source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={{ height: 380, borderRadius: 16 }} contentFit="contain" /> : media?.type === 'video' ? <VideoSurface source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={{ height: 380, borderRadius: 16 }} /> : <Text style={{ color: '#fff', fontSize: 24, textAlign: 'center' }}>{story.content}</Text>}
+      </Pressable>
+      <View>{story.viewer.isOwner ? <Pressable onPress={() => void getStoryViewers(token, storyId).then(({ items }) => Alert.alert('Viewed by', items.length ? items.map((item) => item.name).join('\n') : 'No viewers yet')).catch((error) => Alert.alert('Could not load viewers', errorText(error)))}><Text style={{ color: '#fff', marginBottom: 10 }}>{story.counts.views} views</Text></Pressable> : null}<TextInput value={reply} onChangeText={setReply} placeholder="Send a reply" placeholderTextColor="#aaa" style={{ color: '#fff', borderColor: '#777', borderWidth: 1, borderRadius: 20, padding: 12 }} onSubmitEditing={() => void sendReply()} /><Pressable onPress={() => void reactToStory(token, storyId, '❤️')} style={{ alignSelf: 'center', padding: 10 }}><Text style={{ color: '#fff', fontSize: 24 }}>♥</Text></Pressable></View>
+    </View>
+  </Modal>;
 }
 
 function PostCard({ post, token, isOwn, colors, onOpenUser, onFollow, onLike, onComment, onRepost, onSave, onMore }: {

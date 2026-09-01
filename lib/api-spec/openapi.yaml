@@ -713,6 +713,130 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SocialPostList"
+  /social/stories:
+    get:
+      operationId: getStories
+      tags: [social]
+      summary: List active stories visible to the caller
+      responses: { "200": { description: Stories, content: { application/json: { schema: { $ref: "#/components/schemas/StoryList" } } } } }
+    post:
+      operationId: createStory
+      tags: [social]
+      summary: Publish an expiring text or protected-media story
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StoryInput" } } } }
+      responses: { "201": { description: Story, content: { application/json: { schema: { $ref: "#/components/schemas/Story" } } } } }
+  /social/stories/cleanup:
+    post:
+      operationId: cleanupExpiredStories
+      tags: [social]
+      summary: Remove the caller's expired stories
+      responses: { "200": { description: Cleanup result, content: { application/json: { schema: { $ref: "#/components/schemas/CleanupResult" } } } } }
+  /social/stories/{storyId}:
+    get:
+      operationId: getStory
+      tags: [social]
+      summary: Get a visible active story
+      parameters: [{ $ref: "#/components/parameters/StoryId" }]
+      responses: { "200": { description: Story, content: { application/json: { schema: { $ref: "#/components/schemas/Story" } } } } }
+    delete:
+      operationId: deleteStory
+      tags: [social]
+      summary: Delete a story owned by the caller
+      parameters: [{ $ref: "#/components/parameters/StoryId" }]
+      responses: { "200": { description: Deleted, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
+  /social/stories/{storyId}/view:
+    put:
+      operationId: viewStory
+      tags: [social]
+      summary: Idempotently mark a visible story viewed
+      parameters: [{ $ref: "#/components/parameters/StoryId" }]
+      responses: { "200": { description: Viewed, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
+  /social/stories/{storyId}/reaction:
+    put:
+      operationId: reactToStory
+      tags: [social]
+      summary: Set an idempotent story reaction
+      parameters: [{ $ref: "#/components/parameters/StoryId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StoryReactionInput" } } } }
+      responses: { "200": { description: Reacted, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
+    delete:
+      operationId: removeStoryReaction
+      tags: [social]
+      summary: Remove a story reaction
+      parameters: [{ $ref: "#/components/parameters/StoryId" }]
+      responses: { "200": { description: Removed, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
+  /social/stories/{storyId}/replies:
+    post:
+      operationId: replyToStory
+      tags: [social]
+      summary: Reply to a visible story
+      parameters: [{ $ref: "#/components/parameters/StoryId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StoryReplyInput" } } } }
+      responses: { "201": { description: Reply, content: { application/json: { schema: { $ref: "#/components/schemas/StoryReply" } } } } }
+  /social/stories/{storyId}/viewers:
+    get:
+      operationId: getStoryViewers
+      tags: [social]
+      summary: List viewers of a caller-owned story
+      parameters: [{ $ref: "#/components/parameters/StoryId" }]
+      responses: { "200": { description: Viewers, content: { application/json: { schema: { $ref: "#/components/schemas/StoryViewerList" } } } } }
+  /social/close-friends:
+    get:
+      operationId: getCloseFriends
+      tags: [social]
+      summary: List the caller's close friends
+      responses: { "200": { description: Users, content: { application/json: { schema: { $ref: "#/components/schemas/SocialUserList" } } } } }
+  /social/close-friends/{userId}:
+    put:
+      operationId: addCloseFriend
+      tags: [social]
+      summary: Add a close friend
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses: { "200": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
+    delete:
+      operationId: removeCloseFriend
+      tags: [social]
+      summary: Remove a close friend
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses: { "200": { description: Removed, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
+  /social/highlights:
+    get:
+      operationId: getHighlights
+      tags: [social]
+      summary: List caller-owned highlights
+      responses: { "200": { description: Highlights, content: { application/json: { schema: { $ref: "#/components/schemas/HighlightList" } } } } }
+    post:
+      operationId: createHighlight
+      tags: [social]
+      summary: Create a highlight
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/HighlightInput" } } } }
+      responses: { "201": { description: Highlight, content: { application/json: { schema: { $ref: "#/components/schemas/Highlight" } } } } }
+  /social/highlights/{highlightId}/stories/{storyId}:
+    put:
+      operationId: addStoryToHighlight
+      tags: [social]
+      summary: Add an owned story to an owned highlight
+      parameters: [{ $ref: "#/components/parameters/HighlightId" }, { $ref: "#/components/parameters/StoryId" }]
+      responses: { "200": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
+    delete:
+      operationId: removeStoryFromHighlight
+      tags: [social]
+      summary: Remove a story from an owned highlight
+      parameters: [{ $ref: "#/components/parameters/HighlightId" }, { $ref: "#/components/parameters/StoryId" }]
+      responses: { "200": { description: Removed, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
+  /social/notifications:
+    get:
+      operationId: getSocialNotifications
+      tags: [social]
+      summary: List persisted story notifications
+      responses: { "200": { description: Notifications, content: { application/json: { schema: { $ref: "#/components/schemas/NotificationList" } } } } }
+  /social/notifications/{notificationId}/read:
+    put:
+      operationId: markSocialNotificationRead
+      tags: [social]
+      summary: Mark a notification read
+      parameters: [{ $ref: "#/components/parameters/NotificationId" }]
+      responses: { "200": { description: Read, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
   /map/pins/nearby:
     get:
       operationId: getNearbyMapPins
@@ -915,6 +1039,21 @@ components:
       schema:
         type: number
         minimum: 1
+    StoryId:
+      name: storyId
+      in: path
+      required: true
+      schema: { type: number, minimum: 1 }
+    HighlightId:
+      name: highlightId
+      in: path
+      required: true
+      schema: { type: number, minimum: 1 }
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema: { type: number, minimum: 1 }
   schemas:
     HealthStatus:
       type: object
@@ -1492,4 +1631,67 @@ components:
       properties:
         reason: { type: string, enum: [spam, harassment, other] }
       required: [reason]
+    Story:
+      type: object
+      properties:
+        id: { type: number }
+        kind: { type: string, enum: [text, image, video] }
+        content: { type: string }
+        visibility: { type: string, enum: [public, friends, followers, close_friends, private] }
+        media: { type: [object, "null"], additionalProperties: true }
+        createdAt: { type: number }
+        expiresAt: { type: number }
+        author: { $ref: "#/components/schemas/SocialUser" }
+        viewer: { type: object, properties: { viewed: { type: boolean }, isOwner: { type: boolean } }, required: [viewed, isOwner] }
+        counts: { type: object, properties: { views: { type: number }, reactions: { type: number } }, required: [views, reactions] }
+      required: [id, kind, content, visibility, createdAt, expiresAt, author, viewer, counts]
+    SocialUserList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/SocialUser" } } }
+      required: [items]
+    StoryInput:
+      type: object
+      properties:
+        content: { type: string, maxLength: 2000 }
+        visibility: { type: string, enum: [public, friends, followers, close_friends, private] }
+        media: { type: [object, "null"], additionalProperties: true }
+        expiresAt: { type: number }
+    StoryReactionInput:
+      type: object
+      properties: { reaction: { type: string, minLength: 1, maxLength: 32 } }
+    StoryReplyInput:
+      type: object
+      properties: { content: { type: string, minLength: 1, maxLength: 1000 } }
+      required: [content]
+    StoryReply:
+      type: object
+      properties: { id: { type: number }, storyId: { type: number }, authorId: { type: number }, content: { type: string }, createdAt: { type: number } }
+      required: [id, storyId, authorId, content, createdAt]
+    StoryList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/Story" } } }
+      required: [items]
+    StoryViewerList:
+      type: object
+      properties: { items: { type: array, items: { type: object, additionalProperties: true } } }
+      required: [items]
+    HighlightInput:
+      type: object
+      properties: { title: { type: string, minLength: 1, maxLength: 80 }, coverObjectPath: { type: [string, "null"] } }
+      required: [title]
+    Highlight:
+      type: object
+      additionalProperties: true
+    HighlightList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/Highlight" } } }
+      required: [items]
+    NotificationList:
+      type: object
+      properties: { items: { type: array, items: { type: object, additionalProperties: true } } }
+      required: [items]
+    CleanupResult:
+      type: object
+      properties: { success: { type: boolean }, removed: { type: number } }
+      required: [success, removed]
 
