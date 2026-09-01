@@ -17,11 +17,8 @@ export function Screen({ children, title, right, scroll = false }: { children: R
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       {title ? (
-        <LinearGradient colors={['#63BFFB', '#3B8FD6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <View>
-            <Text style={styles.brandMark}>Old Time.</Text>
-            <Text style={styles.title}>{title}</Text>
-          </View>
+        <LinearGradient colors={['#FFFFFF', '#F3F5F7']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: 'rgba(0,0,0,0.06)' }]}>
+          <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
           <View style={styles.headerRight}>{right}</View>
         </LinearGradient>
       ) : null}
@@ -37,7 +34,8 @@ export function Avatar({ name, size = 48, color, uri }: { name: string; size?: n
 }
 
 export function IconButton({ name, onPress, color, size = 22, label }: { name: keyof typeof Ionicons.glyphMap; onPress: () => void; color?: string; size?: number; label?: string }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.6 : 1 }]}><Ionicons name={name} size={size} color={color ?? '#FFFFFF'} /></Pressable>;
+  const colors = useColors();
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.6 : 1 }]}><Ionicons name={name} size={size} color={color ?? colors.primary} /></Pressable>;
 }
 
 export function PrimaryButton({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
@@ -67,9 +65,21 @@ export function Row({ icon, label, detail, onPress, destructive = false, right }
 
 export const styles = StyleSheet.create({
   screen: { flex: 1 },
-  header: { minHeight: 72, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  brandMark: { color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase' },
-  title: { fontSize: 26, fontWeight: '800', letterSpacing: -0.6, color: '#FFFFFF', marginTop: 2 },
+  header: {
+    minHeight: 64,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.7 },
   headerRight: { flexDirection: 'row', alignItems: 'center' },
   scroll: { paddingHorizontal: 16, paddingTop: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
