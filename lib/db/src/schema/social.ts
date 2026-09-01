@@ -20,7 +20,7 @@ export const socialPostsTable = pgTable(
     authorId: integer("author_id").notNull(),
     kind: text("kind").notNull().default("text"),
     content: text("content").notNull().default(""),
-    visibility: text("visibility").notNull().default("public"),
+    visibility: text("visibility").notNull().default("friends"),
     media: jsonb("media").$type<Array<{
       type: "image" | "video";
       objectPath: string;
@@ -150,6 +150,19 @@ export const socialMutesTable = pgTable(
   },
   (table) => ({
     primaryKey: primaryKey({ columns: [table.muterId, table.mutedUserId] }),
+  }),
+);
+
+export const socialSharingExclusionsTable = pgTable(
+  "social_sharing_exclusions",
+  {
+    ownerId: integer("owner_id").notNull(),
+    excludedUserId: integer("excluded_user_id").notNull(),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.ownerId, table.excludedUserId] }),
+    excludedIndex: index("social_sharing_exclusions_excluded_idx").on(table.excludedUserId),
   }),
 );
 
