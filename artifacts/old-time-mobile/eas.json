@@ -22,7 +22,10 @@
     },
     "production": {
       "pnpm": "10.26.1",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "ios": {
+        "image": "latest"
+      }
     }
   },
   "submit": {
