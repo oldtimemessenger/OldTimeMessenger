@@ -70,6 +70,17 @@ export type Story = {
   createdAt: number; expiresAt: number; author: SocialUser;
   viewer: { viewed: boolean; isOwner: boolean }; counts: { views: number; reactions: number };
 };
+export type SocialNotification = {
+  id: number;
+  recipientId: number;
+  actorId: number;
+  type: string;
+  storyId: number | null;
+  replyId: number | null;
+  createdAt: number;
+  readAt: number | null;
+  actor: SocialUser;
+};
 
 function baseUrl(): string {
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -250,3 +261,15 @@ export function viewStory(token: string, storyId: number) { return request<{ suc
 export function reactToStory(token: string, storyId: number, reaction: string) { return request<{ success: boolean }>(token, `/api/social/stories/${storyId}/reaction`, { method: 'PUT', body: JSON.stringify({ reaction }) }); }
 export function replyToStory(token: string, storyId: number, content: string) { return request<{ id: number }>(token, `/api/social/stories/${storyId}/replies`, { method: 'POST', body: JSON.stringify({ content }) }); }
 export function getStoryViewers(token: string, storyId: number) { return request<{ items: Array<SocialUser & { viewedAt: number }> }>(token, `/api/social/stories/${storyId}/viewers`); }
+export function getSocialNotifications(token: string) {
+  return request<{ items: SocialNotification[] }>(token, '/api/social/notifications?limit=30');
+}
+export function markSocialNotificationRead(token: string, notificationId: number) {
+  return request<{ success: boolean }>(token, `/api/social/notifications/${notificationId}/read`, { method: 'PUT' });
+}
+export function getSharingExclusions(token: string) {
+  return request<{ items: SocialUser[] }>(token, '/api/social/privacy/exclusions');
+}
+export function setSharingExcluded(token: string, userId: number, active: boolean) {
+  return request<{ active: boolean }>(token, `/api/social/privacy/exclusions/${userId}`, { method: active ? 'PUT' : 'DELETE' });
+}
