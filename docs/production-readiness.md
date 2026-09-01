@@ -2,7 +2,7 @@
 
 ## Required configuration
 
-Keep values in Replit Secrets; never commit them or print them in logs.
+Keep values in hosting / EAS environment secrets; never commit them or print them in logs.
 
 - `DATABASE_URL`
 - `SESSION_SECRET`
@@ -24,7 +24,7 @@ Twilio must use a Verify service with an approved sender for the countries where
 5. Confirm `/api/readyz` returns `{"status":"ready"}`.
 6. Run dependency, static-analysis, and privacy scans.
 7. Test SMS request/verification, session restore, logout/revocation, chat access, attachment limits, attachment ownership, and message expiry.
-8. Use Replit Publish. Review the development-to-production schema diff in the Publish UI before applying it; do not run custom production migrations.
+8. Deploy from GitHub (Expo EAS for the mobile app; your chosen host for the API). Review schema diffs before applying production database changes; do not run unreviewed custom production migrations.
 
 ## Operations
 
@@ -36,9 +36,8 @@ Twilio must use a Verify service with an approved sender for the countries where
 
 ## Rollback
 
-If publishing fails before traffic moves, cancel the publish and keep the last successful deployment. If a new release causes authentication or storage failures:
+If a deploy fails before traffic moves, cancel it and keep the last successful deployment. If a new release causes authentication or storage failures:
 
-1. Open Replit checkpoints and restore the last known-good code checkpoint.
-2. Republish that checkpoint.
-3. Do not delete new authentication or upload tables during rollback; older code can ignore them and retaining them avoids destructive data loss.
-4. Revoke affected sessions if credentials or bearer tokens may have been exposed.
+1. Redeploy the last known-good Git commit.
+2. Do not delete new authentication or upload tables during rollback; older code can ignore them and retaining them avoids destructive data loss.
+3. Revoke affected sessions if credentials or bearer tokens may have been exposed.
