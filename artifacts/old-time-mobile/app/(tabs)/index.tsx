@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, useListUsers, useLogout, type InboxItem, type User } from '@workspace/api-client-react';
 import { Avatar, EmptyState, IconButton, LoadingState, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useQueryClient } from '@tanstack/react-query';
+import { getStories, type Story } from '@/lib/social-api';
 
 function timeLabel(timestamp?: number) {
   if (!timestamp) return '';
@@ -21,11 +22,24 @@ export default function ChatsScreen() {
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [stories, setStories] = useState<Story[]>([]);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session), refetchInterval: 6000, queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
   const users = useListUsers({ viewerId: session?.id ?? 0 }, { query: { enabled: Boolean(session), staleTime: 15000, queryKey: getListUsersQueryKey({ viewerId: session?.id ?? 0 }) } });
   const createChat = useCreateChat();
   const logout = useLogout();
   const items = useMemo(() => (inbox.data ?? []).filter((item) => `${item.contact.name} ${item.lastMessage?.content ?? ''}`.toLowerCase().includes(search.toLowerCase())), [inbox.data, search]);
+
+  useEffect(() => {
+    if (!session?.authToken) {
+      setStories([]);
+      return;
+    }
+    let active = true;
+    void getStories(session.authToken)
+      .then((page) => { if (active) setStories(page.items); })
+      .catch(() => { if (active) setStories([]); });
+    return () => { active = false; };
+  }, [session?.authToken]);
 
   if (inbox.isLoading) return <Screen title="Chats"><LoadingState /></Screen>;
 
@@ -66,11 +80,28 @@ export default function ChatsScreen() {
   );
 
   return <Screen title="Chats" right={<View style={styles.headerActions}><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="create-outline" label="New message" onPress={() => setShowNew(true)} /></View>}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.storyDrawer, { borderBottomColor: colors.border }]} contentContainerStyle={styles.storyDrawerContent}>
+      <Pressable onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel="Add your story">
+        <View>
+          <Avatar name={profileName} size={52} color={colors.muted} uri={profile.avatarUri} />
+          <View style={[styles.storyAdd, { backgroundColor: colors.primary, borderColor: colors.background }]}><Ionicons name="add" size={14} color="#fff" /></View>
+        </View>
+        <Text style={[styles.storyName, { color: colors.foreground }]}>Your story</Text>
+      </Pressable>
+      {stories.filter((story) => !story.viewer.isOwner).map((story) => (
+        <Pressable key={story.id} onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel={`Open ${story.author.name}'s story`}>
+          <View style={[styles.storyRing, { borderColor: story.viewer.viewed ? colors.border : colors.primary }]}>
+            <Avatar name={story.author.name} size={48} color={colors.secondary} />
+          </View>
+          <Text style={[styles.storyName, { color: colors.foreground }]} numberOfLines={1}>{story.author.name}</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
     <View style={[styles.search, { backgroundColor: colors.muted }]}>
       <Ionicons name="search" size={18} color={colors.mutedForeground} />
       <TextInput value={search} onChangeText={setSearch} placeholder="Search chats" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
     </View>
-    {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection and pull to refresh." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '700' }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation with someone from your Old Time contacts." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100 }} renderItem={renderChatItem} />}
+    {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '700' }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100 }} renderItem={renderChatItem} />}
     <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
       <View style={styles.modalShade}>
         <View style={[styles.sheet, { backgroundColor: colors.card }]}>
@@ -122,6 +153,12 @@ export default function ChatsScreen() {
 
 const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  storyDrawer: { maxHeight: 88, borderBottomWidth: StyleSheet.hairlineWidth },
+  storyDrawerContent: { paddingHorizontal: 14, paddingVertical: 9, gap: 12 },
+  storyItem: { width: 58, alignItems: 'center' },
+  storyRing: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  storyAdd: { position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  storyName: { fontSize: 10, fontWeight: '600', marginTop: 4, width: 58, textAlign: 'center' },
   search: { minHeight: 44, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13, marginBottom: 5 },
   searchInput: { flex: 1, fontSize: 15 },
   chatRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 2 },
