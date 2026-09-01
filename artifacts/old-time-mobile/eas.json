@@ -1,10 +1,19 @@
 {
   "cli": {
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "promptToConfigureMissingCredentials": false
   },
   "build": {
     "development": {
+      "developmentClient": true,
       "distribution": "internal"
+    },
+    "development-simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
     },
     "preview": {
       "distribution": "internal"
