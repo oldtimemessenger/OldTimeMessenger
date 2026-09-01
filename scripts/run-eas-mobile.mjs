@@ -44,9 +44,15 @@ if (status) {
   console.warn('Warning: git working tree has uncommitted changes.');
 }
 
-const child = spawn('pnpm', ['exec', 'eas', ...args], {
+const command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const child = spawn(command, ['eas-cli', ...args], {
   cwd: appDir,
   stdio: 'inherit',
+});
+
+child.on('error', (error) => {
+  console.error(`Failed to start EAS CLI: ${error.message}`);
+  process.exit(1);
 });
 
 child.on('exit', (code, signal) => {
