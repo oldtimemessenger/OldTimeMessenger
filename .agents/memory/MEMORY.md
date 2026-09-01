@@ -3,3 +3,4 @@
 - [Updates news boundaries](updates-news-boundaries.md) — personalization may learn locally now, but provider ingestion must remain labeled inactive until licensing and rights controls exist.
 - [Mobile object uploads](mobile-object-uploads.md) — this workspace’s storage sidecar can stream objects but cannot create V4 signed URLs; enforce uploads through the API.
 - [Social media authorization](social-media-authorization.md) — audience and exclusion checks must protect direct object reads as well as feed/story discovery.
+- [GitHub connector payload filtering](github-connector-payload-filtering.md) — authenticated repository writes may be filtered by payload; verify remote trees after connector-based syncs.
