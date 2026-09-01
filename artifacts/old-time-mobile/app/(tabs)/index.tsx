@@ -79,7 +79,7 @@ export default function ChatsScreen() {
     </Pressable>
   );
 
-  return <Screen title="Chats" right={<View style={styles.headerActions}><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="create-outline" label="New message" onPress={() => setShowNew(true)} /></View>}>
+  return <Screen title="Chats" left={<IconButton name="radio-outline" label="Watch statuses" onPress={() => router.push('/(tabs)/updates-screen')} />} right={<View style={styles.headerActions}><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="create-outline" label="New message" onPress={() => setShowNew(true)} /></View>}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.storyDrawer, { borderBottomColor: colors.border }]} contentContainerStyle={styles.storyDrawerContent}>
       <Pressable onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel="Add your story">
         <View>
