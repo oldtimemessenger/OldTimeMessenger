@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, RefreshControl, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { EmptyState, Screen } from '@/components/ui';
+import { Avatar, EmptyState, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { createMapPin, createMapPinComment, deleteMapPin, getMapPinComments, getNearbyPins, reportMapPin, setMapPinRelation, type MapComment, type MapPin, type MapVisibility } from '@/lib/map-api';
@@ -12,7 +12,7 @@ type Coordinate = { latitude: number; longitude: number };
 
 export default function MapScreen() {
   const colors = useColors();
-  const { session } = useApp();
+  const { session, settings } = useApp();
   const [permission, requestPermission] = Location.useForegroundPermissions();
   const [location, setLocation] = useState<Coordinate | null>(null);
   const [pins, setPins] = useState<MapPin[]>([]);
@@ -20,9 +20,14 @@ export default function MapScreen() {
   const [error, setError] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [caption, setCaption] = useState('');
-  const [visibility, setVisibility] = useState<MapVisibility>('friends');
+  const [visibility, setVisibility] = useState<MapVisibility>(settings.locationAudience);
   const [expiry, setExpiry] = useState<'day' | 'week' | 'never'>('day');
   const [commentPin, setCommentPin] = useState<MapPin | null>(null);
+  const [selectedPin, setSelectedPin] = useState<MapPin | null>(null);
+
+  useEffect(() => {
+    setVisibility(settings.locationAudience === 'public' ? 'friends' : settings.locationAudience);
+  }, [settings.locationAudience]);
 
   const loadNearby = useCallback(async (coordinate: Coordinate) => {
     if (!session?.authToken) return;
@@ -80,23 +85,18 @@ export default function MapScreen() {
   }
 
   return (
-    <Screen title="Old Time Map">
+    <Screen title="Map">
       <FlatList
         data={pins}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => location && void loadNearby(location)} tintColor={colors.primary} />}
         ListHeaderComponent={<>
-          <View style={[styles.privacy, { backgroundColor: colors.secondary }]}>
-            <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
-            <Text style={[styles.privacyText, { color: colors.foreground }]}>Your location stays on this device until you choose to post a pin.</Text>
+          <MapScene pins={pins} selected={selectedPin} colors={colors} loading={loading} hasLocation={Boolean(location)} onLocate={() => void refreshLocation()} onSelect={setSelectedPin} onCreate={() => setComposerOpen(true)} onOpenMaps={(pin: MapPin) => void openInMaps(pin)} />
+          <View style={[styles.privacy, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+            <Text style={[styles.privacyText, { color: colors.foreground }]}>Private by default. Your location stays on this device until you tap Post pin.</Text>
           </View>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.icon, { backgroundColor: colors.secondary }]}><Ionicons name="location" size={30} color={colors.primary} /></View>
-            <View style={styles.locationCopy}><Text style={[styles.title, { color: colors.foreground }]}>{location ? 'Nearby pins' : 'Find pins near you'}</Text><Text style={[styles.description, { color: colors.mutedForeground }]}>{location ? 'Sorted by distance. Refresh any time.' : 'Allow location to browse nearby pins. We never post it automatically.'}</Text></View>
-            <Pressable onPress={() => void refreshLocation()} disabled={loading} style={[styles.locate, { backgroundColor: colors.primary }]}><Text style={styles.primaryText}>{loading ? 'Locating…' : location ? 'Refresh' : 'Use my location'}</Text></Pressable>
-          </View>
-          {location ? <Pressable onPress={() => setComposerOpen(true)} style={[styles.post, { borderColor: colors.primary }]}><Ionicons name="add-circle-outline" size={20} color={colors.primary} /><Text style={[styles.postText, { color: colors.primary }]}>Post this location</Text></Pressable> : null}
           {error ? <Pressable onPress={() => location && void loadNearby(location)} style={[styles.error, { backgroundColor: colors.muted }]}><Text style={{ color: colors.foreground }}>{error}  <Text style={{ color: colors.primary, fontWeight: '700' }}>Retry</Text></Text></Pressable> : null}
         </>}
         renderItem={({ item }) => <PinCard pin={item} own={item.authorId === session?.id} colors={colors} onOpen={() => void openInMaps(item)} onComment={() => setCommentPin(item)} onChanged={(pin) => setPins((all) => all.map((current) => current.id === pin.id ? pin : current))} onDelete={() => setPins((all) => all.filter((pin) => pin.id !== item.id))} token={session?.authToken ?? ''} />}
@@ -107,6 +107,33 @@ export default function MapScreen() {
       <CommentsSheet pin={commentPin} token={session?.authToken ?? ''} colors={colors} onClose={() => setCommentPin(null)} />
     </Screen>
   );
+}
+
+function MapScene({ pins, selected, colors, loading, hasLocation, onLocate, onSelect, onCreate, onOpenMaps }: any) {
+  const visible = pins.slice(0, 6);
+  return <View style={[styles.mapScene, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+    <View style={styles.mapRoadA} /><View style={styles.mapRoadB} /><View style={styles.mapRoadC} />
+    <View style={[styles.mapPark, { backgroundColor: `${colors.primary}18` }]} />
+    <View style={styles.storyRail}>
+      {visible.slice(0, 4).map((pin: MapPin) => <Pressable key={pin.id} onPress={() => onSelect(pin)} style={[styles.storyBubble, { borderColor: selected?.id === pin.id ? colors.primary : 'rgba(255,255,255,.88)' }]}>
+        <Avatar name={pin.author.name} size={42} color={colors.primary} />
+      </Pressable>)}
+    </View>
+    {visible.map((pin: MapPin, index: number) => {
+      const positions = [{ left: 48, top: 190 }, { right: 80, top: 140 }, { left: 142, top: 255 }, { right: 45, top: 290 }, { left: 75, top: 315 }, { left: 165, top: 158 }];
+      return <Pressable key={pin.id} onPress={() => onSelect(pin)} style={[styles.mapMarker, positions[index], { backgroundColor: selected?.id === pin.id ? colors.primary : colors.card, borderColor: selected?.id === pin.id ? '#fff' : colors.border }]}>
+        <Text style={{ color: selected?.id === pin.id ? '#fff' : colors.foreground, fontWeight: '900' }}>{pin.author.name.slice(0, 1).toUpperCase()}</Text>
+      </Pressable>;
+    })}
+    <View style={styles.mapControls}>
+      <Pressable onPress={onLocate} style={[styles.mapControl, { backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name={loading ? 'hourglass-outline' : 'locate'} size={21} color={colors.primary} /></Pressable>
+      {hasLocation ? <Pressable onPress={onCreate} style={[styles.mapCreate, { backgroundColor: colors.primary }]}><Ionicons name="add" size={20} color="#fff" /><Text style={styles.mapCreateText}>Pin</Text></Pressable> : null}
+    </View>
+    {!hasLocation ? <View style={[styles.mapPrompt, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.mapPromptTitle, { color: colors.foreground }]}>See what’s nearby</Text><Text style={[styles.mapPromptText, { color: colors.mutedForeground }]}>Location is only read after you tap below.</Text><Pressable onPress={onLocate} style={[styles.locate, { backgroundColor: colors.primary }]}><Text style={styles.primaryText}>Use my location</Text></Pressable></View> : null}
+    {selected ? <View style={[styles.selectedPin, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Avatar name={selected.author.name} size={38} color={colors.primary} /><View style={{ flex: 1 }}><Text style={[styles.author, { color: colors.foreground }]}>{selected.author.name}</Text><Text numberOfLines={1} style={[styles.meta, { color: colors.mutedForeground }]}>{selected.caption || `${selected.distanceKm.toFixed(1)} km away`}</Text></View><Pressable onPress={() => onOpenMaps(selected)} style={[styles.navigate, { backgroundColor: colors.primary }]}><Ionicons name="navigate" size={18} color="#fff" /></Pressable>
+    </View> : null}
+  </View>;
 }
 
 function PinCard({ pin, own, colors, token, onOpen, onComment, onChanged, onDelete }: { pin: MapPin; own: boolean; colors: any; token: string; onOpen: () => void; onComment: () => void; onChanged: (pin: MapPin) => void; onDelete: () => void }) {
@@ -155,9 +182,25 @@ function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; to
 
 const styles = StyleSheet.create({
   list: { padding: 16, gap: 12 },
-  privacy: { borderRadius: 12, padding: 12, flexDirection: 'row', gap: 9, marginBottom: 12 },
+  mapScene: { height: 455, borderRadius: 30, borderWidth: 1, overflow: 'hidden', position: 'relative', marginBottom: 12 },
+  mapRoadA: { position: 'absolute', width: 620, height: 34, backgroundColor: 'rgba(255,255,255,.48)', transform: [{ rotate: '-22deg' }], top: 190, left: -120 },
+  mapRoadB: { position: 'absolute', width: 520, height: 22, backgroundColor: 'rgba(255,255,255,.4)', transform: [{ rotate: '58deg' }], top: 180, left: -90 },
+  mapRoadC: { position: 'absolute', width: 400, height: 14, backgroundColor: 'rgba(255,255,255,.34)', transform: [{ rotate: '8deg' }], top: 320, left: -10 },
+  mapPark: { position: 'absolute', width: 160, height: 120, borderRadius: 42, right: -25, top: 95, transform: [{ rotate: '-12deg' }] },
+  storyRail: { position: 'absolute', top: 14, left: 14, right: 14, flexDirection: 'row', gap: 9 },
+  storyBubble: { width: 50, height: 50, borderRadius: 25, borderWidth: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.3)' },
+  mapMarker: { position: 'absolute', width: 42, height: 42, borderRadius: 21, borderWidth: 3, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: .16, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  mapControls: { position: 'absolute', right: 14, top: 14, gap: 10, alignItems: 'flex-end' },
+  mapControl: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  mapCreate: { height: 44, borderRadius: 22, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  mapCreateText: { color: '#fff', fontWeight: '900' },
+  mapPrompt: { position: 'absolute', left: 18, right: 18, bottom: 18, borderRadius: 24, borderWidth: 1, padding: 16 },
+  mapPromptTitle: { fontSize: 18, fontWeight: '900' }, mapPromptText: { fontSize: 12, marginVertical: 5 },
+  selectedPin: { position: 'absolute', left: 14, right: 14, bottom: 14, minHeight: 68, borderRadius: 24, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  navigate: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  privacy: { borderRadius: 22, borderWidth: 1, padding: 12, flexDirection: 'row', gap: 9, marginBottom: 12 },
   privacyText: { flex: 1, fontSize: 13, lineHeight: 18 },
-  card: { borderRadius: 16, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  card: { borderRadius: 24, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   icon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   locationCopy: { flex: 1 },
   title: { fontSize: 17, fontWeight: '800' },
@@ -166,6 +209,6 @@ const styles = StyleSheet.create({
   primaryText: { color: '#fff', fontWeight: '800' },
   post: { marginTop: 12, minHeight: 46, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   postText: { fontWeight: '800' }, error: { borderRadius: 10, padding: 12, marginTop: 12 },
-  pin: { borderWidth: 1, borderRadius: 16, padding: 14 }, pinHead: { flexDirection: 'row', alignItems: 'center', gap: 10 }, avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: '#fff', fontWeight: '800' }, author: { fontWeight: '800' }, meta: { fontSize: 12, marginTop: 2 }, caption: { fontSize: 15, lineHeight: 21, marginTop: 12 }, expiry: { fontSize: 12, marginTop: 8 }, pinActions: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingTop: 10, flexDirection: 'row' }, pinAction: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4 },
+  pin: { borderWidth: 1, borderRadius: 24, padding: 14 }, pinHead: { flexDirection: 'row', alignItems: 'center', gap: 10 }, avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: '#fff', fontWeight: '800' }, author: { fontWeight: '800' }, meta: { fontSize: 12, marginTop: 2 }, caption: { fontSize: 15, lineHeight: 21, marginTop: 12 }, expiry: { fontSize: 12, marginTop: 8 }, pinActions: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingTop: 10, flexDirection: 'row' }, pinAction: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4 },
   modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,.35)', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }, commentsSheet: { height: '72%', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10 }, grabber: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 }, sheetTitle: { fontSize: 20, fontWeight: '800' }, sheetText: { lineHeight: 19, marginTop: 6 }, input: { minHeight: 82, borderWidth: 1, borderRadius: 12, padding: 12, textAlignVertical: 'top', marginTop: 16 }, field: { fontWeight: '800', marginTop: 16 }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }, choice: { borderWidth: 1, borderRadius: 18, paddingVertical: 8, paddingHorizontal: 12 }, sheetActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }, publish: { borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12 }, commentsTitle: { paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }, comment: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 3 }, emptyComments: { textAlign: 'center', marginTop: 32 }, commentEntry: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', padding: 14, gap: 10, alignItems: 'center' },
 });
