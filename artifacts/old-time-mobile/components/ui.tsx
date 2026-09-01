@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +30,29 @@ export function Avatar({ name, size = 48, color, uri }: { name: string; size?: n
   const tones = ['#3B8FD6', '#D65A66', '#4C9B85', '#8A6BBE', '#D18A43', '#5B82AF'];
   const tone = color ?? tones[name.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0) % tones.length];
   return <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: tone, overflow: 'hidden' }]}>{uri ? <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" /> : <Text style={[styles.avatarText, { fontSize: Math.max(12, size * 0.3) }]}>{initials(name)}</Text>}</View>;
+}
+
+export function StoryAvatar({ name, size = 58, color, uri, viewed = false, add = false }: { name: string; size?: number; color?: string; uri?: string; viewed?: boolean; add?: boolean }) {
+  const colors = useColors();
+  return (
+    <View style={{ width: size, height: size }}>
+      <LinearGradient
+        colors={viewed ? [colors.border, colors.border] : [colors.accent, colors.primary]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.storyGradient, { width: size, height: size, borderRadius: size / 2 }]}
+      >
+        <View style={[styles.storyInner, { borderRadius: size / 2, backgroundColor: colors.background }]}>
+          <Avatar name={name} size={size - 8} color={color} uri={uri} />
+        </View>
+      </LinearGradient>
+      {add ? (
+        <View style={[styles.storyAdd, { backgroundColor: colors.primary, borderColor: colors.background }]}>
+          <Ionicons name="add" size={14} color={colors.primaryForeground} />
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 export function IconButton({ name, onPress, color, size = 22, label }: { name: keyof typeof Ionicons.glyphMap; onPress: () => void; color?: string; size?: number; label?: string }) {
@@ -73,6 +97,9 @@ export const styles = StyleSheet.create({
   loadingBar: { height: 10, width: '48%', borderRadius: 5, marginBottom: 9, opacity: 0.8 },
   avatar: { alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '700' },
+  storyGradient: { padding: 2.5, alignItems: 'center', justifyContent: 'center' },
+  storyInner: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  storyAdd: { position: 'absolute', right: -2, bottom: -1, width: 21, height: 21, borderRadius: 11, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center' },
   iconButton: { width: 38, height: 38, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', shadowColor: '#18212B', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
   primaryButton: { minHeight: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, shadowColor: '#18212B', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
   primaryLabel: { color: '#fff', fontWeight: '700', fontSize: 15 },
