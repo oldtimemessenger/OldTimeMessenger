@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
-import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, useListUsers, type InboxItem, type User } from '@workspace/api-client-react';
+import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, useListUsers, useLogout, type InboxItem, type User } from '@workspace/api-client-react';
 import { Avatar, EmptyState, IconButton, LoadingState, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
+import { useQueryClient } from '@tanstack/react-query';
 
 function timeLabel(timestamp?: number) {
   if (!timestamp) return '';
@@ -15,12 +16,15 @@ function timeLabel(timestamp?: number) {
 export default function ChatsScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { session } = useApp();
+  const queryClient = useQueryClient();
+  const { profile, session, setSession, resetLocalData } = useApp();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session), refetchInterval: 6000, queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
   const users = useListUsers({ viewerId: session?.id ?? 0 }, { query: { enabled: Boolean(session), staleTime: 15000, queryKey: getListUsersQueryKey({ viewerId: session?.id ?? 0 }) } });
   const createChat = useCreateChat();
+  const logout = useLogout();
   const items = useMemo(() => (inbox.data ?? []).filter((item) => `${item.contact.name} ${item.lastMessage?.content ?? ''}`.toLowerCase().includes(search.toLowerCase())), [inbox.data, search]);
 
   if (inbox.isLoading) return <Screen title="Chats"><LoadingState /></Screen>;
@@ -30,8 +34,23 @@ export default function ChatsScreen() {
     createChat.mutate({ data: { userIds: [session.id, user.id] } }, { onSuccess: (chat) => { setShowNew(false); router.push(`/chat/${chat.id}`); } });
   }
 
+  function signOut() {
+    setShowProfile(false);
+    logout.mutate(undefined, {
+      onSettled: () => {
+        setSession(null);
+        resetLocalData();
+        queryClient.clear();
+        router.replace('/');
+      },
+    });
+  }
+
+  const profileName = session?.name ?? profile.name ?? 'Old Time User';
+  const profilePhone = session?.phone ?? profile.phone;
+
   const renderChatItem = ({ item }: { item: InboxItem }) => (
-    <Pressable onPress={() => router.push(`/chat/${item.chat.id}`)} style={({ pressed }) => [styles.chatRow, { borderBottomColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 }]}>
+    <Pressable onPress={() => router.push(`/chat/${item.chat.id}`)} style={({ pressed }) => [styles.chatRow, { borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 }]}>
       <Avatar name={item.contact.name} />
       <View style={styles.chatBody}>
         <View style={styles.chatTop}>
@@ -46,18 +65,16 @@ export default function ChatsScreen() {
     </Pressable>
   );
 
-  return <Screen title="Chats" right={<View style={{ flexDirection: 'row' }}><IconButton name="camera-outline" label="Camera" onPress={() => router.push('/camera')} /><IconButton name="create-outline" label="New message" onPress={() => setShowNew(true)} /></View>}>
-    <View style={[styles.searchWrap, { backgroundColor: colors.background }]}>
-      <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Ionicons name="search" size={18} color={colors.mutedForeground} />
-        <TextInput value={search} onChangeText={setSearch} placeholder="Search chats" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
-      </View>
+  return <Screen title="Chats" right={<View style={styles.headerActions}><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="create-outline" label="New message" onPress={() => setShowNew(true)} /></View>}>
+    <View style={[styles.search, { backgroundColor: colors.muted }]}>
+      <Ionicons name="search" size={18} color={colors.mutedForeground} />
+      <TextInput value={search} onChangeText={setSearch} placeholder="Search chats" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
     </View>
-    {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection and pull to refresh." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '700' }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation with someone from your Old Time contacts." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 4 }} refreshControl={<RefreshControl refreshing={Boolean(inbox.isRefetching)} onRefresh={() => void inbox.refetch()} tintColor={colors.primary} />} renderItem={renderChatItem} />}
+    {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection and pull to refresh." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '700' }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation with someone from your Old Time contacts." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100 }} renderItem={renderChatItem} />}
     <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
       <View style={styles.modalShade}>
         <View style={[styles.sheet, { backgroundColor: colors.card }]}>
-          <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>New message</Text><IconButton name="close" color={colors.foreground} onPress={() => setShowNew(false)} /></View>
+          <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>New message</Text><IconButton name="close" onPress={() => setShowNew(false)} /></View>
            {users.isLoading ? <LoadingState /> : (users.data ?? []).filter((user) => user.id !== session?.id).map((user) => (
             <Pressable key={user.id} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
                <Avatar name={user.name} size={42} />
@@ -68,14 +85,46 @@ export default function ChatsScreen() {
         </View>
       </View>
     </Modal>
+
+    <Modal visible={showProfile} transparent animationType="fade" onRequestClose={() => setShowProfile(false)}>
+      <View style={styles.profileOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowProfile(false)} />
+        <View style={[styles.profileCard, { backgroundColor: colors.card }]}>
+          <View style={[styles.profileHero, { backgroundColor: colors.primary }]}>
+            <Pressable onPress={() => setShowProfile(false)} style={styles.profileClose} accessibilityRole="button" accessibilityLabel="Close profile">
+              <Ionicons name="close" size={22} color="#fff" />
+            </Pressable>
+            <Avatar name={profileName} size={72} color={`${colors.primary}CC`} uri={profile.avatarUri} />
+            <Text style={styles.profileName}>{profileName}</Text>
+            {profilePhone ? <Text style={styles.profilePhone}>{profilePhone}</Text> : null}
+          </View>
+          <View style={styles.profileBody}>
+            <Text style={[styles.profileLabel, { color: colors.mutedForeground }]}>ACCOUNT</Text>
+            <View style={[styles.profileStatus, { backgroundColor: colors.muted }]}>
+              <View style={[styles.profileStatusIcon, { backgroundColor: colors.card }]}>
+                <Ionicons name="person-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={styles.profileStatusCopy}>
+                <Text style={[styles.profileStatusTitle, { color: colors.foreground }]}>Available</Text>
+                <Text style={[styles.profileStatusDetail, { color: colors.mutedForeground }]}>Your profile is visible to contacts</Text>
+              </View>
+            </View>
+            <Pressable onPress={signOut} disabled={logout.isPending} style={({ pressed }) => [styles.profileLogout, { opacity: logout.isPending ? 0.5 : pressed ? 0.65 : 1 }]}>
+              <Ionicons name="log-out-outline" size={17} color={colors.destructive} />
+              <Text style={[styles.profileLogoutText, { color: colors.destructive }]}>{logout.isPending ? 'Logging out…' : 'Log out'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   </Screen>;
 }
 
 const styles = StyleSheet.create({
-  searchWrap: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
-  search: { minHeight: 44, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  search: { minHeight: 44, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13, marginBottom: 5 },
   searchInput: { flex: 1, fontSize: 15 },
-  chatRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, marginBottom: 6 },
+  chatRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 2 },
   chatBody: { flex: 1 },
   chatTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   chatName: { fontSize: 15, fontWeight: '700', flex: 1 },
@@ -91,4 +140,19 @@ const styles = StyleSheet.create({
   person: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   personName: { fontSize: 15, fontWeight: '700' },
   personPhone: { fontSize: 12, marginTop: 2 },
+  profileOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.28)' },
+  profileCard: { width: '100%', maxWidth: 360, overflow: 'hidden', borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  profileHero: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 28, paddingBottom: 24 },
+  profileClose: { position: 'absolute', top: 10, right: 10, width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.14)' },
+  profileName: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 12 },
+  profilePhone: { color: 'rgba(255,255,255,0.82)', fontSize: 14, marginTop: 3 },
+  profileBody: { padding: 20 },
+  profileLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 10 },
+  profileStatus: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 12 },
+  profileStatusIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+  profileStatusCopy: { flex: 1 },
+  profileStatusTitle: { fontSize: 15, fontWeight: '700' },
+  profileStatusDetail: { fontSize: 12, marginTop: 2 },
+  profileLogout: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, borderRadius: 12 },
+  profileLogoutText: { fontSize: 15, fontWeight: '700' },
 });
