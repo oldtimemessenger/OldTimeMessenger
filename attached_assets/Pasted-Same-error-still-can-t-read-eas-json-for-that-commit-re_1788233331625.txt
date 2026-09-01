@@ -1,0 +1,17 @@
+Same error — still can't read `eas.json` for that commit ref. This isn't a fluke; it's consistently failing to resolve `eas.json` at that specific git reference, even though we know from the earlier build logs that `eas.json` exists and is valid on other commits in this project's history.
+
+Let me try one more thing — checking if it works with the branch name instead of the raw commit hash, since GitHub-based triggers sometimes resolve refs differently than commit SHAs.Still the same failure, even using the branch name directly. At this point I'm fairly confident this isn't a transient issue — it's telling us something concrete:
+
+**EAS cannot find `eas.json` on the `replit-complete-app` branch at all**, regardless of whether I reference it by branch name or commit SHA. Since we know `eas.json` *does* exist and is valid (we saw it read successfully in the two prior failed builds), the most likely explanations are:
+
+1. **The EAS project's GitHub integration isn't actually pointed at `replit-complete-app`.** It may be watching a different branch (e.g. `main`), so it can't locate the file when asked to build from this ref.
+2. **`replit-complete-app` isn't a real branch on the connected repo** — e.g. it might exist only in a fork, a local Replit workspace, or under a different remote that isn't the one EAS's GitHub App has access to.
+3. **The repo connection itself is broken or repointed** (e.g. GitHub App uninstalled/reinstalled, repo renamed, or the EAS project relinked to a different repo since those last builds ran).
+
+I don't have a tool that can inspect your GitHub App connection or branch list directly, so the fastest way to unblock this is for you to check in the Expo dashboard:
+
+1. Go to your project on expo.dev → **GitHub** tab (or Project Settings → GitHub)
+2. Confirm which **repository** and **branch** are actually linked
+3. Confirm `replit-complete-app` exists on that exact linked repo (not a fork) and that commit `84fccff0…` is really on it
+
+Once you tell me the correct branch/repo, I'll try triggering again right away.
