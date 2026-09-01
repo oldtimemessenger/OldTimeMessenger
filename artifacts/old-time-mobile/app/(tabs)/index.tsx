@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, useListUsers, useLogout, type InboxItem, type User } from '@workspace/api-client-react';
-import { Avatar, EmptyState, IconButton, LoadingState, Screen } from '@/components/ui';
+import { Avatar, EmptyState, IconButton, LoadingState, Screen, StoryAvatar } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useQueryClient } from '@tanstack/react-query';
@@ -79,20 +79,15 @@ export default function ChatsScreen() {
     </Pressable>
   );
 
-  return <Screen title="Chats" left={<IconButton name="radio-outline" label="Watch statuses" onPress={() => router.push('/(tabs)/updates-screen')} />} right={<View style={styles.headerActions}><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="create-outline" label="New message" onPress={() => setShowNew(true)} /></View>}>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.storyDrawer, { borderBottomColor: colors.border }]} contentContainerStyle={styles.storyDrawerContent}>
+  return <Screen title="Chats" left={<IconButton name="albums-outline" label="Open stories" onPress={() => router.push('/(tabs)/updates-screen')} />} right={<View style={styles.headerActions}><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="paper-plane-outline" label="New message" onPress={() => setShowNew(true)} /></View>}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.storyDrawer, { borderBottomColor: colors.border, backgroundColor: colors.card }]} contentContainerStyle={styles.storyDrawerContent}>
       <Pressable onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel="Add your story">
-        <View>
-          <Avatar name={profileName} size={52} color={colors.muted} uri={profile.avatarUri} />
-          <View style={[styles.storyAdd, { backgroundColor: colors.primary, borderColor: colors.background }]}><Ionicons name="add" size={14} color="#fff" /></View>
-        </View>
-        <Text style={[styles.storyName, { color: colors.foreground }]}>Your story</Text>
+        <StoryAvatar name={profileName} color={colors.muted} uri={profile.avatarUri} add />
+        <Text style={[styles.storyName, { color: colors.foreground }]}>My Story</Text>
       </Pressable>
       {stories.filter((story) => !story.viewer.isOwner).map((story) => (
         <Pressable key={story.id} onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel={`Open ${story.author.name}'s story`}>
-          <View style={[styles.storyRing, { borderColor: story.viewer.viewed ? colors.border : colors.primary }]}>
-            <Avatar name={story.author.name} size={48} color={colors.secondary} />
-          </View>
+          <StoryAvatar name={story.author.name} color={colors.secondary} viewed={story.viewer.viewed} />
           <Text style={[styles.storyName, { color: colors.foreground }]} numberOfLines={1}>{story.author.name}</Text>
         </Pressable>
       ))}
@@ -153,12 +148,10 @@ export default function ChatsScreen() {
 
 const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  storyDrawer: { maxHeight: 88, borderBottomWidth: StyleSheet.hairlineWidth },
-  storyDrawerContent: { paddingHorizontal: 14, paddingVertical: 9, gap: 12 },
-  storyItem: { width: 58, alignItems: 'center' },
-  storyRing: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  storyAdd: { position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  storyName: { fontSize: 10, fontWeight: '600', marginTop: 4, width: 58, textAlign: 'center' },
+  storyDrawer: { maxHeight: 98, borderBottomWidth: StyleSheet.hairlineWidth },
+  storyDrawerContent: { paddingHorizontal: 14, paddingVertical: 11, gap: 14 },
+  storyItem: { width: 62, alignItems: 'center' },
+  storyName: { fontSize: 10.5, fontWeight: '700', marginTop: 5, width: 62, textAlign: 'center' },
   search: { minHeight: 44, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13, marginBottom: 5 },
   searchInput: { flex: 1, fontSize: 15 },
   chatRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 2 },
