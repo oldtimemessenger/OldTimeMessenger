@@ -11,8 +11,9 @@ import { useColors } from '@/hooks/useColors';
 import { useLogout } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
+import { setSharingExcluded } from '@/lib/social-api';
 
-type Panel = 'profile' | 'storage' | 'appearance' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
+type Panel = 'profile' | 'socialPrivacy' | 'storage' | 'appearance' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
 
 export default function SettingsScreen() {
   const colors = useColors();
@@ -92,6 +93,7 @@ export default function SettingsScreen() {
   const groups = useMemo(() => ([
     { items: [
       { key: "profile", icon: "person", bg: "#FF7A59", label: "My Profile", value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setPanel('profile'); } },
+      { key: "socialPrivacy", icon: "shield-checkmark", bg: "#5B6EF5", label: "Status and Location Privacy", value: "Friends", onPress: () => setPanel('socialPrivacy') },
     ]},
     { items: [
       { key: "saved", icon: "bookmark", bg: "#4C9CF5", label: "Saved Messages", value: String(savedMessages.length), onPress: () => setPanel('saved') },
@@ -189,6 +191,48 @@ export default function SettingsScreen() {
                 </View>
               ))}
             </View>
+          </DetailShell>
+        );
+
+      case 'socialPrivacy':
+        return (
+          <DetailShell title="Status and Location" onBack={() => setPanel(null)}>
+            <View style={[styles.privacyNotice, { backgroundColor: colors.secondary }]}>
+              <Ionicons name="lock-closed-outline" size={20} color={colors.primary} />
+              <Text style={[styles.privacyNoticeText, { color: colors.foreground }]}>These are your starting choices. Public sharing still requires you to choose Public before each post.</Text>
+            </View>
+            <PanelSection title="Default status audience">
+              {(['public', 'friends', 'followers', 'close_friends', 'private'] as const).map((audience, index, items) => (
+                <AudienceRow key={audience} label={audience === 'public' ? 'Public (choose per update)' : sharingLabel(audience)} value={audience !== 'public' && settings.statusAudience === audience} onPress={() => audience === 'public' ? Alert.alert('Public is always a fresh choice', 'For safety, Public cannot be saved as your default. Choose Public while composing each update.') : updateSettings({ statusAudience: audience })} isLast={index === items.length - 1} />
+              ))}
+            </PanelSection>
+            <PanelSection title="Default location audience">
+              {(['public', 'friends', 'followers', 'private'] as const).map((audience, index, items) => (
+                <AudienceRow key={audience} label={audience === 'public' ? 'Public (choose per pin)' : sharingLabel(audience)} value={audience !== 'public' && settings.locationAudience === audience} onPress={() => audience === 'public' ? Alert.alert('Public is always a fresh choice', 'For safety, Public cannot be saved as your default. Choose Public while composing each location pin.') : updateSettings({ locationAudience: audience })} isLast={index === items.length - 1} />
+              ))}
+            </PanelSection>
+            <PanelSection title="Never share with">
+              {settings.excludedPeople.length === 0 ? (
+                <View style={[styles.excludedEmpty, { backgroundColor: colors.card }]}>
+                  <Ionicons name="eye-off-outline" size={22} color={colors.primary} />
+                  <Text style={[styles.excludedEmptyTitle, { color: colors.foreground }]}>No one is excluded</Text>
+                  <Text style={[styles.excludedEmptyText, { color: colors.mutedForeground }]}>Open someone’s profile card from Updates and choose “Toggle excluded from sharing.”</Text>
+                </View>
+              ) : settings.excludedPeople.map((person, index) => (
+                <View key={person.id} style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: index === settings.excludedPeople.length - 1 ? 'transparent' : colors.border }]}>
+                  <Avatar name={person.name} size={34} color={colors.primary} />
+                  <Text style={[styles.excludedName, { color: colors.foreground }]}>{person.name}</Text>
+                  <Pressable onPress={() => {
+                    if (!session?.authToken) return;
+                    void setSharingExcluded(session.authToken, person.id, false).then(() => {
+                      updateSettings({ excludedPeople: settings.excludedPeople.filter((item) => item.id !== person.id) });
+                    }).catch(() => Alert.alert('Sharing list not updated', 'Please try again.'));
+                  }} accessibilityRole="button" accessibilityLabel={`Remove ${person.name} from excluded people`}>
+                    <Text style={{ color: colors.primary, fontWeight: '700' }}>Remove</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </PanelSection>
           </DetailShell>
         );
 
@@ -335,8 +379,8 @@ export default function SettingsScreen() {
 function SettingRow({ item, isLast, colors }: any) {
   return (
     <Pressable onPress={item.onPress} style={({pressed}) => [styles.settingRow, { borderBottomColor: isLast ? 'transparent' : colors.border, backgroundColor: pressed ? colors.muted : 'transparent' }]}>
-       <View style={[styles.settingIcon, { backgroundColor: item.bg }]}>
-         <Ionicons name={item.icon as any} size={16} color="#fff" />
+       <View style={[styles.settingIcon, { backgroundColor: item.danger ? `${colors.destructive}16` : colors.muted }]}>
+          <Ionicons name={item.icon as any} size={17} color={item.danger ? colors.destructive : colors.foreground} />
        </View>
        <Text style={[styles.settingLabel, { color: item.danger ? colors.destructive : colors.foreground }]}>{item.label}</Text>
        {item.value ? <Text style={[styles.settingValue, { color: colors.mutedForeground }]}>{item.value}</Text> : null}
@@ -378,6 +422,22 @@ function PanelToggleRow({ label, sub, value, onChange, isLast }: any) {
   )
 }
 
+function AudienceRow({ label, value, onPress, isLast }: { label: string; value: boolean; onPress: () => void; isLast: boolean }) {
+  const colors = useColors();
+  return (
+    <Pressable onPress={onPress} style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: isLast ? 'transparent' : colors.border }]}>
+      <Text style={[styles.panelRowLabel, { color: colors.foreground, flex: 1 }]}>{label}</Text>
+      <View style={[styles.radio, { borderColor: value ? colors.primary : colors.border }]}>{value ? <View style={[styles.radioDot, { backgroundColor: colors.primary }]} /> : null}</View>
+    </Pressable>
+  );
+}
+
+function sharingLabel(audience: string) {
+  if (audience === 'close_friends') return 'Close friends';
+  if (audience === 'private') return 'Only me';
+  return audience.charAt(0).toUpperCase() + audience.slice(1);
+}
+
 function PanelSection({ title, children }: any) {
   const colors = useColors();
   return (
@@ -414,6 +474,14 @@ const styles = StyleSheet.create({
   panelRowLabel: { fontSize: 16 },
   panelRowSub: { fontSize: 13, marginTop: 2 },
   panelActionText: { fontSize: 16 },
+  privacyNotice: { borderRadius: 12, padding: 13, marginBottom: 20, flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  privacyNoticeText: { flex: 1, fontSize: 13, lineHeight: 18 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  radioDot: { width: 12, height: 12, borderRadius: 6 },
+  excludedEmpty: { alignItems: 'center', padding: 24 },
+  excludedEmptyTitle: { fontSize: 15, fontWeight: '800', marginTop: 8 },
+  excludedEmptyText: { fontSize: 12, lineHeight: 17, marginTop: 5, textAlign: 'center' },
+  excludedName: { flex: 1, fontSize: 15, fontWeight: '700', marginLeft: 10 },
 
   profileEditor: { alignItems: 'center', paddingVertical: 24 },
   profileEditorAvatar: { position: 'relative', marginBottom: 16 },
