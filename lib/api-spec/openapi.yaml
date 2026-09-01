@@ -629,6 +629,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FollowActionResult"
+  /social/privacy/exclusions:
+    get:
+      operationId: getSocialPrivacyExclusions
+      tags: [social]
+      summary: List people excluded from the signed-in user's social sharing
+      responses:
+        "200":
+          description: Excluded people
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialUserList"
+  /social/privacy/exclusions/{userId}:
+    put:
+      operationId: excludeSocialPrivacyUser
+      tags: [social]
+      summary: Exclude a person from all social and location sharing
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Person excluded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+    delete:
+      operationId: includeSocialPrivacyUser
+      tags: [social]
+      summary: Remove a person from social and location sharing exclusions
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Person included
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
   /social/users/{userId}/block:
     put:
       operationId: blockSocialUser
@@ -1366,6 +1405,7 @@ components:
         visibility:
           type: string
           enum: [public, friends, followers, private]
+          default: friends
         media:
           type: array
           items:
@@ -1427,7 +1467,7 @@ components:
         visibility:
           type: string
           enum: [public, friends, followers, private]
-          default: public
+          default: friends
         media:
           type: array
           maxItems: 8
