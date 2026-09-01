@@ -1098,6 +1098,319 @@ export const GetSavedSocialPostsResponse = zod.object({
 
 
 /**
+ * @summary List visible unexpired pins near a coordinate
+ */
+export const getNearbyMapPinsQueryLatitudeMin = -90;
+export const getNearbyMapPinsQueryLatitudeMax = 90;
+
+export const getNearbyMapPinsQueryLongitudeMin = -180;
+export const getNearbyMapPinsQueryLongitudeMax = 180;
+
+export const getNearbyMapPinsQueryRadiusKmDefault = 25;
+export const getNearbyMapPinsQueryRadiusKmMin = 0.1;
+export const getNearbyMapPinsQueryRadiusKmMax = 50;
+
+
+
+export const GetNearbyMapPinsQueryParams = zod.object({
+  "latitude": zod.coerce.number().min(getNearbyMapPinsQueryLatitudeMin).max(getNearbyMapPinsQueryLatitudeMax),
+  "longitude": zod.coerce.number().min(getNearbyMapPinsQueryLongitudeMin).max(getNearbyMapPinsQueryLongitudeMax),
+  "radiusKm": zod.coerce.number().min(getNearbyMapPinsQueryRadiusKmMin).max(getNearbyMapPinsQueryRadiusKmMax).default(getNearbyMapPinsQueryRadiusKmDefault)
+})
+
+export const GetNearbyMapPinsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "authorId": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "latitude": zod.number(),
+  "longitude": zod.number(),
+  "caption": zod.string().nullable(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "expiresAt": zod.number().nullable(),
+  "distanceKm": zod.number(),
+  "counts": zod.object({
+  "reactions": zod.number(),
+  "comments": zod.number(),
+  "saves": zod.number()
+}),
+  "viewer": zod.object({
+  "reacted": zod.boolean(),
+  "saved": zod.boolean()
+})
+}))
+})
+
+
+/**
+ * @summary Explicitly post the caller's chosen location
+ */
+export const createMapPinBodyLatitudeMin = -90;
+export const createMapPinBodyLatitudeMax = 90;
+
+export const createMapPinBodyLongitudeMin = -180;
+export const createMapPinBodyLongitudeMax = 180;
+
+export const createMapPinBodyCaptionMax = 280;
+
+
+
+export const CreateMapPinBody = zod.object({
+  "latitude": zod.number().min(createMapPinBodyLatitudeMin).max(createMapPinBodyLatitudeMax),
+  "longitude": zod.number().min(createMapPinBodyLongitudeMin).max(createMapPinBodyLongitudeMax),
+  "caption": zod.string().max(createMapPinBodyCaptionMax).optional(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "expiresAt": zod.number().nullish()
+})
+
+export const CreateMapPinResponse = zod.object({
+  "id": zod.number(),
+  "authorId": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "latitude": zod.number(),
+  "longitude": zod.number(),
+  "caption": zod.string().nullable(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "expiresAt": zod.number().nullable(),
+  "distanceKm": zod.number(),
+  "counts": zod.object({
+  "reactions": zod.number(),
+  "comments": zod.number(),
+  "saves": zod.number()
+}),
+  "viewer": zod.object({
+  "reacted": zod.boolean(),
+  "saved": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Update a pin owned by the caller
+ */
+
+
+
+export const UpdateMapPinParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const updateMapPinBodyLatitudeMin = -90;
+export const updateMapPinBodyLatitudeMax = 90;
+
+export const updateMapPinBodyLongitudeMin = -180;
+export const updateMapPinBodyLongitudeMax = 180;
+
+export const updateMapPinBodyCaptionMax = 280;
+
+
+
+export const UpdateMapPinBody = zod.object({
+  "latitude": zod.number().min(updateMapPinBodyLatitudeMin).max(updateMapPinBodyLatitudeMax).optional(),
+  "longitude": zod.number().min(updateMapPinBodyLongitudeMin).max(updateMapPinBodyLongitudeMax).optional(),
+  "caption": zod.string().max(updateMapPinBodyCaptionMax).optional(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']).optional(),
+  "expiresAt": zod.number().nullish()
+})
+
+export const UpdateMapPinResponse = zod.object({
+  "id": zod.number(),
+  "authorId": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "latitude": zod.number(),
+  "longitude": zod.number(),
+  "caption": zod.string().nullable(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "expiresAt": zod.number().nullable(),
+  "distanceKm": zod.number(),
+  "counts": zod.object({
+  "reactions": zod.number(),
+  "comments": zod.number(),
+  "saves": zod.number()
+}),
+  "viewer": zod.object({
+  "reacted": zod.boolean(),
+  "saved": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Delete a pin owned by the caller
+ */
+
+
+
+export const DeleteMapPinParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const DeleteMapPinResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary React to a visible pin
+ */
+
+
+
+export const ReactToMapPinParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const ReactToMapPinResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a pin reaction
+ */
+
+
+
+export const RemoveMapPinReactionParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const RemoveMapPinReactionResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Save a visible pin
+ */
+
+
+
+export const SaveMapPinParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const SaveMapPinResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a saved pin
+ */
+
+
+
+export const RemoveSavedMapPinParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const RemoveSavedMapPinResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary List comments on a visible pin
+ */
+
+
+
+export const GetMapPinCommentsParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const GetMapPinCommentsResponseItem = zod.object({
+  "id": zod.number(),
+  "pinId": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "content": zod.string(),
+  "createdAt": zod.number()
+})
+export const GetMapPinCommentsResponse = zod.array(GetMapPinCommentsResponseItem)
+
+
+/**
+ * @summary Comment on a visible pin
+ */
+
+
+
+export const CreateMapPinCommentParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const createMapPinCommentBodyContentMax = 1000;
+
+
+
+export const CreateMapPinCommentBody = zod.object({
+  "content": zod.string().min(1).max(createMapPinCommentBodyContentMax)
+})
+
+export const CreateMapPinCommentResponse = zod.object({
+  "id": zod.number(),
+  "pinId": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "content": zod.string(),
+  "createdAt": zod.number()
+})
+
+
+/**
+ * @summary Report a visible pin
+ */
+
+
+
+export const ReportMapPinParams = zod.object({
+  "pinId": zod.coerce.number().min(1)
+})
+
+export const ReportMapPinBody = zod.object({
+  "reason": zod.enum(['spam', 'harassment', 'other'])
+})
+
+export const ReportMapPinResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
  * @summary Request a protected media upload endpoint
  */
 

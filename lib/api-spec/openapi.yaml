@@ -22,6 +22,8 @@ tags:
     description: Private media upload and serving
   - name: social
     description: Persisted Updates feed, relationships, conversations, and moderation
+  - name: map
+    description: Opt-in location pins and nearby discovery
 paths:
   /healthz:
     get:
@@ -711,6 +713,89 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SocialPostList"
+  /map/pins/nearby:
+    get:
+      operationId: getNearbyMapPins
+      tags: [map]
+      summary: List visible unexpired pins near a coordinate
+      parameters:
+        - { name: latitude, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: longitude, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: radiusKm, in: query, schema: { type: number, minimum: 0.1, maximum: 50, default: 25 } }
+      responses:
+        "200": { description: Nearby pins, content: { application/json: { schema: { $ref: "#/components/schemas/MapPinList" } } } }
+  /map/pins:
+    post:
+      operationId: createMapPin
+      tags: [map]
+      summary: Explicitly post the caller's chosen location
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MapPinInput" } } } }
+      responses:
+        "201": { description: Pin created, content: { application/json: { schema: { $ref: "#/components/schemas/MapPin" } } } }
+  /map/pins/{pinId}:
+    patch:
+      operationId: updateMapPin
+      tags: [map]
+      summary: Update a pin owned by the caller
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MapPinUpdate" } } } }
+      responses:
+        "200": { description: Pin updated, content: { application/json: { schema: { $ref: "#/components/schemas/MapPin" } } } }
+    delete:
+      operationId: deleteMapPin
+      tags: [map]
+      summary: Delete a pin owned by the caller
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      responses:
+        "200": { description: Deleted, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } }
+  /map/pins/{pinId}/reaction:
+    put:
+      operationId: reactToMapPin
+      tags: [map]
+      summary: React to a visible pin
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      responses: { "200": { description: Reacted, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
+    delete:
+      operationId: removeMapPinReaction
+      tags: [map]
+      summary: Remove a pin reaction
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      responses: { "200": { description: Removed, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
+  /map/pins/{pinId}/save:
+    put:
+      operationId: saveMapPin
+      tags: [map]
+      summary: Save a visible pin
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      responses: { "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
+    delete:
+      operationId: removeSavedMapPin
+      tags: [map]
+      summary: Remove a saved pin
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      responses: { "200": { description: Removed, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
+  /map/pins/{pinId}/comments:
+    get:
+      operationId: getMapPinComments
+      tags: [map]
+      summary: List comments on a visible pin
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      responses: { "200": { description: Comments, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/MapComment" } } } } } }
+    post:
+      operationId: createMapPinComment
+      tags: [map]
+      summary: Comment on a visible pin
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MapCommentInput" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/MapComment" } } } } }
+  /map/pins/{pinId}/report:
+    post:
+      operationId: reportMapPin
+      tags: [map]
+      summary: Report a visible pin
+      parameters: [{ $ref: "#/components/parameters/PinId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MapPinReportInput" } } } }
+      responses: { "201": { description: Report accepted, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -818,6 +903,13 @@ components:
         minimum: 1
     CommentId:
       name: commentId
+      in: path
+      required: true
+      schema:
+        type: number
+        minimum: 1
+    PinId:
+      name: pinId
       in: path
       required: true
       schema:
@@ -1324,4 +1416,80 @@ components:
             muted:
               type: boolean
           required: [muted]
+    MapUser:
+      type: object
+      properties:
+        id: { type: number }
+        name: { type: string }
+        username: { type: string }
+      required: [id, name, username]
+    MapPin:
+      type: object
+      properties:
+        id: { type: number }
+        authorId: { type: number }
+        author: { $ref: "#/components/schemas/MapUser" }
+        latitude: { type: number }
+        longitude: { type: number }
+        caption: { type: [string, "null"] }
+        visibility: { type: string, enum: [public, friends, followers, private] }
+        createdAt: { type: number }
+        updatedAt: { type: number }
+        expiresAt: { type: [number, "null"] }
+        distanceKm: { type: number }
+        counts:
+          type: object
+          properties:
+            reactions: { type: number }
+            comments: { type: number }
+            saves: { type: number }
+          required: [reactions, comments, saves]
+        viewer:
+          type: object
+          properties:
+            reacted: { type: boolean }
+            saved: { type: boolean }
+          required: [reacted, saved]
+      required: [id, authorId, author, latitude, longitude, caption, visibility, createdAt, updatedAt, expiresAt, distanceKm, counts, viewer]
+    MapPinList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/MapPin" } }
+      required: [items]
+    MapPinInput:
+      type: object
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        caption: { type: string, maxLength: 280 }
+        visibility: { type: string, enum: [public, friends, followers, private] }
+        expiresAt: { type: [number, "null"] }
+      required: [latitude, longitude, visibility]
+    MapPinUpdate:
+      type: object
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        caption: { type: string, maxLength: 280 }
+        visibility: { type: string, enum: [public, friends, followers, private] }
+        expiresAt: { type: [number, "null"] }
+    MapComment:
+      type: object
+      properties:
+        id: { type: number }
+        pinId: { type: number }
+        author: { $ref: "#/components/schemas/MapUser" }
+        content: { type: string }
+        createdAt: { type: number }
+      required: [id, pinId, author, content, createdAt]
+    MapCommentInput:
+      type: object
+      properties:
+        content: { type: string, minLength: 1, maxLength: 1000 }
+      required: [content]
+    MapPinReportInput:
+      type: object
+      properties:
+        reason: { type: string, enum: [spam, harassment, other] }
+      required: [reason]
 

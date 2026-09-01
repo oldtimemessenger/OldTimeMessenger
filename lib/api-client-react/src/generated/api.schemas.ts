@@ -388,6 +388,140 @@ export type MuteActionResult = ActionResult & {
   muted: boolean;
 };
 
+export interface MapUser {
+  id: number;
+  name: string;
+  username: string;
+}
+
+export type MapPinVisibility = typeof MapPinVisibility[keyof typeof MapPinVisibility];
+
+
+export const MapPinVisibility = {
+  public: 'public',
+  friends: 'friends',
+  followers: 'followers',
+  private: 'private',
+} as const;
+
+export type MapPinCounts = {
+  reactions: number;
+  comments: number;
+  saves: number;
+};
+
+export type MapPinViewer = {
+  reacted: boolean;
+  saved: boolean;
+};
+
+export interface MapPin {
+  id: number;
+  authorId: number;
+  author: MapUser;
+  latitude: number;
+  longitude: number;
+  /** @nullable */
+  caption: string | null;
+  visibility: MapPinVisibility;
+  createdAt: number;
+  updatedAt: number;
+  /** @nullable */
+  expiresAt: number | null;
+  distanceKm: number;
+  counts: MapPinCounts;
+  viewer: MapPinViewer;
+}
+
+export interface MapPinList {
+  items: MapPin[];
+}
+
+export type MapPinInputVisibility = typeof MapPinInputVisibility[keyof typeof MapPinInputVisibility];
+
+
+export const MapPinInputVisibility = {
+  public: 'public',
+  friends: 'friends',
+  followers: 'followers',
+  private: 'private',
+} as const;
+
+export interface MapPinInput {
+  /**
+     * @minimum -90
+     * @maximum 90
+     */
+  latitude: number;
+  /**
+     * @minimum -180
+     * @maximum 180
+     */
+  longitude: number;
+  /** @maxLength 280 */
+  caption?: string;
+  visibility: MapPinInputVisibility;
+  /** @nullable */
+  expiresAt?: number | null;
+}
+
+export type MapPinUpdateVisibility = typeof MapPinUpdateVisibility[keyof typeof MapPinUpdateVisibility];
+
+
+export const MapPinUpdateVisibility = {
+  public: 'public',
+  friends: 'friends',
+  followers: 'followers',
+  private: 'private',
+} as const;
+
+export interface MapPinUpdate {
+  /**
+     * @minimum -90
+     * @maximum 90
+     */
+  latitude?: number;
+  /**
+     * @minimum -180
+     * @maximum 180
+     */
+  longitude?: number;
+  /** @maxLength 280 */
+  caption?: string;
+  visibility?: MapPinUpdateVisibility;
+  /** @nullable */
+  expiresAt?: number | null;
+}
+
+export interface MapComment {
+  id: number;
+  pinId: number;
+  author: MapUser;
+  content: string;
+  createdAt: number;
+}
+
+export interface MapCommentInput {
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  content: string;
+}
+
+export type MapPinReportInputReason = typeof MapPinReportInputReason[keyof typeof MapPinReportInputReason];
+
+
+export const MapPinReportInputReason = {
+  spam: 'spam',
+  harassment: 'harassment',
+  other: 'other',
+} as const;
+
+export interface MapPinReportInput {
+  reason: MapPinReportInputReason;
+}
+
 export type ViewerIdParameter = number;
 
 export type ListUsersParams = {
@@ -428,5 +562,23 @@ export type SearchSocialParams = {
  * @maxLength 80
  */
 q: string;
+};
+
+export type GetNearbyMapPinsParams = {
+/**
+ * @minimum -90
+ * @maximum 90
+ */
+latitude: number;
+/**
+ * @minimum -180
+ * @maximum 180
+ */
+longitude: number;
+/**
+ * @minimum 0.1
+ * @maximum 50
+ */
+radiusKm?: number;
 };
 

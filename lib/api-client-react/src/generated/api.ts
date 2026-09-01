@@ -29,12 +29,20 @@ import type {
   DirectChat,
   ErrorResponse,
   FollowActionResult,
+  GetNearbyMapPinsParams,
   GetSocialFeedParams,
   HealthStatus,
   InboxItem,
   ListMessagesParams,
   ListUsersParams,
   LogoutResponse,
+  MapComment,
+  MapCommentInput,
+  MapPin,
+  MapPinInput,
+  MapPinList,
+  MapPinReportInput,
+  MapPinUpdate,
   Message,
   MessageActionInput,
   MessageInput,
@@ -2894,6 +2902,809 @@ export function useGetSavedSocialPosts<TData = Awaited<ReturnType<typeof getSave
 
 
 
+
+export const getGetNearbyMapPinsUrl = (params: GetNearbyMapPinsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/map/pins/nearby?${stringifiedParams}` : `/api/map/pins/nearby`
+}
+
+/**
+ * @summary List visible unexpired pins near a coordinate
+ */
+export const getNearbyMapPins = async (params: GetNearbyMapPinsParams, options?: Parameters<typeof customFetch>[1]): Promise<MapPinList> => {
+
+  return customFetch<MapPinList>(getGetNearbyMapPinsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNearbyMapPinsQueryKey = (params?: GetNearbyMapPinsParams,) => {
+    return [
+    `/api/map/pins/nearby`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetNearbyMapPinsQueryOptions = <TData = Awaited<ReturnType<typeof getNearbyMapPins>>, TError = ErrorType<unknown>>(params: GetNearbyMapPinsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNearbyMapPins>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNearbyMapPinsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNearbyMapPins>>> = ({ signal }) => getNearbyMapPins(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNearbyMapPins>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNearbyMapPinsQueryResult = NonNullable<Awaited<ReturnType<typeof getNearbyMapPins>>>
+export type GetNearbyMapPinsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List visible unexpired pins near a coordinate
+ */
+
+export function useGetNearbyMapPins<TData = Awaited<ReturnType<typeof getNearbyMapPins>>, TError = ErrorType<unknown>>(
+ params: GetNearbyMapPinsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNearbyMapPins>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNearbyMapPinsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateMapPinUrl = () => {
+
+
+
+
+  return `/api/map/pins`
+}
+
+/**
+ * @summary Explicitly post the caller's chosen location
+ */
+export const createMapPin = async (mapPinInput: MapPinInput, options?: Parameters<typeof customFetch>[1]): Promise<MapPin> => {
+
+  return customFetch<MapPin>(getCreateMapPinUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mapPinInput)
+  }
+);}
+
+
+
+
+
+export const getCreateMapPinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMapPin>>, TError,{data: BodyType<MapPinInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMapPin>>, TError,{data: BodyType<MapPinInput>}, TContext> => {
+
+const mutationKey = ['createMapPin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMapPin>>, {data: BodyType<MapPinInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createMapPin(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMapPinMutationResult = NonNullable<Awaited<ReturnType<typeof createMapPin>>>
+    export type CreateMapPinMutationBody = BodyType<MapPinInput>
+    export type CreateMapPinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Explicitly post the caller's chosen location
+ */
+export const useCreateMapPin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMapPin>>, TError,{data: BodyType<MapPinInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createMapPin>>,
+        TError,
+        {data: BodyType<MapPinInput>},
+        TContext
+      > => {
+      return useMutation(getCreateMapPinMutationOptions(options));
+    }
+
+export const getUpdateMapPinUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}`
+}
+
+/**
+ * @summary Update a pin owned by the caller
+ */
+export const updateMapPin = async (pinId: number,
+    mapPinUpdate: MapPinUpdate, options?: Parameters<typeof customFetch>[1]): Promise<MapPin> => {
+
+  return customFetch<MapPin>(getUpdateMapPinUrl(pinId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mapPinUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateMapPinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMapPin>>, TError,{pinId: number;data: BodyType<MapPinUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateMapPin>>, TError,{pinId: number;data: BodyType<MapPinUpdate>}, TContext> => {
+
+const mutationKey = ['updateMapPin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMapPin>>, {pinId: number;data: BodyType<MapPinUpdate>}> = (props) => {
+          const {pinId,data} = props ?? {};
+
+          return  updateMapPin(pinId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateMapPinMutationResult = NonNullable<Awaited<ReturnType<typeof updateMapPin>>>
+    export type UpdateMapPinMutationBody = BodyType<MapPinUpdate>
+    export type UpdateMapPinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a pin owned by the caller
+ */
+export const useUpdateMapPin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMapPin>>, TError,{pinId: number;data: BodyType<MapPinUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateMapPin>>,
+        TError,
+        {pinId: number;data: BodyType<MapPinUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateMapPinMutationOptions(options));
+    }
+
+export const getDeleteMapPinUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}`
+}
+
+/**
+ * @summary Delete a pin owned by the caller
+ */
+export const deleteMapPin = async (pinId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActionResult> => {
+
+  return customFetch<ActionResult>(getDeleteMapPinUrl(pinId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteMapPinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMapPin>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteMapPin>>, TError,{pinId: number}, TContext> => {
+
+const mutationKey = ['deleteMapPin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteMapPin>>, {pinId: number}> = (props) => {
+          const {pinId} = props ?? {};
+
+          return  deleteMapPin(pinId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteMapPinMutationResult = NonNullable<Awaited<ReturnType<typeof deleteMapPin>>>
+
+    export type DeleteMapPinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a pin owned by the caller
+ */
+export const useDeleteMapPin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMapPin>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteMapPin>>,
+        TError,
+        {pinId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteMapPinMutationOptions(options));
+    }
+
+export const getReactToMapPinUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}/reaction`
+}
+
+/**
+ * @summary React to a visible pin
+ */
+export const reactToMapPin = async (pinId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActiveActionResult> => {
+
+  return customFetch<ActiveActionResult>(getReactToMapPinUrl(pinId),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+);}
+
+
+
+
+
+export const getReactToMapPinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reactToMapPin>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reactToMapPin>>, TError,{pinId: number}, TContext> => {
+
+const mutationKey = ['reactToMapPin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reactToMapPin>>, {pinId: number}> = (props) => {
+          const {pinId} = props ?? {};
+
+          return  reactToMapPin(pinId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReactToMapPinMutationResult = NonNullable<Awaited<ReturnType<typeof reactToMapPin>>>
+
+    export type ReactToMapPinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary React to a visible pin
+ */
+export const useReactToMapPin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reactToMapPin>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reactToMapPin>>,
+        TError,
+        {pinId: number},
+        TContext
+      > => {
+      return useMutation(getReactToMapPinMutationOptions(options));
+    }
+
+export const getRemoveMapPinReactionUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}/reaction`
+}
+
+/**
+ * @summary Remove a pin reaction
+ */
+export const removeMapPinReaction = async (pinId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActiveActionResult> => {
+
+  return customFetch<ActiveActionResult>(getRemoveMapPinReactionUrl(pinId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveMapPinReactionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeMapPinReaction>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeMapPinReaction>>, TError,{pinId: number}, TContext> => {
+
+const mutationKey = ['removeMapPinReaction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeMapPinReaction>>, {pinId: number}> = (props) => {
+          const {pinId} = props ?? {};
+
+          return  removeMapPinReaction(pinId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveMapPinReactionMutationResult = NonNullable<Awaited<ReturnType<typeof removeMapPinReaction>>>
+
+    export type RemoveMapPinReactionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove a pin reaction
+ */
+export const useRemoveMapPinReaction = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeMapPinReaction>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeMapPinReaction>>,
+        TError,
+        {pinId: number},
+        TContext
+      > => {
+      return useMutation(getRemoveMapPinReactionMutationOptions(options));
+    }
+
+export const getSaveMapPinUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}/save`
+}
+
+/**
+ * @summary Save a visible pin
+ */
+export const saveMapPin = async (pinId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActiveActionResult> => {
+
+  return customFetch<ActiveActionResult>(getSaveMapPinUrl(pinId),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+);}
+
+
+
+
+
+export const getSaveMapPinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveMapPin>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveMapPin>>, TError,{pinId: number}, TContext> => {
+
+const mutationKey = ['saveMapPin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveMapPin>>, {pinId: number}> = (props) => {
+          const {pinId} = props ?? {};
+
+          return  saveMapPin(pinId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveMapPinMutationResult = NonNullable<Awaited<ReturnType<typeof saveMapPin>>>
+
+    export type SaveMapPinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save a visible pin
+ */
+export const useSaveMapPin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveMapPin>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveMapPin>>,
+        TError,
+        {pinId: number},
+        TContext
+      > => {
+      return useMutation(getSaveMapPinMutationOptions(options));
+    }
+
+export const getRemoveSavedMapPinUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}/save`
+}
+
+/**
+ * @summary Remove a saved pin
+ */
+export const removeSavedMapPin = async (pinId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActiveActionResult> => {
+
+  return customFetch<ActiveActionResult>(getRemoveSavedMapPinUrl(pinId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveSavedMapPinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeSavedMapPin>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeSavedMapPin>>, TError,{pinId: number}, TContext> => {
+
+const mutationKey = ['removeSavedMapPin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeSavedMapPin>>, {pinId: number}> = (props) => {
+          const {pinId} = props ?? {};
+
+          return  removeSavedMapPin(pinId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveSavedMapPinMutationResult = NonNullable<Awaited<ReturnType<typeof removeSavedMapPin>>>
+
+    export type RemoveSavedMapPinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove a saved pin
+ */
+export const useRemoveSavedMapPin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeSavedMapPin>>, TError,{pinId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeSavedMapPin>>,
+        TError,
+        {pinId: number},
+        TContext
+      > => {
+      return useMutation(getRemoveSavedMapPinMutationOptions(options));
+    }
+
+export const getGetMapPinCommentsUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}/comments`
+}
+
+/**
+ * @summary List comments on a visible pin
+ */
+export const getMapPinComments = async (pinId: number, options?: Parameters<typeof customFetch>[1]): Promise<MapComment[]> => {
+
+  return customFetch<MapComment[]>(getGetMapPinCommentsUrl(pinId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMapPinCommentsQueryKey = (pinId: number,) => {
+    return [
+    `/api/map/pins/${pinId}/comments`
+    ] as const;
+    }
+
+
+export const getGetMapPinCommentsQueryOptions = <TData = Awaited<ReturnType<typeof getMapPinComments>>, TError = ErrorType<unknown>>(pinId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMapPinComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMapPinCommentsQueryKey(pinId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMapPinComments>>> = ({ signal }) => getMapPinComments(pinId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: pinId !== null && pinId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMapPinComments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMapPinCommentsQueryResult = NonNullable<Awaited<ReturnType<typeof getMapPinComments>>>
+export type GetMapPinCommentsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List comments on a visible pin
+ */
+
+export function useGetMapPinComments<TData = Awaited<ReturnType<typeof getMapPinComments>>, TError = ErrorType<unknown>>(
+ pinId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMapPinComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMapPinCommentsQueryOptions(pinId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateMapPinCommentUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}/comments`
+}
+
+/**
+ * @summary Comment on a visible pin
+ */
+export const createMapPinComment = async (pinId: number,
+    mapCommentInput: MapCommentInput, options?: Parameters<typeof customFetch>[1]): Promise<MapComment> => {
+
+  return customFetch<MapComment>(getCreateMapPinCommentUrl(pinId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mapCommentInput)
+  }
+);}
+
+
+
+
+
+export const getCreateMapPinCommentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMapPinComment>>, TError,{pinId: number;data: BodyType<MapCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMapPinComment>>, TError,{pinId: number;data: BodyType<MapCommentInput>}, TContext> => {
+
+const mutationKey = ['createMapPinComment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMapPinComment>>, {pinId: number;data: BodyType<MapCommentInput>}> = (props) => {
+          const {pinId,data} = props ?? {};
+
+          return  createMapPinComment(pinId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMapPinCommentMutationResult = NonNullable<Awaited<ReturnType<typeof createMapPinComment>>>
+    export type CreateMapPinCommentMutationBody = BodyType<MapCommentInput>
+    export type CreateMapPinCommentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Comment on a visible pin
+ */
+export const useCreateMapPinComment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMapPinComment>>, TError,{pinId: number;data: BodyType<MapCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createMapPinComment>>,
+        TError,
+        {pinId: number;data: BodyType<MapCommentInput>},
+        TContext
+      > => {
+      return useMutation(getCreateMapPinCommentMutationOptions(options));
+    }
+
+export const getReportMapPinUrl = (pinId: number,) => {
+
+
+
+
+  return `/api/map/pins/${pinId}/report`
+}
+
+/**
+ * @summary Report a visible pin
+ */
+export const reportMapPin = async (pinId: number,
+    mapPinReportInput: MapPinReportInput, options?: Parameters<typeof customFetch>[1]): Promise<ActionResult> => {
+
+  return customFetch<ActionResult>(getReportMapPinUrl(pinId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mapPinReportInput)
+  }
+);}
+
+
+
+
+
+export const getReportMapPinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportMapPin>>, TError,{pinId: number;data: BodyType<MapPinReportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reportMapPin>>, TError,{pinId: number;data: BodyType<MapPinReportInput>}, TContext> => {
+
+const mutationKey = ['reportMapPin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reportMapPin>>, {pinId: number;data: BodyType<MapPinReportInput>}> = (props) => {
+          const {pinId,data} = props ?? {};
+
+          return  reportMapPin(pinId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReportMapPinMutationResult = NonNullable<Awaited<ReturnType<typeof reportMapPin>>>
+    export type ReportMapPinMutationBody = BodyType<MapPinReportInput>
+    export type ReportMapPinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Report a visible pin
+ */
+export const useReportMapPin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportMapPin>>, TError,{pinId: number;data: BodyType<MapPinReportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reportMapPin>>,
+        TError,
+        {pinId: number;data: BodyType<MapPinReportInput>},
+        TContext
+      > => {
+      return useMutation(getReportMapPinMutationOptions(options));
+    }
 
 export const getRequestUploadUrlUrl = () => {
 
