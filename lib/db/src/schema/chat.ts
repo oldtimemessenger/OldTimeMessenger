@@ -119,6 +119,8 @@ export const uploadSlotsTable = pgTable(
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
     expiresAt: pgBigint("expires_at", { mode: "number" }).notNull(),
     messageId: integer("message_id"),
+    referenceType: text("reference_type"),
+    referenceId: integer("reference_id"),
   },
   (table) => ({
     objectPathIndex: uniqueIndex("chat_upload_slots_object_path_idx").on(table.objectPath),

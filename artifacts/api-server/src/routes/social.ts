@@ -488,8 +488,13 @@ router.post("/social/posts", async (req, res): Promise<void> => {
         linkDescription: input.linkDescription ?? null, linkImageUrl: input.linkImageUrl ?? null,
         createdAt: timestamp, updatedAt: timestamp,
       }).returning();
-      if (claimedUploadIds.length) await tx.update(uploadSlotsTable).set({ status: "committed" })
-        .where(and(inArray(uploadSlotsTable.id, claimedUploadIds), eq(uploadSlotsTable.status, "committing")));
+      if (claimedUploadIds.length) {
+        const committed = await tx.update(uploadSlotsTable)
+          .set({ status: "committed", referenceType: "social_post", referenceId: inserted[0].id })
+          .where(and(inArray(uploadSlotsTable.id, claimedUploadIds), eq(uploadSlotsTable.status, "committing")))
+          .returning({ id: uploadSlotsTable.id });
+        if (committed.length !== claimedUploadIds.length) throw new Error("UPLOAD_COMMIT_CONFLICT");
+      }
       return inserted;
     });
   } catch {
@@ -1018,7 +1023,7 @@ router.get("/social/users/:userId/card", async (req, res): Promise<void> => {
     followingCount: Number(following[0]?.count ?? 0),
     following: follow.length > 0,
     muted: muted.length > 0,
-    canMessage: true,
+    canMessage: !(await isBlocked(viewerId, targetId)),
   });
 });
 
@@ -1131,18 +1136,61 @@ router.post("/social/stories", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Add text or media before publishing a story." }); return;
   }
   const input = parsed.data;
-  if (input.media) {
-    const [upload] = await db.select().from(uploadSlotsTable).where(and(eq(uploadSlotsTable.objectPath, input.media.objectPath), eq(uploadSlotsTable.userId, viewerId), eq(uploadSlotsTable.status, "uploaded"))).limit(1);
-    if (!upload || upload.contentType !== input.media.mimeType.toLowerCase()) {
-      res.status(400).json({ error: "Story media must be an uploaded file you own." }); return;
-    }
-  }
   const now = Date.now();
   const expiresAt = input.expiresAt ?? now + 24 * 60 * 60 * 1000;
   if (expiresAt <= now || expiresAt > now + 7 * 24 * 60 * 60 * 1000) {
     res.status(400).json({ error: "Story expiry must be in the next seven days." }); return;
   }
-  const [created] = await db.insert(socialStoriesTable).values({ authorId: viewerId, kind: input.media?.type ?? "text", content: input.content, visibility: input.visibility, media: input.media ?? null, createdAt: now, expiresAt }).returning();
+  let claimedUploadId: string | null = null;
+  if (input.media) {
+    if ((input.media.type === "image" && !input.media.mimeType.toLowerCase().startsWith("image/")) ||
+      (input.media.type === "video" && !input.media.mimeType.toLowerCase().startsWith("video/"))) {
+      res.status(400).json({ error: "Story media type must match its MIME type." }); return;
+    }
+    const [slot] = await db.update(uploadSlotsTable).set({ status: "committing" }).where(and(
+      eq(uploadSlotsTable.objectPath, input.media.objectPath),
+      eq(uploadSlotsTable.userId, viewerId),
+      eq(uploadSlotsTable.status, "uploaded"),
+      gt(uploadSlotsTable.expiresAt, now),
+    )).returning();
+    if (!slot || slot.contentType !== input.media.mimeType.toLowerCase()) {
+      if (slot) await db.update(uploadSlotsTable).set({ status: "uploaded" }).where(eq(uploadSlotsTable.id, slot.id));
+      res.status(400).json({ error: "Story media must be an uploaded file you own." }); return;
+    }
+    claimedUploadId = slot.id;
+    try {
+      const file = fileForObjectPath(slot.objectPath);
+      const [[exists], [metadata]] = await Promise.all([file.exists(), file.getMetadata()]);
+      const size = Number(metadata.size ?? 0);
+      if (!exists || !Number.isFinite(size) || size < 1 || size > MAX_UPLOAD_BYTES ||
+        (metadata.contentType ?? "").toLowerCase() !== slot.contentType) throw new Error("Invalid uploaded media");
+    } catch {
+      await db.update(uploadSlotsTable).set({ status: "uploaded" })
+        .where(and(eq(uploadSlotsTable.id, slot.id), eq(uploadSlotsTable.status, "committing")));
+      res.status(400).json({ error: "The uploaded story media could not be verified." }); return;
+    }
+  }
+  let created: Story;
+  try {
+    [created] = await db.transaction(async (tx) => {
+      const inserted = await tx.insert(socialStoriesTable).values({
+        authorId: viewerId, kind: input.media?.type ?? "text", content: input.content,
+        visibility: input.visibility, media: input.media ?? null, createdAt: now, expiresAt,
+      }).returning();
+      if (claimedUploadId) {
+        const committed = await tx.update(uploadSlotsTable)
+          .set({ status: "committed", referenceType: "social_story", referenceId: inserted[0].id })
+          .where(and(eq(uploadSlotsTable.id, claimedUploadId), eq(uploadSlotsTable.status, "committing")))
+          .returning({ id: uploadSlotsTable.id });
+        if (committed.length !== 1) throw new Error("UPLOAD_COMMIT_CONFLICT");
+      }
+      return inserted;
+    });
+  } catch {
+    if (claimedUploadId) await db.update(uploadSlotsTable).set({ status: "uploaded" })
+      .where(and(eq(uploadSlotsTable.id, claimedUploadId), eq(uploadSlotsTable.status, "committing")));
+    res.status(500).json({ error: "Unable to publish story." }); return;
+  }
   res.status(201).json((await serializeStories([created], viewerId))[0]);
 });
 

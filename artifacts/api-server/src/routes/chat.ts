@@ -39,6 +39,9 @@ import {
   chatsTable,
   db,
   messagesTable,
+  socialBlocksTable,
+  socialPostsTable,
+  socialStoriesTable,
   uploadSlotsTable,
   usersTable,
 } from "@workspace/db";
@@ -120,16 +123,6 @@ async function cleanupExpiredMessages(): Promise<void> {
     .where(and(lt(messagesTable.expiresAt, now()), eq(messagesTable.saved, false)))
     .returning();
   for (const message of expired) {
-    if (message.attachment) {
-      try {
-        await deleteObject(message.attachment.objectPath);
-      } catch (error) {
-        console.error("Unable to remove expired message object", error);
-      }
-    }
-    await db
-      .delete(uploadSlotsTable)
-      .where(eq(uploadSlotsTable.messageId, message.id));
     emitToChat(message.chatId, "message-expired", { chatId: message.chatId, messageId: message.id });
     const participants = await getChatParticipants(message.chatId);
     for (const participantId of participants) emitToUser(participantId, "inbox-updated", { chatId: message.chatId });
@@ -163,14 +156,36 @@ async function cleanupOrphanedUploads(): Promise<void> {
       console.error("Unable to remove expired upload", error),
     );
   }
-  const rows = await db
+  const [messageRows, postRows, storyRows, committedSlots] = await Promise.all([
+    db
     .select({ attachment: messagesTable.attachment })
-    .from(messagesTable);
+    .from(messagesTable)
+    .where(sql`${messagesTable.attachment} is not null`),
+    db
+      .select({ media: socialPostsTable.media })
+      .from(socialPostsTable)
+      .where(eq(socialPostsTable.deleted, false)),
+    db
+      .select({ media: socialStoriesTable.media })
+      .from(socialStoriesTable)
+      .where(and(eq(socialStoriesTable.deleted, false), gt(socialStoriesTable.expiresAt, cleanupTime))),
+    db
+      .select({ objectPath: uploadSlotsTable.objectPath })
+      .from(uploadSlotsTable)
+      .where(eq(uploadSlotsTable.status, "committed")),
+  ]);
   const referencedPaths = new Set(
-    rows
+    messageRows
       .map((row) => row.attachment?.objectPath)
       .filter((path): path is string => Boolean(path)),
   );
+  for (const post of postRows) {
+    for (const media of post.media ?? []) referencedPaths.add(media.objectPath);
+  }
+  for (const story of storyRows) {
+    if (story.media?.objectPath) referencedPaths.add(story.media.objectPath);
+  }
+  for (const slot of committedSlots) referencedPaths.add(slot.objectPath);
   await cleanupUnreferencedUploads(referencedPaths);
 }
 
@@ -201,6 +216,28 @@ async function getChatById(chatId: number): Promise<ChatRecord | undefined> {
     .where(eq(chatsTable.id, chatId))
     .limit(1);
   return chat;
+}
+
+async function usersAreBlocked(userOneId: number, userTwoId: number): Promise<boolean> {
+  const [relationship] = await db
+    .select({ blockerId: socialBlocksTable.blockerId })
+    .from(socialBlocksTable)
+    .where(
+      or(
+        and(eq(socialBlocksTable.blockerId, userOneId), eq(socialBlocksTable.blockedId, userTwoId)),
+        and(eq(socialBlocksTable.blockerId, userTwoId), eq(socialBlocksTable.blockedId, userOneId)),
+      ),
+    )
+    .limit(1);
+  return Boolean(relationship);
+}
+
+async function chatIsBlockedForUser(chatId: number, userId: number): Promise<boolean> {
+  const participants = await getChatParticipants(chatId);
+  for (const participantId of participants) {
+    if (participantId !== userId && await usersAreBlocked(userId, participantId)) return true;
+  }
+  return false;
 }
 
 async function getDirectChatForUsers(
@@ -514,6 +551,7 @@ router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
       .where(eq(usersTable.id, contactId))
       .limit(1);
     if (!contact) continue;
+    if (await chatIsBlockedForUser(chat.id, viewer.id)) continue;
     const [lastMessage] = await db
       .select()
       .from(messagesTable)
@@ -566,6 +604,10 @@ router.get(
       res.status(400).json({ error: "Both users must exist." });
       return;
     }
+    if (await usersAreBlocked(parsed.data.userOneId, parsed.data.userTwoId)) {
+      res.json(GetDirectChatResponse.parse({ chat: null, lastMessage: null }));
+      return;
+    }
 
     const chat = await getDirectChatForUsers(parsed.data.userOneId, parsed.data.userTwoId);
     const lastMessage = chat
@@ -608,6 +650,10 @@ router.post("/chats", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Both users must exist." });
     return;
   }
+  if (await usersAreBlocked(userIds[0], userIds[1])) {
+    res.status(403).json({ error: "You cannot start a conversation with this user." });
+    return;
+  }
 
   const existing = await getDirectChatForUsers(userIds[0], userIds[1]);
   if (existing) {
@@ -644,6 +690,10 @@ router.get("/chats/:chatId/messages", async (req, res): Promise<void> => {
     res.status(403).json({ error: "You are not part of this conversation." });
     return;
   }
+  if (await chatIsBlockedForUser(params.data.chatId, query.data.viewerId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
+    return;
+  }
   const messages = await db
     .select()
     .from(messagesTable)
@@ -675,6 +725,10 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
   const participants = await getChatParticipants(params.data.chatId);
   if (!participants.includes(body.data.senderId)) {
     res.status(403).json({ error: "You are not part of this conversation." });
+    return;
+  }
+  if (await chatIsBlockedForUser(params.data.chatId, body.data.senderId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
     return;
   }
   let claimedUploadId: string | null = null;
@@ -747,7 +801,12 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
       if (claimedUploadId) {
         const committed = await tx
           .update(uploadSlotsTable)
-          .set({ status: "committed", messageId: created.id })
+          .set({
+            status: "committed",
+            messageId: created.id,
+            referenceType: "chat_message",
+            referenceId: created.id,
+          })
           .where(
             and(
               eq(uploadSlotsTable.id, claimedUploadId),
@@ -799,6 +858,10 @@ router.post("/chats/:chatId/read", async (req, res): Promise<void> => {
     res.status(403).json({ error: "You are not part of this conversation." });
     return;
   }
+  if (await chatIsBlockedForUser(params.data.chatId, body.data.viewerId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
+    return;
+  }
   const updated = await db
     .update(messagesTable)
     .set({ read: true })
@@ -839,6 +902,10 @@ router.post("/messages/:messageId/open", async (req, res): Promise<void> => {
     !participants.includes(body.data.recipientId)
   ) {
     res.status(403).json({ error: "Only a message recipient may open it." });
+    return;
+  }
+  if (await chatIsBlockedForUser(message.chatId, body.data.recipientId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
     return;
   }
   let current = message;
@@ -895,6 +962,10 @@ router.post("/messages/:messageId/save", async (req, res): Promise<void> => {
     !participants.includes(body.data.recipientId)
   ) {
     res.status(403).json({ error: "Only a message recipient may save it." });
+    return;
+  }
+  if (await chatIsBlockedForUser(message.chatId, body.data.recipientId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
     return;
   }
   const actionTime = now();
