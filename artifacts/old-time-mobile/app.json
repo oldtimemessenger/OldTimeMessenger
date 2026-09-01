@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Old Time",
-    "slug": "old-time-mobile",
+    "slug": "theapp",
     "owner": "oldtimemessengerteams-team",
     "version": "1.0.0",
     "description": "Old Time is a private messenger for chats, updates, calls, and shared moments.",
@@ -65,7 +65,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "03a08b75-fbf6-4183-b356-90fe21034a42"
+        "projectId": "3be1a2fb-5a66-4e4e-a3c0-89ba57f24fac"
       }
     }
   }
