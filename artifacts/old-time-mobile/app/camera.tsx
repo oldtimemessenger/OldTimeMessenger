@@ -8,8 +8,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { VideoSurface } from '@/components/video-surface';
 
-const MODES = ['PHOTO', 'VIDEO'];
-
 const ZOOM_STOPS = [
   { label: '5×', value: 1 },
   { label: '3×', value: 0.6 },
@@ -29,22 +27,26 @@ export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
-  const [mode, setMode] = useState<'PHOTO' | 'VIDEO'>('PHOTO');
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [flash, setFlash] = useState<'off' | 'on' | 'auto'>('off');
   const [zoom, setZoom] = useState(0);
+  const [captureMode, setCaptureMode] = useState<'picture' | 'video'>('picture');
 
   const [preview, setPreview] = useState<{ uri: string, type: 'photo' | 'video' } | null>(null);
   const [shots, setShots] = useState<string[]>([]);
 
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
+  const pressActiveRef = useRef(false);
+  const videoStartingRef = useRef(false);
+  const micPermissionRef = useRef(micPermission);
+  const requestMicPermissionRef = useRef(requestMicPermission);
   const [recordingTime, setRecordingTime] = useState(0);
 
   const cameraRef = useRef<CameraView>(null);
   const initialZoom = useRef(0);
   const zoomRef = useRef(0);
-  const modeRef = useRef<'PHOTO' | 'VIDEO'>('PHOTO');
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isWeb = Platform.OS === 'web';
 
@@ -53,8 +55,9 @@ export default function CameraScreen() {
   }, [zoom]);
 
   useEffect(() => {
-    modeRef.current = mode;
-  }, [mode]);
+    micPermissionRef.current = micPermission;
+    requestMicPermissionRef.current = requestMicPermission;
+  }, [micPermission, requestMicPermission]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -77,6 +80,8 @@ export default function CameraScreen() {
     if (isWeb) return;
     if (cameraRef.current) {
       try {
+        setCaptureMode('picture');
+        await new Promise((resolve) => setTimeout(resolve, 90));
         const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
         if (photo) {
           setPreview({ uri: photo.uri, type: 'photo' });
@@ -89,9 +94,22 @@ export default function CameraScreen() {
   }
 
   async function startRecording() {
-    if (isWeb || isRecordingRef.current) return;
+    if (isWeb || isRecordingRef.current || videoStartingRef.current) return;
     if (cameraRef.current) {
       try {
+        videoStartingRef.current = true;
+        let microphoneGranted = micPermissionRef.current?.granted;
+        if (!microphoneGranted && micPermissionRef.current?.canAskAgain) {
+          const result = await requestMicPermissionRef.current();
+          microphoneGranted = result.granted;
+        }
+        if (!microphoneGranted || !pressActiveRef.current) return;
+        setCaptureMode('video');
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        if (!pressActiveRef.current) {
+          setCaptureMode('picture');
+          return;
+        }
         setIsRecording(true);
         isRecordingRef.current = true;
         const video = await cameraRef.current.recordAsync({ maxDuration: 60 });
@@ -102,8 +120,10 @@ export default function CameraScreen() {
       } catch (e) {
         console.error(e);
       } finally {
+        videoStartingRef.current = false;
         setIsRecording(false);
         isRecordingRef.current = false;
+        setCaptureMode('picture');
       }
     }
   }
@@ -118,29 +138,32 @@ export default function CameraScreen() {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt, gestureState) => {
+      onPanResponderGrant: () => {
+        pressActiveRef.current = true;
         initialZoom.current = zoomRef.current;
-        if (modeRef.current === 'VIDEO') {
-          startRecording();
-        }
+        holdTimer.current = setTimeout(() => { void startRecording(); }, 260);
       },
-      onPanResponderMove: (evt, gestureState) => {
-        if (modeRef.current === 'VIDEO' && isRecordingRef.current) {
-          const nextZoom = Math.max(0, Math.min(1, initialZoom.current - gestureState.dy / 300));
+      onPanResponderMove: (_, gestureState) => {
+        if (isRecordingRef.current) {
+          const nextZoom = Math.max(0, Math.min(1, initialZoom.current - gestureState.dy / 260));
           setZoom(nextZoom);
         }
       },
-      onPanResponderRelease: (evt, gestureState) => {
-        if (modeRef.current === 'VIDEO') {
+      onPanResponderRelease: (_, gestureState) => {
+        pressActiveRef.current = false;
+        if (holdTimer.current) clearTimeout(holdTimer.current);
+        holdTimer.current = null;
+        if (isRecordingRef.current) {
           stopRecording();
-        } else {
-          if (Math.abs(gestureState.dx) < 10 && Math.abs(gestureState.dy) < 10) {
-            takePicture();
-          }
+        } else if (Math.abs(gestureState.dx) < 12 && Math.abs(gestureState.dy) < 12) {
+          void takePicture();
         }
       },
       onPanResponderTerminate: () => {
-        if (modeRef.current === 'VIDEO') stopRecording();
+        pressActiveRef.current = false;
+        if (holdTimer.current) clearTimeout(holdTimer.current);
+        holdTimer.current = null;
+        if (isRecordingRef.current) stopRecording();
       }
     })
   ).current;
@@ -166,7 +189,7 @@ export default function CameraScreen() {
     return <View style={styles.root} />;
   }
 
-  const hasPermissions = permission.granted && (mode === 'PHOTO' || micPermission.granted);
+  const hasPermissions = permission.granted;
 
   if (!hasPermissions && !isWeb) {
     return (
@@ -187,13 +210,6 @@ export default function CameraScreen() {
                } else {
                  if (Platform.OS !== 'web') Linking.openSettings();
                  return;
-               }
-            }
-            if (!micPermission.granted && mode === 'VIDEO') {
-               if (micPermission.canAskAgain) {
-                 await requestMicPermission();
-               } else {
-                 if (Platform.OS !== 'web') Linking.openSettings();
                }
             }
           }}
@@ -272,7 +288,7 @@ export default function CameraScreen() {
             facing={facing}
             flash={flash === 'auto' ? 'auto' : flash === 'on' ? 'on' : 'off'}
             zoom={zoom}
-            mode={mode === 'VIDEO' ? 'video' : 'picture'}
+            mode={captureMode}
             videoQuality="1080p"
           />
         )}
@@ -319,13 +335,7 @@ export default function CameraScreen() {
 
         {/* Bottom Controls */}
         <View style={[styles.bottom, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeRow}>
-            {MODES.map((item) => (
-              <Pressable key={item} onPress={() => { setMode(item as any); setZoom(0); }} testID={`mode-${item}`}>
-                <Text style={[styles.mode, mode === item && styles.modeActive]}>{item}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+          <View style={styles.captureHint}><Text style={styles.captureHintText}>{isRecording ? 'Slide up to zoom in · down to zoom out' : 'Tap for photo · hold for video'}</Text></View>
 
           <View style={styles.captureRow}>
             <Pressable onPress={openGallery} style={styles.gallery} testID="gallery-button">
@@ -340,7 +350,6 @@ export default function CameraScreen() {
               <View style={styles.shutter}>
                 <Animated.View style={[
                   styles.shutterInner,
-                  mode === 'VIDEO' && styles.videoInner,
                   isRecording && styles.recordingInner
                 ]} />
               </View>
@@ -381,7 +390,9 @@ const styles = StyleSheet.create({
   zoomText: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '500' },
   zoomActive: { color: '#FFD54A', fontWeight: '800', fontSize: 15 },
 
-  bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 30, paddingHorizontal: 0, backgroundColor: 'rgba(0,0,0,0.4)' },
+  bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 18, paddingHorizontal: 0, backgroundColor: 'rgba(0,0,0,0.28)' },
+  captureHint: { alignSelf: 'center', backgroundColor: 'rgba(20,20,22,0.52)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.28)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, marginBottom: 15 },
+  captureHintText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   modeRow: { gap: 30, paddingHorizontal: 30, paddingBottom: 24 },
   mode: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
   modeActive: { color: '#FFD54A' },
@@ -391,9 +402,8 @@ const styles = StyleSheet.create({
   thumb: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
 
   shutterContainer: { padding: 10 },
-  shutter: { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  shutterInner: { width: 66, height: 66, borderRadius: 33, backgroundColor: '#fff' },
-  videoInner: { backgroundColor: '#F0537A' },
+  shutter: { width: 86, height: 86, borderRadius: 43, borderWidth: 5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  shutterInner: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff' },
   recordingInner: { width: 32, height: 32, borderRadius: 8 },
 
   flip: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
