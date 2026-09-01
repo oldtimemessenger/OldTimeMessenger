@@ -64,11 +64,5 @@
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.24",
     "expo-video": "~3.0.16"
-  },
-  "pnpm": {
-    "overrides": {
-      "brace-expansion": "1.1.11",
-      "minimatch": "3.1.2"
-    }
   }
 }
