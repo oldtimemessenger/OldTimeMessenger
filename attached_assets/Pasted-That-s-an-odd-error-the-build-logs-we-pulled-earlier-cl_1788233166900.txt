@@ -1,0 +1,29 @@
+That's an odd error — the build logs we pulled earlier clearly showed EAS reading a valid `eas.json` from the project (with `development`, `preview`, `production` profiles all defined). This error is coming from a different context: **triggering a build this way requires a connected GitHub repo with the working directory correctly set**, and it looks like the tool can't locate `eas.json` at the repo root for this git ref.
+
+A likely cause: your `eas.json` might live in a subdirectory (e.g. if this is a monorepo, or if the file structure differs on the `replit-complete-app` branch versus what's normally built from).
+
+A couple of ways to sort this out:I tried to kick off the build, but it failed immediately with:
+
+```
+Failed to read "/eas.json". Run `eas build:configure` to create the file.
+```
+
+That's a strong signal, and combined with what I found by re-checking build history, here's where things actually stand:
+
+**1. Neither build on record reflects your fix.** Both `38ff0987…` (commit `7d07b395…`) and the earlier `678f8662…` (commit `22e36917…`) show the **exact same** owner mismatch in their embedded `app.json`:
+```
+"owner": "oldtimemessengers-team"
+```
+Neither run shows `oldtimemessengerteams-team`. So as of the last EAS build attempt, the fix hadn't been picked up yet — this is from EAS's own copy of the file at build time, not something I'm inferring.
+
+**2. My manual trigger for commit `84fccff0…` couldn't even find `eas.json`.** This points to one of a few possibilities:
+- That commit hash isn't actually present on the branch EAS's GitHub integration is watching (i.e., `replit-complete-app` may not be the connected branch, or the push didn't land where EAS expects)
+- The commit exists but on a different remote/fork than the one connected to EAS
+- There's a repo/webhook sync delay and EAS hasn't indexed the new commit yet
+
+**What I'd check next:**
+- In your EAS project settings (expo.dev → your project → GitHub tab), confirm which repo and branch are actually connected
+- Confirm `84fccff0b94d33e0b5c3464f6ec4b33f352762c8` is present on that exact connected branch (not just pushed to a differently-named branch or a fork)
+- Check whether GitHub App permissions still have access to the repo (revoked/expired access can cause silent sync failures)
+
+Once you've confirmed the branch/repo connection, let me know and I'll try triggering the build again — or if you'd rather, tell me the exact branch name and I'll try that as the `gitRef` instead of the commit hash.
