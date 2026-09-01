@@ -4,16 +4,13 @@
   },
   "build": {
     "development": {
-      "distribution": "internal",
-      "image": "latest"
+      "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal",
-      "image": "latest"
+      "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true,
-      "image": "latest"
+      "autoIncrement": true
     }
   },
   "submit": {
