@@ -1,6 +1,3 @@
-  );
-}
-
 function StatusViewer({ initialGroup, allGroups, onClose, colors, onMarkViewed }: any) {
   const insets = useSafeAreaInsets();
   const [groupIndex, setGroupIndex] = useState(() => allGroups.findIndex((g: any) => g.author === initialGroup.author));
@@ -422,6 +419,7 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onChanged }: { pos
       </View>
       {post.content ? <Text style={[styles.socialPostContent, { color: colors.foreground }]}>{post.content}</Text> : null}
       {media?.type === 'image' ? <Image source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.socialPostMedia} contentFit="cover" /> : null}
+      {media?.type === 'video' ? <VideoSurface source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.socialPostMedia} controls /> : null}
       {post.linkUrl ? (
         <Pressable onPress={() => void Linking.openURL(post.linkUrl!)} style={[styles.socialLinkCard, { backgroundColor: colors.secondary }]}>
           <Ionicons name="link-outline" size={18} color={colors.primary} />
