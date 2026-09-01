@@ -1,0 +1,480 @@
+Do NOT create a separate demo project. Work directly inside the existing repository and preserve the existing app structure, authentication, navigation, styling, and Supabase configuration.
+
+The goal is to build a production-quality Map + Stories experience inspired by Snapchat and Facebook, but with privacy as a core requirement.
+
+1. MAP SCREEN
+
+Create a dedicated Map tab/screen.
+
+The map should:
+
+* Display the user’s approximate current area.
+* Display friends who have chosen to share their location.
+* Display story indicators around the map.
+* Allow users to tap a friend.
+* Allow users to tap a story.
+* Show a bottom sheet/profile preview when a friend is selected.
+* Support zooming and normal map gestures.
+* Have a search button.
+* Have a location/recenter button.
+* Have a privacy/location-sharing button.
+* Have a Stories layer that can be enabled/disabled.
+
+Do not expose exact coordinates to users who are not authorized to see them.
+
+2. LOCATION PRIVACY MODES
+
+Implement these location-sharing modes:
+
+1. Ghost Mode
+    * Nobody can see my location.
+2. Friends
+    * Approved friends can see my approximate location.
+3. Close Friends
+    * Only users in my Close Friends list can see my location.
+4. Custom
+    * User chooses exactly who can see their location.
+5. Live Location
+    * User can temporarily share their location for:
+        * 15 minutes
+        * 1 hour
+        * 4 hours
+        * Until manually stopped
+
+The default should be privacy-friendly.
+
+Do NOT enable continuous live location without the user’s explicit permission.
+
+3. LOCATION APPROXIMATION
+
+Do not expose exact GPS coordinates for normal friend map sharing.
+
+Store the user’s actual location securely, but when returning location data to another user, provide an intentionally approximate location.
+
+For example, use a configurable privacy radius/location fuzzing system.
+
+The client must NEVER receive another user’s exact coordinates unless that user explicitly enabled an appropriate exact/live-location sharing mode.
+
+Do not rely on frontend hiding alone.
+
+The backend must enforce this.
+
+4. SUPABASE SECURITY
+
+Use Supabase authentication and Row Level Security.
+
+Create appropriate tables and policies for:
+
+* profiles
+* friendships
+* close_friends
+* location_settings
+* user_locations
+* stories
+* story_views
+* story_privacy
+* live_location_sessions
+
+Users must only be able to read location information they are authorized to see.
+
+Users must only be able to modify their own location settings and locations.
+
+Users must only be able to create/delete their own stories.
+
+Users must not be able to bypass privacy restrictions by calling Supabase directly.
+
+Do NOT create insecure policies such as:
+
+“authenticated users can read all locations.”
+
+5. STORIES
+
+Create a Snapchat-style Stories system.
+
+Users should be able to:
+
+* Take a photo.
+* Select a photo from their device.
+* Record/select a video if supported by the current Expo setup.
+* Add text.
+* Add emojis.
+* Add basic visual elements.
+* Add an optional location.
+* Publish the story.
+* Delete their story.
+* View who viewed their story.
+
+Stories should automatically expire after 24 hours unless the existing product requirements specify otherwise.
+
+6. STORY PRIVACY
+
+Every story must have a privacy selector:
+
+* Everyone
+* Friends
+* Close Friends
+* Custom
+* Only Me
+
+The selected privacy setting must be stored in the database and enforced server-side.
+
+Do not simply hide stories in the UI.
+
+7. STORY LOCATION OPTIONS
+
+When creating a story, allow:
+
+* No location
+* Approximate location
+* Exact location
+
+The default should be “No location.”
+
+If approximate location is selected, do not expose exact GPS coordinates.
+
+If exact location is selected, clearly warn the user that their exact location will be visible to the selected audience.
+
+8. MAP STORIES
+
+Stories should appear on the map as story bubbles/markers.
+
+Example:
+
+👤 Alex
+📸 Story
+
+When the user taps the story marker:
+
+* Open the story viewer.
+* Show the story.
+* Show story progress.
+* Allow swiping/tapping through stories.
+* Allow the user to exit back to the map.
+
+Do not reveal a user’s location merely because they posted a story.
+
+9. FRIEND PROFILE PREVIEW
+
+When tapping a friend on the map, show:
+
+* Profile photo
+* Name
+* Username
+* Online/active status if the existing app supports it
+* Recent story
+* Location-sharing status where appropriate
+* Message button
+* View profile button
+
+Do not show private information that the user has not authorized.
+
+10. LOCATION SHARING CONTROLS
+
+Create an easy-to-find Location Privacy screen.
+
+It should show:
+
+Location Sharing
+
+[ ON / OFF ]
+
+Who can see my location?
+
+* Ghost Mode
+* Friends
+* Close Friends
+* Custom
+
+Live Location
+
+[ Start Live Location ]
+
+Duration:
+
+* 15 minutes
+* 1 hour
+* 4 hours
+* Until I stop
+
+Also include:
+
+[ Pause Location Sharing ]
+
+The user should always know when their location is being shared.
+
+11. PRIVACY CENTER
+
+Create a Privacy Center that clearly explains:
+
+* Who can see my location.
+* Who can see my stories.
+* Whether live location is active.
+* Which users are in Close Friends.
+* Whether location sharing is currently paused.
+
+Provide simple controls to change these settings.
+
+12. LOCATION PERMISSIONS
+
+Use Expo-compatible location APIs.
+
+When location permission has not been granted:
+
+Show an explanation before requesting permission.
+
+Example:
+
+“OldTime uses your location to show friends where you’re sharing from. You control who can see your location.”
+
+Allow the user to continue without granting location permission.
+
+The app must continue functioning normally without location access.
+
+13. BATTERY / PERFORMANCE
+
+Do NOT continuously request GPS updates unnecessarily.
+
+Use sensible location update intervals.
+
+Stop location tracking when it isn’t needed.
+
+Live location should only use continuous updates while the user explicitly has an active live-location session.
+
+Normal map presence should use an appropriate lower-frequency strategy.
+
+14. STORY STORAGE
+
+Use Supabase Storage for story media.
+
+Create appropriate storage buckets and security policies.
+
+Users should only be able to upload/manage their own story media.
+
+Do not make private story media publicly accessible without authorization.
+
+15. STORY VIEWER
+
+Create a polished full-screen story viewer.
+
+Include:
+
+* Progress bars at the top.
+* User profile picture.
+* Username.
+* Time posted.
+* Story content.
+* Tap left/right to navigate.
+* Hold to pause if practical.
+* Swipe/tap to close.
+* Reply/message action.
+* View count for the story owner.
+
+16. STORY CREATION UI
+
+Create a polished story composer.
+
+Flow:
+
+Map/Home
+→ Create Story
+→ Camera/Gallery
+→ Edit
+→ Privacy
+→ Optional Location
+→ Post
+
+Make the UI feel modern and smooth.
+
+17. FRIENDSHIP RULES
+
+Location visibility must respect the friendship system.
+
+If two users are not friends, they should not automatically see each other’s location simply because they are authenticated.
+
+If the existing application already has a friendship/follow system, integrate with it instead of creating a duplicate system.
+
+18. BLOCKING
+
+If User A blocks User B:
+
+* User B cannot see User A’s location.
+* User B cannot see User A’s stories.
+* User B cannot view User A’s map presence.
+* Existing messages/friend functionality should follow the application’s existing blocking rules.
+
+Blocking must be enforced server-side.
+
+19. PRIVACY EDGE CASES
+
+Handle:
+
+* User deletes account.
+* User logs out.
+* User disables location.
+* User revokes phone OS location permission.
+* User blocks another user.
+* Friendship is removed.
+* Story expires.
+* Story is deleted.
+* Live-location session expires.
+* User goes offline.
+* Network connection is lost.
+* Supabase is temporarily unavailable.
+
+Do not leave stale location data visible indefinitely.
+
+20. DATABASE DESIGN
+
+Before writing code, inspect the existing Supabase schema.
+
+Reuse existing tables where appropriate.
+
+Do not create duplicate users/profiles/friendship tables if they already exist.
+
+Create migrations for anything missing.
+
+Add appropriate indexes for:
+
+* user_id
+* friendship relationships
+* story expiration
+* story owner
+* location records
+* active live-location sessions
+
+21. TYPESCRIPT
+
+Use TypeScript throughout the implementation.
+
+Create proper types for:
+
+* Story
+* StoryPrivacy
+* LocationPrivacy
+* Friendship
+* UserLocation
+* LiveLocationSession
+
+Avoid using “any” unless absolutely necessary.
+
+22. ERROR HANDLING
+
+Every network/database operation needs proper error handling.
+
+Never leave the UI permanently loading.
+
+Show useful error messages.
+
+Handle empty states.
+
+Examples:
+
+“No friends are currently sharing their location.”
+
+“No stories available.”
+
+“Location permission is disabled.”
+
+“Something went wrong. Please try again.”
+
+23. UI/UX
+
+The feature should look like a real production application, not a prototype.
+
+Use the existing OldTime design system where available.
+
+Maintain:
+
+* Consistent spacing
+* Typography
+* Buttons
+* Icons
+* Dark/light mode if already supported
+* Safe-area handling
+* iPhone screen sizes
+* Loading states
+* Empty states
+* Error states
+* Smooth transitions
+
+Do not copy Snapchat/Facebook branding, logos, proprietary assets, or exact UI.
+
+Use the concepts as inspiration but create an original OldTime interface.
+
+24. IMPORTANT DEVELOPMENT RULE
+
+Do NOT pretend a feature is complete if it is only a UI mockup.
+
+A button labeled “Share Location” must actually update the database.
+
+A story must actually upload.
+
+A story privacy setting must actually affect who can view it.
+
+A friend location must actually respect authorization.
+
+A live location session must actually expire.
+
+Every major feature must be connected end-to-end.
+
+25. IMPLEMENTATION PROCESS
+
+Before making changes:
+
+1. Inspect the existing repository.
+2. Identify the Expo version.
+3. Identify the React Native version.
+4. Identify the navigation system.
+5. Identify the existing Supabase setup.
+6. Identify existing authentication.
+7. Identify existing profile/friendship functionality.
+8. Identify the existing design system.
+9. Identify existing dependencies.
+
+Then create a short implementation plan.
+
+After that, implement the feature in logical stages.
+
+Do not rewrite unrelated parts of the application.
+
+26. TESTING
+
+After implementation:
+
+* Run TypeScript checks.
+* Run linting if configured.
+* Run the Expo project.
+* Fix build errors.
+* Fix navigation errors.
+* Fix Supabase errors.
+* Test authentication.
+* Test story creation.
+* Test story privacy.
+* Test location privacy.
+* Test blocking.
+* Test live location.
+* Test story expiration.
+* Test without location permission.
+
+Do not stop after creating the UI.
+
+The final result needs to be a functioning Expo application that can be built with EAS for iOS.
+
+27. FINAL REQUIREMENT
+
+At the end, provide:
+
+1. Files created.
+2. Files modified.
+3. Database migrations created.
+4. Supabase policies created.
+5. New dependencies installed.
+6. Environment variables required.
+7. Expo permissions required.
+8. Commands needed to run the app.
+9. Commands needed to build the iOS app with EAS.
+10. Any remaining limitations.
+
+Most importantly:
+
+BUILD THE FEATURE, DON’T JUST EXPLAIN HOW TO BUILD IT.
