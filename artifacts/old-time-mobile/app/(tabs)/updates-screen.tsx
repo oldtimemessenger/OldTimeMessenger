@@ -130,6 +130,21 @@ export default function UpdatesScreen() {
   }
 
   const unreadNotifications = notifications.filter((item) => !item.readAt).length;
+  const firstOtherStory = socialStories.find((story) => !story.viewer.isOwner);
+
+  function openStatusShortcut() {
+    if (firstOtherStory) {
+      setServerStoryOpen(firstOtherStory);
+      return;
+    }
+    const firstLocalGroup = otherGroups[0];
+    if (firstLocalGroup) {
+      setStoryGroupOpen(firstLocalGroup);
+      setViewMode('status');
+      return;
+    }
+    setCompose('status');
+  }
 
   useEffect(() => {
     if (!mediaUri) return;
@@ -177,7 +192,7 @@ export default function UpdatesScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
-      <Screen title="Updates" right={
+      <Screen title="Updates" left={<IconButton name="radio-outline" label="Watch statuses" onPress={openStatusShortcut} />} right={
         <View style={styles.socialHeaderActions}>
           <Pressable onPress={() => session && setProfileUserId(session.id)} style={styles.headerAvatarButton} accessibilityRole="button" accessibilityLabel="Open profile">
             <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={34} color={colors.primary} />
