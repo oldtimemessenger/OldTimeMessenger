@@ -25,6 +25,7 @@ import {
   socialPostSavesTable,
   socialPostsTable,
   socialReportsTable,
+  socialSharingExclusionsTable,
   socialStoriesTable,
   socialStoryViewersTable,
   socialStoryReactionsTable,
@@ -57,7 +58,7 @@ const reportReasons = z.enum([
 const postInput = z.object({
   content: z.string().trim().max(2_000).default(""),
   kind: postKind.default("text"),
-  visibility: postVisibility.default("public"),
+  visibility: postVisibility.default("friends"),
   media: z
     .array(
       z.object({
@@ -175,6 +176,19 @@ async function isBlocked(viewerId: number, otherUserId: number): Promise<boolean
   return Boolean(relationship);
 }
 
+async function isExcludedFromSharing(ownerId: number, viewerId: number): Promise<boolean> {
+  if (ownerId === viewerId) return false;
+  const [exclusion] = await db
+    .select({ ownerId: socialSharingExclusionsTable.ownerId })
+    .from(socialSharingExclusionsTable)
+    .where(and(
+      eq(socialSharingExclusionsTable.ownerId, ownerId),
+      eq(socialSharingExclusionsTable.excludedUserId, viewerId),
+    ))
+    .limit(1);
+  return Boolean(exclusion);
+}
+
 async function postById(postId: number): Promise<SocialPost | undefined> {
   const [post] = await db
     .select()
@@ -208,7 +222,9 @@ async function canSeePost(
   blocked: Set<number>,
 ): Promise<boolean> {
   if (blocked.has(post.authorId)) return false;
-  if (post.authorId === viewerId || post.visibility === "public") return true;
+  if (post.authorId === viewerId) return true;
+  if (await isExcludedFromSharing(post.authorId, viewerId)) return false;
+  if (post.visibility === "public") return true;
   if (post.visibility === "private") return false;
   if (post.visibility === "followers") return following.has(post.authorId);
   if (!following.has(post.authorId)) return false;
@@ -812,6 +828,49 @@ router.delete("/social/users/:userId/follow", async (req, res): Promise<void> =>
   res.json({ success: true, following: false });
 });
 
+router.get("/social/privacy/exclusions", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const rows = await db
+    .select({ id: usersTable.id, name: usersTable.name })
+    .from(socialSharingExclusionsTable)
+    .innerJoin(usersTable, eq(usersTable.id, socialSharingExclusionsTable.excludedUserId))
+    .where(eq(socialSharingExclusionsTable.ownerId, viewerId))
+    .orderBy(asc(usersTable.name));
+  res.json({ items: rows.map((user) => ({ ...user, username: handleForUser(user) })) });
+});
+
+router.put("/social/privacy/exclusions/:userId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const targetId = parseId(req.params.userId);
+  if (viewerId === null) return;
+  if (targetId === null || targetId === viewerId || !(await userExists(targetId))) {
+    res.status(400).json({ error: "Choose another Old Time user to exclude." });
+    return;
+  }
+  await db.insert(socialSharingExclusionsTable).values({
+    ownerId: viewerId,
+    excludedUserId: targetId,
+    createdAt: Date.now(),
+  }).onConflictDoNothing();
+  res.json({ success: true, active: true });
+});
+
+router.delete("/social/privacy/exclusions/:userId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const targetId = parseId(req.params.userId);
+  if (viewerId === null) return;
+  if (targetId === null) {
+    res.status(400).json({ error: "A valid user ID is required." });
+    return;
+  }
+  await db.delete(socialSharingExclusionsTable).where(and(
+    eq(socialSharingExclusionsTable.ownerId, viewerId),
+    eq(socialSharingExclusionsTable.excludedUserId, targetId),
+  ));
+  res.json({ success: true, active: false });
+});
+
 router.put("/social/users/:userId/block", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   const targetId = parseId(req.params.userId);
@@ -1055,6 +1114,7 @@ type Story = typeof socialStoriesTable.$inferSelect;
 async function canSeeStory(viewerId: number, story: Story): Promise<boolean> {
   if (story.authorId === viewerId) return true;
   if (story.deleted || story.expiresAt <= Date.now() || await isBlocked(viewerId, story.authorId)) return false;
+  if (await isExcludedFromSharing(story.authorId, viewerId)) return false;
   if (story.visibility === "public") return true;
   if (story.visibility === "private") return false;
   const following = await followingUserIds(viewerId);
