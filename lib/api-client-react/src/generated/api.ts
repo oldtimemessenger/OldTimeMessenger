@@ -2484,6 +2484,225 @@ export const useUnfollowSocialUser = <TError = ErrorType<unknown>,
       return useMutation(getUnfollowSocialUserMutationOptions(options));
     }
 
+export const getGetSocialPrivacyExclusionsUrl = () => {
+
+
+
+
+  return `/api/social/privacy/exclusions`
+}
+
+/**
+ * @summary List people excluded from the signed-in user's social sharing
+ */
+export const getSocialPrivacyExclusions = async ( options?: Parameters<typeof customFetch>[1]): Promise<SocialUserList> => {
+
+  return customFetch<SocialUserList>(getGetSocialPrivacyExclusionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSocialPrivacyExclusionsQueryKey = () => {
+    return [
+    `/api/social/privacy/exclusions`
+    ] as const;
+    }
+
+
+export const getGetSocialPrivacyExclusionsQueryOptions = <TData = Awaited<ReturnType<typeof getSocialPrivacyExclusions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSocialPrivacyExclusions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSocialPrivacyExclusionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSocialPrivacyExclusions>>> = ({ signal }) => getSocialPrivacyExclusions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSocialPrivacyExclusions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSocialPrivacyExclusionsQueryResult = NonNullable<Awaited<ReturnType<typeof getSocialPrivacyExclusions>>>
+export type GetSocialPrivacyExclusionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List people excluded from the signed-in user's social sharing
+ */
+
+export function useGetSocialPrivacyExclusions<TData = Awaited<ReturnType<typeof getSocialPrivacyExclusions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSocialPrivacyExclusions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSocialPrivacyExclusionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getExcludeSocialPrivacyUserUrl = (userId: number,) => {
+
+
+
+
+  return `/api/social/privacy/exclusions/${userId}`
+}
+
+/**
+ * @summary Exclude a person from all social and location sharing
+ */
+export const excludeSocialPrivacyUser = async (userId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActiveActionResult> => {
+
+  return customFetch<ActiveActionResult>(getExcludeSocialPrivacyUserUrl(userId),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+);}
+
+
+
+
+
+export const getExcludeSocialPrivacyUserMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof excludeSocialPrivacyUser>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof excludeSocialPrivacyUser>>, TError,{userId: number}, TContext> => {
+
+const mutationKey = ['excludeSocialPrivacyUser'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof excludeSocialPrivacyUser>>, {userId: number}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  excludeSocialPrivacyUser(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExcludeSocialPrivacyUserMutationResult = NonNullable<Awaited<ReturnType<typeof excludeSocialPrivacyUser>>>
+
+    export type ExcludeSocialPrivacyUserMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Exclude a person from all social and location sharing
+ */
+export const useExcludeSocialPrivacyUser = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof excludeSocialPrivacyUser>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof excludeSocialPrivacyUser>>,
+        TError,
+        {userId: number},
+        TContext
+      > => {
+      return useMutation(getExcludeSocialPrivacyUserMutationOptions(options));
+    }
+
+export const getIncludeSocialPrivacyUserUrl = (userId: number,) => {
+
+
+
+
+  return `/api/social/privacy/exclusions/${userId}`
+}
+
+/**
+ * @summary Remove a person from social and location sharing exclusions
+ */
+export const includeSocialPrivacyUser = async (userId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActiveActionResult> => {
+
+  return customFetch<ActiveActionResult>(getIncludeSocialPrivacyUserUrl(userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getIncludeSocialPrivacyUserMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof includeSocialPrivacyUser>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof includeSocialPrivacyUser>>, TError,{userId: number}, TContext> => {
+
+const mutationKey = ['includeSocialPrivacyUser'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof includeSocialPrivacyUser>>, {userId: number}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  includeSocialPrivacyUser(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type IncludeSocialPrivacyUserMutationResult = NonNullable<Awaited<ReturnType<typeof includeSocialPrivacyUser>>>
+
+    export type IncludeSocialPrivacyUserMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove a person from social and location sharing exclusions
+ */
+export const useIncludeSocialPrivacyUser = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof includeSocialPrivacyUser>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof includeSocialPrivacyUser>>,
+        TError,
+        {userId: number},
+        TContext
+      > => {
+      return useMutation(getIncludeSocialPrivacyUserMutationOptions(options));
+    }
+
 export const getBlockSocialUserUrl = (userId: number,) => {
 
 
