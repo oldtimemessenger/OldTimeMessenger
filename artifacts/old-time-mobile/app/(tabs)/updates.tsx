@@ -1,1 +1,1 @@
-export { default } from './updates-screen';
+export { default } from './social-updates-screen';

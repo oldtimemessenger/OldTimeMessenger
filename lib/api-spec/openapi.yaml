@@ -20,6 +20,8 @@ tags:
     description: Direct conversations and messages
   - name: storage
     description: Private media upload and serving
+  - name: social
+    description: Persisted Updates feed, relationships, conversations, and moderation
 paths:
   /healthz:
     get:
@@ -345,6 +347,370 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /social/feed:
+    get:
+      operationId: getSocialFeed
+      tags: [social]
+      summary: Get a ranked or following-only Updates feed
+      parameters:
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [for-you, following]
+            default: for-you
+        - name: cursor
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+            minimum: 1
+            maximum: 30
+            default: 20
+      responses:
+        "200":
+          description: Feed page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialFeedPage"
+  /social/posts:
+    post:
+      operationId: createSocialPost
+      tags: [social]
+      summary: Publish a social post as the authenticated user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SocialPostInput"
+      responses:
+        "201":
+          description: Published post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialPost"
+  /social/posts/{postId}:
+    delete:
+      operationId: deleteSocialPost
+      tags: [social]
+      summary: Delete a post owned by the authenticated user
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
+  /social/posts/{postId}/like:
+    put:
+      operationId: likeSocialPost
+      tags: [social]
+      summary: Like a post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Like saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+    delete:
+      operationId: unlikeSocialPost
+      tags: [social]
+      summary: Remove a post like
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Like removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+  /social/posts/{postId}/repost:
+    put:
+      operationId: repostSocialPost
+      tags: [social]
+      summary: Repost a post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Repost saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+    delete:
+      operationId: removeSocialRepost
+      tags: [social]
+      summary: Remove a repost
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Repost removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+  /social/posts/{postId}/save:
+    put:
+      operationId: saveSocialPost
+      tags: [social]
+      summary: Save a post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Save stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+    delete:
+      operationId: removeSavedSocialPost
+      tags: [social]
+      summary: Remove a saved post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Save removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+  /social/posts/{postId}/comments:
+    get:
+      operationId: getSocialPostComments
+      tags: [social]
+      summary: List comments and replies for a post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Comments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SocialComment"
+    post:
+      operationId: createSocialPostComment
+      tags: [social]
+      summary: Comment on or reply to a post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SocialCommentInput"
+      responses:
+        "201":
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialComment"
+  /social/comments/{commentId}:
+    delete:
+      operationId: deleteSocialComment
+      tags: [social]
+      summary: Delete a comment owned by the authenticated user
+      parameters:
+        - $ref: "#/components/parameters/CommentId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
+  /social/comments/{commentId}/like:
+    put:
+      operationId: likeSocialComment
+      tags: [social]
+      summary: Like a comment
+      parameters:
+        - $ref: "#/components/parameters/CommentId"
+      responses:
+        "200":
+          description: Like saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+    delete:
+      operationId: unlikeSocialComment
+      tags: [social]
+      summary: Remove a comment like
+      parameters:
+        - $ref: "#/components/parameters/CommentId"
+      responses:
+        "200":
+          description: Like removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveActionResult"
+  /social/users/search:
+    get:
+      operationId: searchSocial
+      tags: [social]
+      summary: Search visible users and posts
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 80
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialSearchResults"
+  /social/users/{userId}/card:
+    get:
+      operationId: getSocialUserCard
+      tags: [social]
+      summary: Get a compact social identity card
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Compact user card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialUserCard"
+  /social/users/{userId}/follow:
+    put:
+      operationId: followSocialUser
+      tags: [social]
+      summary: Follow a user
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Followed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowActionResult"
+    delete:
+      operationId: unfollowSocialUser
+      tags: [social]
+      summary: Unfollow a user
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Unfollowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowActionResult"
+  /social/users/{userId}/block:
+    put:
+      operationId: blockSocialUser
+      tags: [social]
+      summary: Block a user and remove follow relationships
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockActionResult"
+    delete:
+      operationId: unblockSocialUser
+      tags: [social]
+      summary: Unblock a user
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Unblocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockActionResult"
+  /social/users/{userId}/mute:
+    put:
+      operationId: muteSocialUser
+      tags: [social]
+      summary: Remove a user's content from personalized feeds
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Muted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MuteActionResult"
+    delete:
+      operationId: unmuteSocialUser
+      tags: [social]
+      summary: Restore a user's content to personalized feeds
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Unmuted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MuteActionResult"
+  /social/reports:
+    post:
+      operationId: reportSocialContent
+      tags: [social]
+      summary: Submit a moderation report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SocialReportInput"
+      responses:
+        "201":
+          description: Report accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
+  /social/saved:
+    get:
+      operationId: getSavedSocialPosts
+      tags: [social]
+      summary: List posts saved by the authenticated user
+      responses:
+        "200":
+          description: Saved posts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialPostList"
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -442,6 +808,20 @@ components:
       required: true
       schema:
         type: integer
+        minimum: 1
+    PostId:
+      name: postId
+      in: path
+      required: true
+      schema:
+        type: number
+        minimum: 1
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      schema:
+        type: number
         minimum: 1
   schemas:
     HealthStatus:
@@ -681,4 +1061,267 @@ components:
         updated:
           type: number
       required: [updated]
+    SocialUser:
+      type: object
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+        username:
+          type: string
+      required: [id, name, username]
+    SocialMedia:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [image, video]
+        objectPath:
+          type: string
+        mimeType:
+          type: string
+        width:
+          type: number
+        height:
+          type: number
+        duration:
+          type: number
+      required: [type, objectPath, mimeType]
+    SocialPostCounts:
+      type: object
+      properties:
+        likes:
+          type: number
+        comments:
+          type: number
+        reposts:
+          type: number
+        saves:
+          type: number
+      required: [likes, comments, reposts, saves]
+    SocialPostViewer:
+      type: object
+      properties:
+        liked:
+          type: boolean
+        reposted:
+          type: boolean
+        saved:
+          type: boolean
+        followingAuthor:
+          type: boolean
+      required: [liked, reposted, saved, followingAuthor]
+    SocialNewsAttribution:
+      type: object
+      properties:
+        source:
+          type: string
+        publishedAt:
+          type: [number, "null"]
+        url:
+          type: string
+      required: [source, publishedAt, url]
+    SocialPost:
+      type: object
+      properties:
+        id:
+          type: number
+        kind:
+          type: string
+          enum: [text, photo, video, link, news]
+        content:
+          type: string
+        visibility:
+          type: string
+          enum: [public, friends, followers, private]
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/SocialMedia"
+        linkUrl:
+          type: [string, "null"]
+        linkTitle:
+          type: [string, "null"]
+        linkDescription:
+          type: [string, "null"]
+        linkImageUrl:
+          type: [string, "null"]
+        news:
+          anyOf:
+            - $ref: "#/components/schemas/SocialNewsAttribution"
+            - type: "null"
+        createdAt:
+          type: number
+        updatedAt:
+          type: number
+        author:
+          $ref: "#/components/schemas/SocialUser"
+        counts:
+          $ref: "#/components/schemas/SocialPostCounts"
+        viewer:
+          $ref: "#/components/schemas/SocialPostViewer"
+      required: [id, kind, content, visibility, media, linkUrl, linkTitle, linkDescription, linkImageUrl, news, createdAt, updatedAt, author, counts, viewer]
+    SocialFeedPage:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [for-you, following]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SocialPost"
+        nextCursor:
+          type: [number, "null"]
+      required: [mode, items, nextCursor]
+    SocialPostList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SocialPost"
+      required: [items]
+    SocialPostInput:
+      type: object
+      properties:
+        content:
+          type: string
+          maxLength: 2000
+        kind:
+          type: string
+          enum: [text, photo, video, link, news]
+          default: text
+        visibility:
+          type: string
+          enum: [public, friends, followers, private]
+          default: public
+        media:
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/SocialMedia"
+        linkUrl:
+          type: string
+        linkTitle:
+          type: string
+          maxLength: 300
+        linkDescription:
+          type: string
+          maxLength: 800
+        linkImageUrl:
+          type: string
+    SocialComment:
+      type: object
+      properties:
+        id:
+          type: number
+        postId:
+          type: number
+        authorId:
+          type: number
+        parentId:
+          type: [number, "null"]
+        content:
+          type: string
+        createdAt:
+          type: number
+        author:
+          $ref: "#/components/schemas/SocialUser"
+        liked:
+          type: boolean
+      required: [id, postId, authorId, parentId, content, createdAt, author, liked]
+    SocialCommentInput:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        parentId:
+          type: [number, "null"]
+      required: [content]
+    SocialUserCard:
+      allOf:
+        - $ref: "#/components/schemas/SocialUser"
+        - type: object
+          properties:
+            followerCount:
+              type: number
+            followingCount:
+              type: number
+            following:
+              type: boolean
+            muted:
+              type: boolean
+            canMessage:
+              type: boolean
+          required: [followerCount, followingCount, following, muted, canMessage]
+    SocialSearchResults:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/SocialUser"
+        posts:
+          type: array
+          items:
+            $ref: "#/components/schemas/SocialPost"
+      required: [users, posts]
+    SocialReportInput:
+      type: object
+      properties:
+        targetType:
+          type: string
+          enum: [post, comment, user]
+        targetId:
+          type: number
+          minimum: 1
+        reason:
+          type: string
+          enum: [spam, harassment, hate, violence, sexual_content, misinformation, copyright, other]
+        details:
+          type: string
+          maxLength: 1000
+      required: [targetType, targetId, reason]
+    ActionResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required: [success]
+    ActiveActionResult:
+      allOf:
+        - $ref: "#/components/schemas/ActionResult"
+        - type: object
+          properties:
+            active:
+              type: boolean
+          required: [active]
+    FollowActionResult:
+      allOf:
+        - $ref: "#/components/schemas/ActionResult"
+        - type: object
+          properties:
+            following:
+              type: boolean
+          required: [following]
+    BlockActionResult:
+      allOf:
+        - $ref: "#/components/schemas/ActionResult"
+        - type: object
+          properties:
+            blocked:
+              type: boolean
+          required: [blocked]
+    MuteActionResult:
+      allOf:
+        - $ref: "#/components/schemas/ActionResult"
+        - type: object
+          properties:
+            muted:
+              type: boolean
+          required: [muted]
 

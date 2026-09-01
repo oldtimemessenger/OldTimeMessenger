@@ -34,6 +34,7 @@ Old Time is a native Expo mobile messenger with SMS phone verification, inbox pr
 - PostgreSQL is used through the shared Drizzle database package instead of the uploaded SQLite implementation.
 - Direct chat access is participant-scoped at the API boundary, and the frontend uses short polling for cross-session freshness.
 - Socket.IO authenticates the bearer session and checks chat membership before joining conversation rooms.
+- Updates personalization uses transparent deterministic scoring from follows, recency, engagement, interests, mutes, and blocks. Do not add third-party AI services or mention AI in any user-facing Old Time copy.
 
 ## Product
 

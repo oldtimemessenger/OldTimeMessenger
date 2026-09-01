@@ -473,6 +473,631 @@ export const SaveMessageResponse = zod.object({
 
 
 /**
+ * @summary Get a ranked or following-only Updates feed
+ */
+export const getSocialFeedQueryModeDefault = `for-you`;
+export const getSocialFeedQueryLimitDefault = 20;
+export const getSocialFeedQueryLimitMax = 30;
+
+
+
+export const GetSocialFeedQueryParams = zod.object({
+  "mode": zod.enum(['for-you', 'following']).default(getSocialFeedQueryModeDefault),
+  "cursor": zod.coerce.number().optional(),
+  "limit": zod.coerce.number().min(1).max(getSocialFeedQueryLimitMax).default(getSocialFeedQueryLimitDefault)
+})
+
+export const GetSocialFeedResponse = zod.object({
+  "mode": zod.enum(['for-you', 'following']),
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "media": zod.array(zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional()
+})),
+  "linkUrl": zod.string().nullable(),
+  "linkTitle": zod.string().nullable(),
+  "linkDescription": zod.string().nullable(),
+  "linkImageUrl": zod.string().nullable(),
+  "news": zod.union([zod.object({
+  "source": zod.string(),
+  "publishedAt": zod.number().nullable(),
+  "url": zod.string()
+}),zod.null()]),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "counts": zod.object({
+  "likes": zod.number(),
+  "comments": zod.number(),
+  "reposts": zod.number(),
+  "saves": zod.number()
+}),
+  "viewer": zod.object({
+  "liked": zod.boolean(),
+  "reposted": zod.boolean(),
+  "saved": zod.boolean(),
+  "followingAuthor": zod.boolean()
+})
+})),
+  "nextCursor": zod.number().nullable()
+})
+
+
+/**
+ * @summary Publish a social post as the authenticated user
+ */
+export const createSocialPostBodyContentMax = 2000;
+
+export const createSocialPostBodyKindDefault = `text`;
+export const createSocialPostBodyVisibilityDefault = `public`;
+export const createSocialPostBodyMediaMax = 8;
+
+export const createSocialPostBodyLinkTitleMax = 300;
+
+export const createSocialPostBodyLinkDescriptionMax = 800;
+
+
+
+export const CreateSocialPostBody = zod.object({
+  "content": zod.string().max(createSocialPostBodyContentMax).optional(),
+  "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']).default(createSocialPostBodyKindDefault),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(createSocialPostBodyVisibilityDefault),
+  "media": zod.array(zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional()
+})).max(createSocialPostBodyMediaMax).optional(),
+  "linkUrl": zod.string().optional(),
+  "linkTitle": zod.string().max(createSocialPostBodyLinkTitleMax).optional(),
+  "linkDescription": zod.string().max(createSocialPostBodyLinkDescriptionMax).optional(),
+  "linkImageUrl": zod.string().optional()
+})
+
+export const CreateSocialPostResponse = zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "media": zod.array(zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional()
+})),
+  "linkUrl": zod.string().nullable(),
+  "linkTitle": zod.string().nullable(),
+  "linkDescription": zod.string().nullable(),
+  "linkImageUrl": zod.string().nullable(),
+  "news": zod.union([zod.object({
+  "source": zod.string(),
+  "publishedAt": zod.number().nullable(),
+  "url": zod.string()
+}),zod.null()]),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "counts": zod.object({
+  "likes": zod.number(),
+  "comments": zod.number(),
+  "reposts": zod.number(),
+  "saves": zod.number()
+}),
+  "viewer": zod.object({
+  "liked": zod.boolean(),
+  "reposted": zod.boolean(),
+  "saved": zod.boolean(),
+  "followingAuthor": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Delete a post owned by the authenticated user
+ */
+
+
+
+export const DeleteSocialPostParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const DeleteSocialPostResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Like a post
+ */
+
+
+
+export const LikeSocialPostParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const LikeSocialPostResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a post like
+ */
+
+
+
+export const UnlikeSocialPostParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const UnlikeSocialPostResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Repost a post
+ */
+
+
+
+export const RepostSocialPostParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const RepostSocialPostResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a repost
+ */
+
+
+
+export const RemoveSocialRepostParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const RemoveSocialRepostResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Save a post
+ */
+
+
+
+export const SaveSocialPostParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const SaveSocialPostResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a saved post
+ */
+
+
+
+export const RemoveSavedSocialPostParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const RemoveSavedSocialPostResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary List comments and replies for a post
+ */
+
+
+
+export const GetSocialPostCommentsParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const GetSocialPostCommentsResponseItem = zod.object({
+  "id": zod.number(),
+  "postId": zod.number(),
+  "authorId": zod.number(),
+  "parentId": zod.number().nullable(),
+  "content": zod.string(),
+  "createdAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "liked": zod.boolean()
+})
+export const GetSocialPostCommentsResponse = zod.array(GetSocialPostCommentsResponseItem)
+
+
+/**
+ * @summary Comment on or reply to a post
+ */
+
+
+
+export const CreateSocialPostCommentParams = zod.object({
+  "postId": zod.coerce.number().min(1)
+})
+
+export const createSocialPostCommentBodyContentMax = 1000;
+
+
+
+export const CreateSocialPostCommentBody = zod.object({
+  "content": zod.string().min(1).max(createSocialPostCommentBodyContentMax),
+  "parentId": zod.number().nullish()
+})
+
+export const CreateSocialPostCommentResponse = zod.object({
+  "id": zod.number(),
+  "postId": zod.number(),
+  "authorId": zod.number(),
+  "parentId": zod.number().nullable(),
+  "content": zod.string(),
+  "createdAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "liked": zod.boolean()
+})
+
+
+/**
+ * @summary Delete a comment owned by the authenticated user
+ */
+
+
+
+export const DeleteSocialCommentParams = zod.object({
+  "commentId": zod.coerce.number().min(1)
+})
+
+export const DeleteSocialCommentResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Like a comment
+ */
+
+
+
+export const LikeSocialCommentParams = zod.object({
+  "commentId": zod.coerce.number().min(1)
+})
+
+export const LikeSocialCommentResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a comment like
+ */
+
+
+
+export const UnlikeSocialCommentParams = zod.object({
+  "commentId": zod.coerce.number().min(1)
+})
+
+export const UnlikeSocialCommentResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "active": zod.boolean()
+}))
+
+
+/**
+ * @summary Search visible users and posts
+ */
+export const searchSocialQueryQMin = 2;
+export const searchSocialQueryQMax = 80;
+
+
+
+export const SearchSocialQueryParams = zod.object({
+  "q": zod.coerce.string().min(searchSocialQueryQMin).max(searchSocialQueryQMax)
+})
+
+export const SearchSocialResponse = zod.object({
+  "users": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+})),
+  "posts": zod.array(zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "media": zod.array(zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional()
+})),
+  "linkUrl": zod.string().nullable(),
+  "linkTitle": zod.string().nullable(),
+  "linkDescription": zod.string().nullable(),
+  "linkImageUrl": zod.string().nullable(),
+  "news": zod.union([zod.object({
+  "source": zod.string(),
+  "publishedAt": zod.number().nullable(),
+  "url": zod.string()
+}),zod.null()]),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "counts": zod.object({
+  "likes": zod.number(),
+  "comments": zod.number(),
+  "reposts": zod.number(),
+  "saves": zod.number()
+}),
+  "viewer": zod.object({
+  "liked": zod.boolean(),
+  "reposted": zod.boolean(),
+  "saved": zod.boolean(),
+  "followingAuthor": zod.boolean()
+})
+}))
+})
+
+
+/**
+ * @summary Get a compact social identity card
+ */
+
+
+
+export const GetSocialUserCardParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const GetSocialUserCardResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}).and(zod.object({
+  "followerCount": zod.number(),
+  "followingCount": zod.number(),
+  "following": zod.boolean(),
+  "muted": zod.boolean(),
+  "canMessage": zod.boolean()
+}))
+
+
+/**
+ * @summary Follow a user
+ */
+
+
+
+export const FollowSocialUserParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const FollowSocialUserResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "following": zod.boolean()
+}))
+
+
+/**
+ * @summary Unfollow a user
+ */
+
+
+
+export const UnfollowSocialUserParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const UnfollowSocialUserResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "following": zod.boolean()
+}))
+
+
+/**
+ * @summary Block a user and remove follow relationships
+ */
+
+
+
+export const BlockSocialUserParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const BlockSocialUserResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "blocked": zod.boolean()
+}))
+
+
+/**
+ * @summary Unblock a user
+ */
+
+
+
+export const UnblockSocialUserParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const UnblockSocialUserResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "blocked": zod.boolean()
+}))
+
+
+/**
+ * @summary Remove a user's content from personalized feeds
+ */
+
+
+
+export const MuteSocialUserParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const MuteSocialUserResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "muted": zod.boolean()
+}))
+
+
+/**
+ * @summary Restore a user's content to personalized feeds
+ */
+
+
+
+export const UnmuteSocialUserParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const UnmuteSocialUserResponse = zod.object({
+  "success": zod.boolean()
+}).and(zod.object({
+  "muted": zod.boolean()
+}))
+
+
+/**
+ * @summary Submit a moderation report
+ */
+
+export const reportSocialContentBodyDetailsMax = 1000;
+
+
+
+export const ReportSocialContentBody = zod.object({
+  "targetType": zod.enum(['post', 'comment', 'user']),
+  "targetId": zod.number().min(1),
+  "reason": zod.enum(['spam', 'harassment', 'hate', 'violence', 'sexual_content', 'misinformation', 'copyright', 'other']),
+  "details": zod.string().max(reportSocialContentBodyDetailsMax).optional()
+})
+
+export const ReportSocialContentResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary List posts saved by the authenticated user
+ */
+export const GetSavedSocialPostsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']),
+  "media": zod.array(zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional()
+})),
+  "linkUrl": zod.string().nullable(),
+  "linkTitle": zod.string().nullable(),
+  "linkDescription": zod.string().nullable(),
+  "linkImageUrl": zod.string().nullable(),
+  "news": zod.union([zod.object({
+  "source": zod.string(),
+  "publishedAt": zod.number().nullable(),
+  "url": zod.string()
+}),zod.null()]),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "counts": zod.object({
+  "likes": zod.number(),
+  "comments": zod.number(),
+  "reposts": zod.number(),
+  "saves": zod.number()
+}),
+  "viewer": zod.object({
+  "liked": zod.boolean(),
+  "reposted": zod.boolean(),
+  "saved": zod.boolean(),
+  "followingAuthor": zod.boolean()
+})
+}))
+})
+
+
+/**
  * @summary Request a protected media upload endpoint
  */
 

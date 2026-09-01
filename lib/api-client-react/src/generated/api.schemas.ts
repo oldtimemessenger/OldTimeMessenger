@@ -159,6 +159,235 @@ export interface ReadResult {
   updated: number;
 }
 
+export interface SocialUser {
+  id: number;
+  name: string;
+  username: string;
+}
+
+export type SocialMediaType = typeof SocialMediaType[keyof typeof SocialMediaType];
+
+
+export const SocialMediaType = {
+  image: 'image',
+  video: 'video',
+} as const;
+
+export interface SocialMedia {
+  type: SocialMediaType;
+  objectPath: string;
+  mimeType: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+}
+
+export interface SocialPostCounts {
+  likes: number;
+  comments: number;
+  reposts: number;
+  saves: number;
+}
+
+export interface SocialPostViewer {
+  liked: boolean;
+  reposted: boolean;
+  saved: boolean;
+  followingAuthor: boolean;
+}
+
+export interface SocialNewsAttribution {
+  source: string;
+  /** @nullable */
+  publishedAt: number | null;
+  url: string;
+}
+
+export type SocialPostKind = typeof SocialPostKind[keyof typeof SocialPostKind];
+
+
+export const SocialPostKind = {
+  text: 'text',
+  photo: 'photo',
+  video: 'video',
+  link: 'link',
+  news: 'news',
+} as const;
+
+export type SocialPostVisibility = typeof SocialPostVisibility[keyof typeof SocialPostVisibility];
+
+
+export const SocialPostVisibility = {
+  public: 'public',
+  friends: 'friends',
+  followers: 'followers',
+  private: 'private',
+} as const;
+
+export interface SocialPost {
+  id: number;
+  kind: SocialPostKind;
+  content: string;
+  visibility: SocialPostVisibility;
+  media: SocialMedia[];
+  /** @nullable */
+  linkUrl: string | null;
+  /** @nullable */
+  linkTitle: string | null;
+  /** @nullable */
+  linkDescription: string | null;
+  /** @nullable */
+  linkImageUrl: string | null;
+  news: SocialNewsAttribution | null;
+  createdAt: number;
+  updatedAt: number;
+  author: SocialUser;
+  counts: SocialPostCounts;
+  viewer: SocialPostViewer;
+}
+
+export type SocialFeedPageMode = typeof SocialFeedPageMode[keyof typeof SocialFeedPageMode];
+
+
+export const SocialFeedPageMode = {
+  'for-you': 'for-you',
+  following: 'following',
+} as const;
+
+export interface SocialFeedPage {
+  mode: SocialFeedPageMode;
+  items: SocialPost[];
+  /** @nullable */
+  nextCursor: number | null;
+}
+
+export interface SocialPostList {
+  items: SocialPost[];
+}
+
+export type SocialPostInputKind = typeof SocialPostInputKind[keyof typeof SocialPostInputKind];
+
+
+export const SocialPostInputKind = {
+  text: 'text',
+  photo: 'photo',
+  video: 'video',
+  link: 'link',
+  news: 'news',
+} as const;
+
+export type SocialPostInputVisibility = typeof SocialPostInputVisibility[keyof typeof SocialPostInputVisibility];
+
+
+export const SocialPostInputVisibility = {
+  public: 'public',
+  friends: 'friends',
+  followers: 'followers',
+  private: 'private',
+} as const;
+
+export interface SocialPostInput {
+  /** @maxLength 2000 */
+  content?: string;
+  kind?: SocialPostInputKind;
+  visibility?: SocialPostInputVisibility;
+  /** @maxItems 8 */
+  media?: SocialMedia[];
+  linkUrl?: string;
+  /** @maxLength 300 */
+  linkTitle?: string;
+  /** @maxLength 800 */
+  linkDescription?: string;
+  linkImageUrl?: string;
+}
+
+export interface SocialComment {
+  id: number;
+  postId: number;
+  authorId: number;
+  /** @nullable */
+  parentId: number | null;
+  content: string;
+  createdAt: number;
+  author: SocialUser;
+  liked: boolean;
+}
+
+export interface SocialCommentInput {
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  content: string;
+  /** @nullable */
+  parentId?: number | null;
+}
+
+export type SocialUserCard = SocialUser & {
+  followerCount: number;
+  followingCount: number;
+  following: boolean;
+  muted: boolean;
+  canMessage: boolean;
+};
+
+export interface SocialSearchResults {
+  users: SocialUser[];
+  posts: SocialPost[];
+}
+
+export type SocialReportInputTargetType = typeof SocialReportInputTargetType[keyof typeof SocialReportInputTargetType];
+
+
+export const SocialReportInputTargetType = {
+  post: 'post',
+  comment: 'comment',
+  user: 'user',
+} as const;
+
+export type SocialReportInputReason = typeof SocialReportInputReason[keyof typeof SocialReportInputReason];
+
+
+export const SocialReportInputReason = {
+  spam: 'spam',
+  harassment: 'harassment',
+  hate: 'hate',
+  violence: 'violence',
+  sexual_content: 'sexual_content',
+  misinformation: 'misinformation',
+  copyright: 'copyright',
+  other: 'other',
+} as const;
+
+export interface SocialReportInput {
+  targetType: SocialReportInputTargetType;
+  /** @minimum 1 */
+  targetId: number;
+  reason: SocialReportInputReason;
+  /** @maxLength 1000 */
+  details?: string;
+}
+
+export interface ActionResult {
+  success: boolean;
+}
+
+export type ActiveActionResult = ActionResult & {
+  active: boolean;
+};
+
+export type FollowActionResult = ActionResult & {
+  following: boolean;
+};
+
+export type BlockActionResult = ActionResult & {
+  blocked: boolean;
+};
+
+export type MuteActionResult = ActionResult & {
+  muted: boolean;
+};
+
 export type ViewerIdParameter = number;
 
 export type ListUsersParams = {
@@ -173,5 +402,31 @@ export type ListMessagesParams = {
  * @minimum 1
  */
 viewerId: number;
+};
+
+export type GetSocialFeedParams = {
+mode?: GetSocialFeedMode;
+cursor?: number;
+/**
+ * @minimum 1
+ * @maximum 30
+ */
+limit?: number;
+};
+
+export type GetSocialFeedMode = typeof GetSocialFeedMode[keyof typeof GetSocialFeedMode];
+
+
+export const GetSocialFeedMode = {
+  'for-you': 'for-you',
+  following: 'following',
+} as const;
+
+export type SearchSocialParams = {
+/**
+ * @minLength 2
+ * @maxLength 80
+ */
+q: string;
 };
 

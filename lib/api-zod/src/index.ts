@@ -1,4 +1,5 @@
 export * from "./generated/api";
+export { z } from "zod";
 export type {
   Chat,
   ChatInput,
