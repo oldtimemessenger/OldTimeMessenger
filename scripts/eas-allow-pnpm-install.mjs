@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const candidates = [
   process.cwd(),
@@ -27,8 +28,57 @@ for (const dir of candidates) {
   }
 }
 
+function wrapPnpm(bin) {
+  if (!bin || !fs.existsSync(bin) || bin.endsWith('.real')) {
+    return false;
+  }
+  try {
+    fs.accessSync(path.dirname(bin), fs.constants.W_OK);
+  } catch {
+    return false;
+  }
+  const real = `${bin}.real`;
+  if (!fs.existsSync(real)) {
+    fs.copyFileSync(bin, real);
+  }
+  fs.writeFileSync(
+    bin,
+    `#!/bin/bash
+args=()
+for a in "$@"; do
+  case "$a" in
+    --frozen-lockfile|--frozen-lockfile=true) ;;
+    *) args+=("$a") ;;
+  esac
+done
+exec "${real}" "\${args[@]}" --frozen-lockfile=false
+`,
+  );
+  fs.chmodSync(bin, 0o755);
+  return true;
+}
+
+const wrapped = new Set();
+try {
+  const which = execFileSync('bash', ['-lc', 'which -a pnpm || true'], {
+    encoding: 'utf8',
+  });
+  for (const bin of which.split('\n').map((s) => s.trim()).filter(Boolean)) {
+    if (wrapPnpm(bin)) {
+      wrapped.add(bin);
+    }
+  }
+} catch {
+  // ignore
+}
+
 console.log(
   patched.size
     ? `EAS pnpm: wrote frozen-lockfile=false to ${[...patched].join(', ')}`
     : 'EAS pnpm: frozen-lockfile already configured',
+);
+console.log(
+  wrapped.size
+    ? `EAS pnpm: wrapped binaries ${[...wrapped].join(', ')}`
+    : 'EAS pnpm: no writable pnpm binary to wrap',
 );
