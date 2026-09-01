@@ -10,6 +10,7 @@ import {
   mapPinsTable,
   socialBlocksTable,
   socialFollowsTable,
+  socialSharingExclusionsTable,
   usersTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
@@ -44,7 +45,10 @@ async function followingIds(viewerId: number) {
 }
 async function canSee(viewerId: number, pin: typeof mapPinsTable.$inferSelect, following: Set<number>, blocked: Set<number>) {
   if (blocked.has(pin.authorId) || pin.deleted || (pin.expiresAt !== null && pin.expiresAt <= Date.now())) return false;
-  if (pin.authorId === viewerId || pin.visibility === "public") return true;
+  if (pin.authorId === viewerId) return true;
+  const [exclusion] = await db.select({ ownerId: socialSharingExclusionsTable.ownerId }).from(socialSharingExclusionsTable).where(and(eq(socialSharingExclusionsTable.ownerId, pin.authorId), eq(socialSharingExclusionsTable.excludedUserId, viewerId))).limit(1);
+  if (exclusion) return false;
+  if (pin.visibility === "public") return true;
   if (pin.visibility === "private" || !following.has(pin.authorId)) return false;
   if (pin.visibility === "followers") return true;
   const [reciprocal] = await db.select({ id: socialFollowsTable.followerId }).from(socialFollowsTable).where(and(eq(socialFollowsTable.followerId, pin.authorId), eq(socialFollowsTable.followingId, viewerId))).limit(1);
