@@ -1,7 +1,6 @@
 {
   "cli": {
-    "appVersionSource": "remote",
-    "promptToConfigureMissingCredentials": false
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
