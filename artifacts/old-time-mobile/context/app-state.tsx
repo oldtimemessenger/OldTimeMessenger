@@ -13,7 +13,7 @@ export type StatusItem = {
   type?: 'text' | 'photo' | 'video';
   uri?: string;
   viewers?: string[];
-  audience?: 'everyone' | 'close_friends';
+  audience?: 'public' | 'friends' | 'followers' | 'close_friends' | 'private';
 };
 
 export type UpdatePost = {
@@ -28,6 +28,7 @@ export type UpdatePost = {
   saved: boolean;
   comments: string[];
   createdAt: number;
+  audience?: 'public' | 'friends' | 'followers' | 'close_friends' | 'private';
 };
 
 export type CallRecord = {
@@ -61,6 +62,9 @@ export type AppSettings = {
   autoplay: boolean;
   language: string;
   lowPower: boolean;
+  statusAudience: 'public' | 'friends' | 'followers' | 'close_friends' | 'private';
+  locationAudience: 'public' | 'friends' | 'followers' | 'private';
+  excludedPeople: Array<{ id: number; name: string }>;
 };
 
 type AppState = {
@@ -77,9 +81,9 @@ type AppState = {
   followedCreators: string[];
   hiddenPostIds: string[];
   setSession: (user: AuthenticatedUser | null) => void;
-  addStatus: (caption: string, color: string, type?: 'text' | 'photo' | 'video', uri?: string, audience?: 'everyone' | 'close_friends') => void;
+  addStatus: (caption: string, color: string, type?: 'text' | 'photo' | 'video', uri?: string, audience?: StatusItem['audience']) => void;
   markStatusViewed: (id: string, viewer?: string) => void;
-  addPost: (caption: string, tag: string, color: string) => void;
+  addPost: (caption: string, tag: string, color: string, audience?: UpdatePost['audience']) => void;
   togglePostLike: (id: string) => void;
   togglePostSaved: (id: string) => void;
   addPostComment: (id: string, comment: string) => void;
@@ -114,6 +118,9 @@ const defaultSettings: AppSettings = {
   autoplay: true,
   language: 'English',
   lowPower: false,
+  statusAudience: 'friends',
+  locationAudience: 'friends',
+  excludedPeople: [],
 };
 
 const defaultProfile: Profile = { name: 'Old Time User', username: '', bio: 'Keeping in touch, one message at a time.', phone: '' };
@@ -187,13 +194,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     followedCreators,
     hiddenPostIds,
     setSession: (user) => setSessionState(user),
-    addStatus: (caption, color, type = 'text', uri, audience = 'everyone') => setStatuses((items) => [{ id: `${Date.now()}`, author: 'You', caption, color, type, uri, audience, viewers: [], viewed: false, createdAt: Date.now() }, ...items]),
+    addStatus: (caption, color, type = 'text', uri, audience = 'friends') => setStatuses((items) => [{ id: `${Date.now()}`, author: 'You', caption, color, type, uri, audience, viewers: [], viewed: false, createdAt: Date.now() }, ...items]),
     markStatusViewed: (id, viewer) => setStatuses((items) => items.map((item) => {
       if (item.id !== id) return item;
       const updatedViewers = viewer && item.viewers && !item.viewers.includes(viewer) ? [...item.viewers, viewer] : item.viewers;
       return { ...item, viewed: true, viewers: updatedViewers };
     })),
-    addPost: (caption, tag, color) => setPosts((items) => [{ id: `${Date.now()}`, author: profile.name || 'You', handle: profile.username || 'oldtimeuser', caption, tag, color, likes: 0, liked: false, saved: false, comments: [], createdAt: Date.now() }, ...items]),
+    addPost: (caption, tag, color, audience = 'friends') => setPosts((items) => [{ id: `${Date.now()}`, author: profile.name || 'You', handle: profile.username || 'oldtimeuser', caption, tag, color, likes: 0, liked: false, saved: false, comments: [], createdAt: Date.now(), audience }, ...items]),
     togglePostLike: (id) => setPosts((items) => items.map((post) => post.id === id ? { ...post, liked: !post.liked, likes: Math.max(0, post.likes + (post.liked ? -1 : 1)) } : post)),
     togglePostSaved: (id) => setPosts((items) => items.map((post) => post.id === id ? { ...post, saved: !post.saved } : post)),
     addPostComment: (id, comment) => setPosts((items) => items.map((post) => post.id === id ? { ...post, comments: [...post.comments, comment] } : post)),
