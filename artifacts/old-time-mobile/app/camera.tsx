@@ -194,12 +194,12 @@ export default function CameraScreen() {
   if (!hasPermissions && !isWeb) {
     return (
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
-        <Ionicons name="camera-outline" size={64} color="rgba(255,255,255,0.5)" style={{ marginBottom: 20 }} />
+        <Ionicons name="camera-outline" size={52} color="rgba(255,255,255,0.7)" style={{ marginBottom: 18 }} />
         <Text style={{ color: '#fff', fontSize: 18, marginBottom: 12, textAlign: 'center', fontWeight: 'bold' }}>
-          Camera Access Required
+          Camera access
         </Text>
         <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, marginBottom: 32, textAlign: 'center' }}>
-          To capture moments for your Old Time story, please grant camera and microphone permissions.
+          Allow access to take photos and videos.
         </Text>
         <Pressable
           style={{ backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12 }}
@@ -214,7 +214,7 @@ export default function CameraScreen() {
             }
           }}
         >
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Grant Permissions</Text>
+          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{permission.canAskAgain ? 'Continue' : 'Open Settings'}</Text>
         </Pressable>
       </View>
     );
@@ -231,8 +231,8 @@ export default function CameraScreen() {
           )}
         </View>
         <View style={[styles.previewControls, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-           <Pressable testID="retake-button" onPress={() => setPreview(null)} style={styles.retakeBtn}>
-             <Text style={styles.retakeText}>Retake</Text>
+            <Pressable accessibilityLabel="Retake" testID="retake-button" onPress={() => setPreview(null)} style={styles.previewAction}>
+              <Ionicons name="arrow-undo" size={24} color="#fff" />
            </Pressable>
             <Pressable
               testID="use-button"
@@ -260,9 +260,10 @@ export default function CameraScreen() {
                  }
                 router.back();
               }}
-              style={[styles.useBtn, { backgroundColor: colors.primary }]}
+               accessibilityLabel="Use media"
+               style={[styles.previewAction, styles.useBtn, { backgroundColor: colors.primary }]}
             >
-             <Text style={styles.useText}>Use {preview.type === 'video' ? 'Video' : 'Photo'}</Text>
+              <Ionicons name={returnChatId ? 'paper-plane' : 'checkmark'} size={24} color="#fff" />
            </Pressable>
         </View>
       </View>
@@ -273,14 +274,11 @@ export default function CameraScreen() {
     <View style={styles.root}>
       <View style={[styles.viewfinder, { paddingTop: isWeb ? insets.top + 10 : 0 }]}>
         {isWeb ? (
-          <View style={styles.previewFallback}>
-            <Ionicons name="camera-outline" size={60} color="rgba(255,255,255,0.45)" />
-            <Text style={styles.fallbackText}>Camera ready</Text>
-            <Text style={styles.fallbackSub}>Capture a moment for your Old Time story.</Text>
-            <Text style={[styles.fallbackSub, { marginTop: 20, color: '#FFD54A' }]}>
-              Using web fallback. Select from gallery.
-            </Text>
-          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Choose a photo or video" onPress={openGallery} style={styles.webGallery}>
+            <View style={styles.webGalleryButton}>
+              <Ionicons name="images-outline" size={30} color="#fff" />
+            </View>
+          </Pressable>
         ) : (
           <CameraView
             ref={cameraRef}
@@ -335,8 +333,6 @@ export default function CameraScreen() {
 
         {/* Bottom Controls */}
         <View style={[styles.bottom, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-          <View style={styles.captureHint}><Text style={styles.captureHintText}>{isRecording ? 'Slide up to zoom in · down to zoom out' : 'Tap for photo · hold for video'}</Text></View>
-
           <View style={styles.captureRow}>
             <Pressable onPress={openGallery} style={styles.gallery} testID="gallery-button">
               {shots[0] ? (
@@ -370,9 +366,8 @@ const styles = StyleSheet.create({
   viewfinder: { flex: 1, position: 'relative', backgroundColor: '#000' },
   cameraView: { ...StyleSheet.absoluteFillObject },
   previewImage: { flex: 1, resizeMode: 'contain', width: '100%', height: '100%', backgroundColor: '#000' },
-  previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111116' },
-  fallbackText: { color: 'rgba(255,255,255,0.7)', fontWeight: '700', marginTop: 10, fontSize: 16 },
-  fallbackSub: { color: 'rgba(255,255,255,0.45)', marginTop: 5, fontSize: 12, textAlign: 'center', paddingHorizontal: 20 },
+  webGallery: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111116' },
+  webGalleryButton: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.28)' },
 
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
@@ -391,8 +386,6 @@ const styles = StyleSheet.create({
   zoomActive: { color: '#FFD54A', fontWeight: '800', fontSize: 15 },
 
   bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 18, paddingHorizontal: 0, backgroundColor: 'rgba(0,0,0,0.28)' },
-  captureHint: { alignSelf: 'center', backgroundColor: 'rgba(20,20,22,0.52)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.28)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, marginBottom: 15 },
-  captureHintText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   modeRow: { gap: 30, paddingHorizontal: 30, paddingBottom: 24 },
   mode: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
   modeActive: { color: '#FFD54A' },
@@ -408,9 +401,7 @@ const styles = StyleSheet.create({
 
   flip: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
 
-  previewControls: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 30, paddingTop: 20, backgroundColor: 'rgba(0,0,0,0.8)' },
-  retakeBtn: { paddingVertical: 12, paddingHorizontal: 20 },
-  retakeText: { color: '#fff', fontSize: 16, fontWeight: '500' },
-  useBtn: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 24 },
-  useText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  previewControls: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 28, paddingTop: 18, backgroundColor: 'rgba(0,0,0,0.72)' },
+  previewAction: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.28)' },
+  useBtn: { borderWidth: 0 },
 });
