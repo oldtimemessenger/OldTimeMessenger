@@ -10,14 +10,14 @@ export function initials(name: string) {
   return name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'OT';
 }
 
-export function Screen({ children, title, right, scroll = false }: { children: ReactNode; title?: string; right?: ReactNode; scroll?: boolean }) {
+export function Screen({ children, title, left, right, scroll = false }: { children: ReactNode; title?: string; left?: ReactNode; right?: ReactNode; scroll?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const content = scroll ? <View style={[styles.scroll, { paddingBottom: insets.bottom + 100 }]}>{children}</View> : children;
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       {title ? <BlurView intensity={55} tint="systemMaterial" style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text><View style={styles.headerRight}>{right}</View>
+        <View style={styles.headerTitleGroup}>{left}<Text style={[styles.title, { color: colors.foreground }]}>{title}</Text></View><View style={styles.headerRight}>{right}</View>
       </BlurView> : null}
       {content}
     </View>
@@ -64,6 +64,7 @@ export function Row({ icon, label, detail, onPress, destructive = false, right }
 export const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: { minHeight: 60, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  headerTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerRight: { flexDirection: 'row', alignItems: 'center' },
   title: { fontSize: 24, fontWeight: '700', letterSpacing: -0.5 },
   scroll: { paddingHorizontal: 16, paddingTop: 14 },
