@@ -4,3 +4,4 @@
 - [Mobile object uploads](mobile-object-uploads.md) — this workspace’s storage sidecar can stream objects but cannot create V4 signed URLs; enforce uploads through the API.
 - [Social media authorization](social-media-authorization.md) — audience and exclusion checks must protect direct object reads as well as feed/story discovery.
 - [GitHub connector payload filtering](github-connector-payload-filtering.md) — authenticated repository writes may be filtered by payload; verify remote trees after connector-based syncs.
+- [EAS monorepo base directory](eas-monorepo-base-directory.md) — Expo GitHub builds must target the mobile artifact directory, where its EAS config belongs.
