@@ -4,6 +4,7 @@ import { fetch as expoFetch } from 'expo/fetch';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -282,23 +283,12 @@ export default function ChatDetailScreen() {
       behavior="padding"
       keyboardVerticalOffset={0}
     >
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + 3,
-            backgroundColor: colors.card,
-            borderBottomColor: colors.border,
-          },
-        ]}
-      >
+      <LinearGradient colors={['#63BFFB', '#3B8FD6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <IconButton name="chevron-back" onPress={() => router.back()} />
         <Avatar name={contact?.name ?? 'Old Time contact'} size={40} />
         <View style={{ flex: 1 }}>
-          <Text style={[styles.headerName, { color: colors.foreground }]}>
-            {contact?.name ?? 'Conversation'}
-          </Text>
-          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+          <Text style={styles.headerName}>{contact?.name ?? 'Conversation'}</Text>
+          <Text style={styles.headerSub}>
             {contact?.online
               ? 'online'
               : contact?.lastSeen
@@ -307,7 +297,7 @@ export default function ChatDetailScreen() {
           </Text>
         </View>
         {contact?.phone ? <IconButton name="call-outline" label={`Call ${contact.name}`} onPress={() => void callContact()} /> : null}
-      </View>
+      </LinearGradient>
 
       <FlatList
         inverted
@@ -419,6 +409,7 @@ export default function ChatDetailScreen() {
       >
         <IconButton
           name="attach-outline"
+          color={colors.foreground}
           onPress={() => setAttachmentMenu(true)}
           label="Add attachment"
         />
@@ -437,6 +428,7 @@ export default function ChatDetailScreen() {
         {!text.trim() ? (
           <IconButton
             name="camera-outline"
+            color={colors.foreground}
             label="Open camera"
             onPress={() =>
               router.push({ pathname: '/camera', params: { returnChatId: String(chatId) } })
@@ -518,15 +510,15 @@ function AttachmentAction({
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
-    minHeight: 60,
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 10,
   },
-  headerName: { fontSize: 16, fontWeight: '700' },
-  headerSub: { fontSize: 12, marginTop: 2 },
+  headerName: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
+  headerSub: { fontSize: 12, marginTop: 2, color: 'rgba(255,255,255,0.82)' },
   messageList: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12 },
   messageLine: { flexDirection: 'row', marginBottom: 7 },
   bubble: {
