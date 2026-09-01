@@ -283,12 +283,12 @@ export default function ChatDetailScreen() {
       behavior="padding"
       keyboardVerticalOffset={0}
     >
-      <LinearGradient colors={['#63BFFB', '#3B8FD6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 6 }]}>
+      <LinearGradient colors={['#FFFFFF', '#F3F5F7']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <IconButton name="chevron-back" onPress={() => router.back()} />
         <Avatar name={contact?.name ?? 'Old Time contact'} size={40} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerName}>{contact?.name ?? 'Conversation'}</Text>
-          <Text style={styles.headerSub}>
+          <Text style={[styles.headerName, { color: colors.foreground }]}>{contact?.name ?? 'Conversation'}</Text>
+          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
             {contact?.online
               ? 'online'
               : contact?.lastSeen
@@ -409,7 +409,7 @@ export default function ChatDetailScreen() {
       >
         <IconButton
           name="attach-outline"
-          color={colors.foreground}
+          color={colors.primary}
           onPress={() => setAttachmentMenu(true)}
           label="Add attachment"
         />
@@ -428,7 +428,7 @@ export default function ChatDetailScreen() {
         {!text.trim() ? (
           <IconButton
             name="camera-outline"
-            color={colors.foreground}
+            color={colors.primary}
             label="Open camera"
             onPress={() =>
               router.push({ pathname: '/camera', params: { returnChatId: String(chatId) } })
@@ -516,9 +516,16 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 6,
     paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
-  headerName: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
-  headerSub: { fontSize: 12, marginTop: 2, color: 'rgba(255,255,255,0.82)' },
+  headerName: { fontSize: 16, fontWeight: '800' },
+  headerSub: { fontSize: 12, marginTop: 2 },
   messageList: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12 },
   messageLine: { flexDirection: 'row', marginBottom: 7 },
   bubble: {
