@@ -3,7 +3,7 @@ import React from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getListUsersQueryKey, useListUsers } from '@workspace/api-client-react';
 import { Avatar, EmptyState, Screen, SectionLabel } from '@/components/ui';
-import { useApp } from '@/context/app-state';
+import { useApp, type CallRecord } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 
 export default function CallsScreen() {
@@ -13,7 +13,6 @@ export default function CallsScreen() {
     { viewerId: session?.id ?? 0 },
     { query: { enabled: Boolean(session), queryKey: getListUsersQueryKey({ viewerId: session?.id ?? 0 }) } },
   );
-  const others = (contacts.data ?? []).filter((contact) => contact.id !== session?.id);
 
   async function call(name: string, phone: string) {
     try {
@@ -27,20 +26,20 @@ export default function CallsScreen() {
   return <Screen title="Calls">
     <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}>
       <SectionLabel>Contacts</SectionLabel>
-      {others.length ? others.map((contact) => (
-        <Pressable key={contact.id} onPress={() => void call(contact.name, contact.phone)} style={[styles.callRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+      {contacts.data?.length ? contacts.data.map((contact) => (
+        <Pressable key={contact.id} onPress={() => void call(contact.name, contact.phone)} style={[styles.callRow, { borderBottomColor: colors.border }]}>
           <Avatar name={contact.name} size={46} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.name, { color: colors.foreground }]}>{contact.name}</Text>
             <Text style={[styles.meta, { color: colors.mutedForeground }]}>{contact.phone}</Text>
           </View>
-          <Ionicons name="call" size={20} color={colors.primary} />
+          <Ionicons name="call-outline" size={22} color={colors.primary} />
         </Pressable>
       )) : <EmptyState icon="people-outline" title="No contacts yet" description="Other Old Time users will appear here when they are available." />}
       {calls.length ? <>
         <SectionLabel>Recent</SectionLabel>
         {calls.map((item) => (
-          <View key={item.id} style={[styles.callRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+          <View key={item.id} style={[styles.callRow, { borderBottomColor: colors.border }]}>
             <Avatar name={item.name} size={46} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.name, { color: colors.foreground }]}>{item.name}</Text>
@@ -48,7 +47,6 @@ export default function CallsScreen() {
                 {item.direction === 'missed' ? 'Missed' : item.direction === 'incoming' ? 'Incoming' : 'Outgoing'} · {new Date(item.createdAt).toLocaleString()}
               </Text>
             </View>
-            <Ionicons name={item.type === 'video' ? 'videocam-outline' : 'call-outline'} size={18} color={colors.mutedForeground} />
           </View>
         ))}
       </> : null}
@@ -57,7 +55,7 @@ export default function CallsScreen() {
 }
 
 const styles = StyleSheet.create({
-  callRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10, borderRadius: 12, marginBottom: 6 },
+  callRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
   name: { fontSize: 15, fontWeight: '700' },
   meta: { fontSize: 12, marginTop: 4 },
 });
