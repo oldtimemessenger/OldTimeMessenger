@@ -11,7 +11,7 @@ import { Image } from 'expo-image';
 import { File } from 'expo-file-system';
 import { fetch as expoFetch } from 'expo/fetch';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Avatar, EmptyState, IconButton, Screen, SectionLabel } from '@/components/ui';
+import { Avatar, EmptyState, IconButton, Screen, SectionLabel, StoryAvatar } from '@/components/ui';
 import { useApp, type StatusItem, type UpdatePost } from '@/context/app-state';
 import { INTEREST_OPTIONS, rankForYou } from '@/lib/for-you';
 import { useColors } from '@/hooks/useColors';
@@ -192,13 +192,13 @@ export default function UpdatesScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
-      <Screen title="Updates" left={<IconButton name="radio-outline" label="Watch statuses" onPress={openStatusShortcut} />} right={
+      <Screen title="Updates" left={<IconButton name="albums-outline" label="Open stories" onPress={openStatusShortcut} />} right={
         <View style={styles.socialHeaderActions}>
           <Pressable onPress={() => session && setProfileUserId(session.id)} style={styles.headerAvatarButton} accessibilityRole="button" accessibilityLabel="Open profile">
             <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={34} color={colors.primary} />
             {unreadNotifications > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
           </Pressable>
-          <IconButton name="add" label="Create update" onPress={() => setCompose('status')} />
+          <IconButton name="add" label="Add story" onPress={() => setCompose('status')} />
         </View>
       }>
          <FlatList
@@ -399,33 +399,6 @@ export default function UpdatesScreen() {
         {serverStoryOpen ? <ServerStoryViewer story={serverStoryOpen} token={session?.authToken ?? ''} colors={colors} onClose={() => setServerStoryOpen(null)} /> : null}
       </Modal>
 
-    </View>
-  );
-}
-
-function StatusRail({ myGroup, otherGroups, colors, onCreate, onOpenGroup }: { myGroup?: StatusUserGroup; otherGroups: StatusUserGroup[]; colors: any; onCreate: () => void; onOpenGroup: (g: StatusUserGroup) => void }) {
-  return (
-    <View style={{ paddingVertical: 12 }} testID="status-rail">
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 14 }}>
-        <Pressable onPress={myGroup ? () => onOpenGroup(myGroup) : onCreate} style={{ alignItems: 'center', width: 68 }} testID="my-status">
-           <View style={{ width: 64, height: 64, borderRadius: 32, padding: 2, borderWidth: 2, borderColor: myGroup ? (myGroup.seen ? colors.border : colors.primary) : 'transparent' }}>
-             <Avatar name="You" size={56} color={myGroup ? myGroup.items[0].color : colors.muted} />
-             <View style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: colors.primary, borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background }}>
-               <Ionicons name="add" size={16} color="#fff" />
-             </View>
-           </View>
-           <Text style={{ fontSize: 11, marginTop: 6, color: colors.foreground, fontWeight: '500' }}>Your status</Text>
-        </Pressable>
-
-        {otherGroups.map(group => (
-           <Pressable key={group.author} onPress={() => onOpenGroup(group)} style={{ alignItems: 'center', width: 68 }} testID={`status-group-${group.author}`}>
-             <View style={{ width: 64, height: 64, borderRadius: 32, padding: 2, borderWidth: 2, borderColor: group.seen ? colors.border : colors.primary }}>
-               <Avatar name={group.author} size={56} color={group.items[0].color} />
-             </View>
-             <Text style={{ fontSize: 11, marginTop: 6, color: colors.foreground, fontWeight: '500' }} numberOfLines={1}>{group.author}</Text>
-           </Pressable>
-        ))}
-      </ScrollView>
     </View>
   );
 }
@@ -744,9 +717,9 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
 
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Math.max(insets.top, 20) + 10 }}>
         <IconButton name="close" color="#fff" onPress={onClose} />
-        <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>{type === 'status' ? 'New status' : 'New post'}</Text>
+        <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>{type === 'status' ? 'New Story' : 'New Post'}</Text>
         <Pressable disabled={publishing} onPress={() => void handlePublish()} style={{ backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, opacity: publishing ? 0.65 : 1 }}>
-          <Text style={{ color: '#000', fontWeight: '800', fontSize: 14 }}>{publishing ? 'Sharing…' : 'Post'}</Text>
+          <Text style={{ color: '#000', fontWeight: '800', fontSize: 14 }}>{publishing ? 'Sharing…' : 'Share'}</Text>
         </Pressable>
       </View>
 
@@ -755,7 +728,7 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
            autoFocus
            value={draft}
            onChangeText={setDraft}
-           placeholder={type === 'status' ? 'Type a status...' : 'Write a caption...'}
+            placeholder="Add a caption"
            placeholderTextColor="rgba(255,255,255,0.7)"
            multiline
            style={{ color: '#fff', fontSize: 28, fontWeight: '800', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}
@@ -764,7 +737,7 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
 
       <View style={{ paddingBottom: Math.max(insets.bottom, 20) + 20, paddingHorizontal: 16, gap: 20 }}>
           <View>
-            <Text style={{ color: 'rgba(255,255,255,0.85)', textAlign: 'center', fontSize: 12, fontWeight: '800', marginBottom: 8 }}>WHO CAN SEE THIS?</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.85)', textAlign: 'center', fontSize: 12, fontWeight: '800', marginBottom: 8 }}>AUDIENCE</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 4 }}>
               {((type === 'status'
                 ? ['public', 'friends', 'followers', 'close_friends', 'private']
@@ -883,17 +856,12 @@ function SocialHubPanel({
     <View style={styles.socialHub}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.socialStoryRail}>
         <Pressable onPress={ownStory ? () => onOpenStory(ownStory) : onCreate} style={styles.socialStoryItem} accessibilityRole="button" accessibilityLabel={ownStory ? 'View your story' : 'Add your story'}>
-          <View style={[styles.socialStoryRing, { borderColor: ownStory ? colors.primary : colors.border }]}>
-            <Avatar name={card?.name ?? 'You'} size={44} color={colors.muted} />
-            <View style={[styles.socialStoryAdd, { backgroundColor: colors.primary, borderColor: colors.background }]}><Ionicons name="add" size={13} color="#fff" /></View>
-          </View>
-          <Text style={[styles.socialStoryName, { color: colors.foreground }]} numberOfLines={1}>Your story</Text>
+          <StoryAvatar name={card?.name ?? 'You'} color={colors.muted} viewed={Boolean(ownStory?.viewer.viewed)} add />
+          <Text style={[styles.socialStoryName, { color: colors.foreground }]} numberOfLines={1}>My Story</Text>
         </Pressable>
           {otherStories.slice(0, 10).map((story) => (
             <Pressable key={story.id} onPress={() => onOpenStory(story)} style={styles.socialStoryItem} accessibilityRole="button" accessibilityLabel={`View ${story.author.name}'s story`}>
-              <View style={[styles.socialStoryRing, { borderColor: colors.primary }]}>
-                <Avatar name={story.author.name} size={44} color={colors.secondary} />
-              </View>
+              <StoryAvatar name={story.author.name} color={colors.secondary} viewed={story.viewer.viewed} />
               <Text style={[styles.socialStoryName, { color: colors.foreground }]} numberOfLines={1}>{story.author.name}</Text>
             </Pressable>
           ))}
@@ -1186,11 +1154,9 @@ const styles = StyleSheet.create({
   statStack: { alignItems: 'center', minWidth: 46 },
   statValue: { fontSize: 15, fontWeight: '900' },
   statLabel: { fontSize: 9, marginTop: 2 },
-  socialStoryRail: { gap: 14, paddingVertical: 14, paddingHorizontal: 2 },
-  socialStoryItem: { width: 62, alignItems: 'center' },
-  socialStoryRing: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  socialStoryAdd: { position: 'absolute', right: -4, bottom: -3, width: 19, height: 19, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  socialStoryName: { fontSize: 10, fontWeight: '800', width: 62, textAlign: 'center', marginTop: 4 },
+  socialStoryRail: { gap: 14, paddingVertical: 14, paddingHorizontal: 4 },
+  socialStoryItem: { width: 64, alignItems: 'center' },
+  socialStoryName: { fontSize: 10.5, fontWeight: '700', width: 64, textAlign: 'center', marginTop: 5 },
   socialStoryAudience: { fontSize: 8, marginTop: 1 },
   socialState: { minHeight: 68, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', gap: 10, alignItems: 'center' },
   socialPostList: { marginTop: 14, gap: 10 },
