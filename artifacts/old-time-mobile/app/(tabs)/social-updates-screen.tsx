@@ -185,9 +185,12 @@ export default function SocialUpdatesScreen() {
     }
   }
 
-  async function publish(content: string, visibility: SocialPost['visibility']) {
+  async function publish(input: {
+    content: string; visibility: SocialPost['visibility']; kind: SocialPost['kind'];
+    media?: SocialPost['media']; linkUrl?: string | null; linkTitle?: string | null; linkDescription?: string | null;
+  }) {
     if (!token) return;
-    const created = await createSocialPost(token, { content, visibility, kind: 'text' });
+    const created = await createSocialPost(token, input);
     setPosts((current) => [created, ...current]);
   }
 
@@ -304,7 +307,7 @@ export default function SocialUpdatesScreen() {
         />
       )}
 
-      <ComposeSheet visible={composeOpen} colors={colors} onClose={() => setComposeOpen(false)} onPublish={publish} />
+      <ComposeSheet visible={composeOpen} token={token} colors={colors} onClose={() => setComposeOpen(false)} onPublish={publish} />
       <StoryComposeSheet visible={storyComposeOpen} token={token} colors={colors} onClose={() => setStoryComposeOpen(false)} onPublish={async (content, visibility, media) => {
         const created = await createStory(token, { content, visibility, media });
         setStories((current) => [created, ...current]);
@@ -468,7 +471,7 @@ function PostCard({ post, token, isOwn, colors, onOpenUser, onFollow, onLike, on
       ) : null}
       {post.content ? <Text style={[styles.postText, { color: colors.foreground }]}>{post.content}</Text> : null}
       {media?.type === 'video' ? (
-        <VideoSurface source={socialMediaUrl(media.objectPath)} style={styles.media} muted paused />
+        <VideoSurface source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.media} muted paused />
       ) : imageUrl ? (
         <Image
           source={{ uri: imageUrl, headers: media ? { Authorization: `Bearer ${token}` } : undefined }}
@@ -503,20 +506,57 @@ function Action({ icon, color, count, label, onPress }: { icon: keyof typeof Ion
   );
 }
 
-function ComposeSheet({ visible, colors, onClose, onPublish }: { visible: boolean; colors: any; onClose: () => void; onPublish: (text: string, visibility: SocialPost['visibility']) => Promise<void> }) {
+function ComposeSheet({ visible, token, colors, onClose, onPublish }: { visible: boolean; token: string; colors: any; onClose: () => void; onPublish: (input: { content: string; visibility: SocialPost['visibility']; kind: SocialPost['kind']; media?: SocialPost['media']; linkUrl?: string | null; linkTitle?: string | null; linkDescription?: string | null }) => Promise<void> }) {
   const insets = useSafeAreaInsets();
+  const requestUploadUrl = useRequestUploadUrl();
   const [text, setText] = useState('');
   const [visibility, setVisibility] = useState<SocialPost['visibility']>('friends');
   const [submitting, setSubmitting] = useState(false);
-  async function submit() {
-    if (!text.trim() || submitting) return;
-    setSubmitting(true);
+  const [asset, setAsset] = useState<{ uri: string; name: string; mimeType: string; size: number; type: 'image' | 'video'; width?: number; height?: number; duration?: number } | null>(null);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkTitle, setLinkTitle] = useState('');
+  const [linkDescription, setLinkDescription] = useState('');
+  const [showLink, setShowLink] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hasContent = Boolean(text.trim() || asset || linkUrl.trim());
+  async function chooseMedia() {
+    if (submitting) return;
+    setError(null);
     try {
-      await onPublish(text.trim(), visibility);
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], quality: 0.9, selectionLimit: 1 });
+      if (result.canceled) return;
+      const picked = result.assets[0];
+      setAsset({ uri: picked.uri, name: picked.fileName ?? `post-${Date.now()}.${picked.type === 'video' ? 'mp4' : 'jpg'}`, mimeType: picked.mimeType ?? (picked.type === 'video' ? 'video/mp4' : 'image/jpeg'), size: picked.fileSize ?? 1, type: picked.type === 'video' ? 'video' : 'image', width: picked.width, height: picked.height, duration: picked.duration ?? undefined });
+    } catch (cause) { setError(errorText(cause)); }
+  }
+  async function submit() {
+    if (!hasContent || submitting) return;
+    let normalizedLink: string | null = null;
+    if (linkUrl.trim()) {
+      try {
+        const url = new URL(linkUrl.trim());
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS links are supported.');
+        normalizedLink = url.toString();
+      } catch (cause) { setError(errorText(cause) === 'Invalid URL' ? 'Enter a valid link URL.' : errorText(cause)); return; }
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      let media: SocialPost['media'] | undefined;
+      if (asset) {
+        const file = new File(asset.uri);
+        const upload = await requestUploadUrl.mutateAsync({ data: { name: asset.name, size: Math.max(1, asset.size || file.size || 1), contentType: asset.mimeType } });
+        const uploadUrl = upload.uploadURL.startsWith('/') && process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}${upload.uploadURL}` : upload.uploadURL;
+        const response = await expoFetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': asset.mimeType, Authorization: `Bearer ${token}` }, body: file });
+        if (!response.ok) throw new Error(`Upload failed (${response.status}).`);
+        media = [{ type: asset.type, objectPath: upload.objectPath, mimeType: asset.mimeType, width: asset.width, height: asset.height, duration: asset.duration }];
+      }
+      await onPublish({ content: text.trim(), visibility, kind: media?.[0]?.type === 'video' ? 'video' : media ? 'photo' : normalizedLink ? 'link' : 'text', media, linkUrl: normalizedLink, linkTitle: linkTitle.trim() || null, linkDescription: linkDescription.trim() || null });
       setText('');
+      setAsset(null); setLinkUrl(''); setLinkTitle(''); setLinkDescription(''); setShowLink(false);
       onClose();
     } catch (requestError) {
-      Alert.alert('Could not post', errorText(requestError));
+      setError(errorText(requestError));
     } finally {
       setSubmitting(false);
     }
@@ -527,8 +567,8 @@ function ComposeSheet({ visible, colors, onClose, onPublish }: { visible: boolea
         <View style={styles.modalHeader}>
           <IconButton name="close" label="Close composer" onPress={onClose} />
           <Text style={[styles.modalTitle, { color: colors.foreground }]}>New post</Text>
-          <Pressable disabled={!text.trim() || submitting} onPress={() => void submit()} style={[styles.postButton, { backgroundColor: colors.primary, opacity: !text.trim() || submitting ? 0.45 : 1 }]}>
-            <Text style={styles.postButtonText}>{submitting ? 'Posting…' : 'Post'}</Text>
+           <Pressable disabled={!hasContent || submitting} onPress={() => void submit()} style={[styles.postButton, { backgroundColor: colors.primary, opacity: !hasContent || submitting ? 0.45 : 1 }]}>
+             <Text style={styles.postButtonText}>{submitting ? (asset ? 'Uploading…' : 'Posting…') : 'Post'}</Text>
           </Pressable>
         </View>
         <TextInput
@@ -541,6 +581,13 @@ function ComposeSheet({ visible, colors, onClose, onPublish }: { visible: boolea
           maxLength={2000}
           style={[styles.composer, { color: colors.foreground }]}
         />
+         <View style={{ flexDirection: 'row', gap: 16, paddingHorizontal: 18, paddingBottom: 8 }}>
+           <Pressable disabled={submitting} onPress={() => void chooseMedia()}><Text style={{ color: colors.primary, fontWeight: '700' }}>{asset ? 'Change photo or video' : 'Add photo or video'}</Text></Pressable>
+           <Pressable disabled={submitting} onPress={() => setShowLink((current) => !current)}><Text style={{ color: colors.primary, fontWeight: '700' }}>{showLink ? 'Hide link' : 'Add link'}</Text></Pressable>
+         </View>
+         {asset ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18, paddingBottom: 10 }}>{asset.type === 'image' ? <Image source={{ uri: asset.uri }} style={{ width: 52, height: 52, borderRadius: 8 }} contentFit="cover" /> : <Ionicons name="videocam-outline" size={30} color={colors.primary} />}<Text style={{ color: colors.foreground, flex: 1 }} numberOfLines={1}>{asset.name}</Text><IconButton name="close-circle" label="Remove media" onPress={() => setAsset(null)} /></View> : null}
+         {showLink || linkUrl ? <View style={{ paddingHorizontal: 18, gap: 8, paddingBottom: 10 }}><TextInput value={linkUrl} onChangeText={setLinkUrl} autoCapitalize="none" keyboardType="url" placeholder="https://example.com" placeholderTextColor={colors.mutedForeground} style={[styles.linkInput, { color: colors.foreground, borderColor: colors.border }]} /><TextInput value={linkTitle} onChangeText={setLinkTitle} placeholder="Link title (optional)" placeholderTextColor={colors.mutedForeground} style={[styles.linkInput, { color: colors.foreground, borderColor: colors.border }]} /><TextInput value={linkDescription} onChangeText={setLinkDescription} placeholder="Description (optional)" placeholderTextColor={colors.mutedForeground} multiline style={[styles.linkInput, { color: colors.foreground, borderColor: colors.border }]} />{linkUrl ? <Pressable onPress={() => { setLinkUrl(''); setLinkTitle(''); setLinkDescription(''); setShowLink(false); }}><Text style={{ color: colors.destructive, fontWeight: '700' }}>Remove link</Text></Pressable> : null}</View> : null}
+         {error ? <Text style={{ color: colors.destructive, paddingHorizontal: 18, paddingBottom: 8 }}>{error}</Text> : null}
         <Text style={[styles.audienceTitle, { color: colors.mutedForeground }]}>Who can see this?</Text>
         <View style={styles.audienceRow}>
           {([
@@ -773,6 +820,7 @@ const styles = StyleSheet.create({
   audienceTitle: { fontSize: 12, fontWeight: '700', marginTop: 20, marginBottom: 8 },
   audienceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   audience: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 17 },
+  linkInput: { minHeight: 42, borderWidth: StyleSheet.hairlineWidth, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 8, fontSize: 14 },
   sheetShade: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.36)' },
   sheet: { maxHeight: '80%', minHeight: '45%', borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18 },
   comment: { flexDirection: 'row', gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },

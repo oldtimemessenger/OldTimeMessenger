@@ -11,6 +11,7 @@ import {
   socialBlocksTable,
   socialCloseFriendsTable,
   socialFollowsTable,
+  socialPostsTable,
   socialStoriesTable,
   uploadSlotsTable,
 } from "@workspace/db";
@@ -31,6 +32,24 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
+
+async function canSeePostMedia(userId: number, post: typeof socialPostsTable.$inferSelect): Promise<boolean> {
+  const [block, follow] = await Promise.all([
+    db.select({ blockerId: socialBlocksTable.blockerId }).from(socialBlocksTable).where(or(
+      and(eq(socialBlocksTable.blockerId, userId), eq(socialBlocksTable.blockedId, post.authorId)),
+      and(eq(socialBlocksTable.blockerId, post.authorId), eq(socialBlocksTable.blockedId, userId)),
+    )).limit(1),
+    db.select({ followingId: socialFollowsTable.followingId }).from(socialFollowsTable)
+      .where(and(eq(socialFollowsTable.followerId, userId), eq(socialFollowsTable.followingId, post.authorId))).limit(1),
+  ]);
+  if (block.length) return false;
+  if (post.authorId === userId || post.visibility === "public") return true;
+  if (post.visibility === "private" || !follow.length) return false;
+  if (post.visibility === "followers") return true;
+  const [reciprocal] = await db.select({ followerId: socialFollowsTable.followerId }).from(socialFollowsTable)
+    .where(and(eq(socialFollowsTable.followerId, post.authorId), eq(socialFollowsTable.followingId, userId))).limit(1);
+  return Boolean(reciprocal);
+}
 
 router.post("/storage/uploads/request-url", async (req, res): Promise<void> => {
   const userId = await requireChatAuth(req, res);
@@ -185,7 +204,18 @@ router.get("/storage/objects/*objectPath", async (req, res): Promise<void> => {
       }
     }
   }
-  if (!chatAuthorized && !storyAuthorized) {
+  const posts = await db.select().from(socialPostsTable).where(and(
+    eq(socialPostsTable.deleted, false),
+    sql`exists (select 1 from jsonb_array_elements(coalesce(${socialPostsTable.media}, '[]'::jsonb)) media where media->>'objectPath' = ${objectPath})`,
+  ));
+  let postAuthorized = false;
+  for (const post of posts) {
+    if (await canSeePostMedia(userId, post)) {
+      postAuthorized = true;
+      break;
+    }
+  }
+  if (!chatAuthorized && !storyAuthorized && !postAuthorized) {
     res.status(403).json({ error: "You cannot access this attachment." });
     return;
   }

@@ -37,6 +37,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
+import { fileForObjectPath, MAX_UPLOAD_BYTES } from "../lib/chat-storage";
 
 const router: IRouter = Router();
 
@@ -181,6 +182,23 @@ async function postById(postId: number): Promise<SocialPost | undefined> {
     .where(and(eq(socialPostsTable.id, postId), eq(socialPostsTable.deleted, false)))
     .limit(1);
   return post;
+}
+
+async function visiblePostFor(viewerId: number, postId: number): Promise<SocialPost | undefined> {
+  const post = await postById(postId);
+  if (!post) return undefined;
+  const [following, blocked] = await Promise.all([followingUserIds(viewerId), blockedUserIds(viewerId)]);
+  return (await canSeePost(viewerId, post, following, blocked)) ? post : undefined;
+}
+
+async function postForComment(commentId: number): Promise<SocialPost | undefined> {
+  const [row] = await db
+    .select({ post: socialPostsTable })
+    .from(socialCommentsTable)
+    .innerJoin(socialPostsTable, eq(socialPostsTable.id, socialCommentsTable.postId))
+    .where(and(eq(socialCommentsTable.id, commentId), eq(socialCommentsTable.deleted, false)))
+    .limit(1);
+  return row?.post;
 }
 
 async function canSeePost(
@@ -415,23 +433,71 @@ router.post("/social/posts", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Add text, media, or a link before posting." });
     return;
   }
+  const media = input.media ?? [];
+  const now = Date.now();
+  const claimedUploadIds: string[] = [];
+  for (const item of media) {
+    if (
+      (item.type === "image" && !item.mimeType.toLowerCase().startsWith("image/")) ||
+      (item.type === "video" && !item.mimeType.toLowerCase().startsWith("video/"))
+    ) {
+      res.status(400).json({ error: "Post media type must match its MIME type." });
+      return;
+    }
+    const [slot] = await db
+      .update(uploadSlotsTable)
+      .set({ status: "committing" })
+      .where(and(
+        eq(uploadSlotsTable.objectPath, item.objectPath),
+        eq(uploadSlotsTable.userId, viewerId),
+        eq(uploadSlotsTable.status, "uploaded"),
+        gt(uploadSlotsTable.expiresAt, now),
+      ))
+      .returning();
+    if (!slot || slot.contentType !== item.mimeType.toLowerCase()) {
+      if (claimedUploadIds.length) {
+        await db.update(uploadSlotsTable).set({ status: "uploaded" })
+          .where(inArray(uploadSlotsTable.id, claimedUploadIds));
+      }
+      res.status(400).json({ error: "Post media must be an uploaded file you own." });
+      return;
+    }
+    try {
+      const file = fileForObjectPath(slot.objectPath);
+      const [[exists], [metadata]] = await Promise.all([file.exists(), file.getMetadata()]);
+      const size = Number(metadata.size ?? 0);
+      if (!exists || !Number.isFinite(size) || size < 1 || size > MAX_UPLOAD_BYTES ||
+        (metadata.contentType ?? "").toLowerCase() !== slot.contentType) {
+        throw new Error("Invalid uploaded media");
+      }
+      claimedUploadIds.push(slot.id);
+    } catch {
+      await db.update(uploadSlotsTable).set({ status: "uploaded" })
+        .where(inArray(uploadSlotsTable.id, [...claimedUploadIds, slot.id]));
+      res.status(400).json({ error: "The uploaded post media could not be verified." });
+      return;
+    }
+  }
   const timestamp = Date.now();
-  const [created] = await db
-    .insert(socialPostsTable)
-    .values({
-      authorId: viewerId,
-      kind: input.kind,
-      content: input.content,
-      visibility: input.visibility,
-      media: input.media ?? null,
-      linkUrl: input.linkUrl ?? null,
-      linkTitle: input.linkTitle ?? null,
-      linkDescription: input.linkDescription ?? null,
-      linkImageUrl: input.linkImageUrl ?? null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-    .returning();
+  let created: SocialPost;
+  try {
+    [created] = await db.transaction(async (tx) => {
+      const inserted = await tx.insert(socialPostsTable).values({
+        authorId: viewerId, kind: input.kind, content: input.content, visibility: input.visibility,
+        media: input.media ?? null, linkUrl: input.linkUrl ?? null, linkTitle: input.linkTitle ?? null,
+        linkDescription: input.linkDescription ?? null, linkImageUrl: input.linkImageUrl ?? null,
+        createdAt: timestamp, updatedAt: timestamp,
+      }).returning();
+      if (claimedUploadIds.length) await tx.update(uploadSlotsTable).set({ status: "committed" })
+        .where(and(inArray(uploadSlotsTable.id, claimedUploadIds), eq(uploadSlotsTable.status, "committing")));
+      return inserted;
+    });
+  } catch {
+    if (claimedUploadIds.length) await db.update(uploadSlotsTable).set({ status: "uploaded" })
+      .where(and(inArray(uploadSlotsTable.id, claimedUploadIds), eq(uploadSlotsTable.status, "committing")));
+    res.status(500).json({ error: "Unable to publish post." });
+    return;
+  }
   res.status(201).json((await serializePosts([created], viewerId))[0]);
 });
 
@@ -459,8 +525,8 @@ async function togglePostRelation(
   const viewerId = await requireChatAuth(req, res);
   const postId = parseId(req.params.postId);
   if (viewerId === null || postId === null) return;
-  const post = await postById(postId);
-  if (!post || (await isBlocked(viewerId, post.authorId))) {
+  const post = await visiblePostFor(viewerId, postId);
+  if (!post) {
     res.status(404).json({ error: "Post not found." });
     return;
   }
@@ -492,6 +558,10 @@ async function removePostRelation(
   const viewerId = await requireChatAuth(req, res);
   const postId = parseId(req.params.postId);
   if (viewerId === null || postId === null) return;
+  if (!(await visiblePostFor(viewerId, postId))) {
+    res.status(404).json({ error: "Post not found." });
+    return;
+  }
   if (relation === "like") {
     await db
       .delete(socialPostLikesTable)
@@ -632,6 +702,11 @@ router.delete("/social/comments/:commentId", async (req, res): Promise<void> => 
   const viewerId = await requireChatAuth(req, res);
   const commentId = parseId(req.params.commentId);
   if (viewerId === null || commentId === null) return;
+  const post = await postForComment(commentId);
+  if (!post || !(await visiblePostFor(viewerId, post.id))) {
+    res.status(404).json({ error: "Comment not found." });
+    return;
+  }
   const [deleted] = await db
     .update(socialCommentsTable)
     .set({ deleted: true })
@@ -654,12 +729,8 @@ router.put("/social/comments/:commentId/like", async (req, res): Promise<void> =
   const viewerId = await requireChatAuth(req, res);
   const commentId = parseId(req.params.commentId);
   if (viewerId === null || commentId === null) return;
-  const [comment] = await db
-    .select({ id: socialCommentsTable.id })
-    .from(socialCommentsTable)
-    .where(and(eq(socialCommentsTable.id, commentId), eq(socialCommentsTable.deleted, false)))
-    .limit(1);
-  if (!comment) {
+  const post = await postForComment(commentId);
+  if (!post || !(await visiblePostFor(viewerId, post.id))) {
     res.status(404).json({ error: "Comment not found." });
     return;
   }
@@ -674,6 +745,11 @@ router.delete("/social/comments/:commentId/like", async (req, res): Promise<void
   const viewerId = await requireChatAuth(req, res);
   const commentId = parseId(req.params.commentId);
   if (viewerId === null || commentId === null) return;
+  const post = await postForComment(commentId);
+  if (!post || !(await visiblePostFor(viewerId, post.id))) {
+    res.status(404).json({ error: "Comment not found." });
+    return;
+  }
   await db
     .delete(socialCommentLikesTable)
     .where(
@@ -816,6 +892,21 @@ router.post("/social/reports", async (req, res): Promise<void> => {
     res.status(400).json({ error: "A valid report reason is required." });
     return;
   }
+  if (parsed.data.targetType === "post") {
+    if (!(await visiblePostFor(viewerId, parsed.data.targetId))) {
+      res.status(404).json({ error: "Post not found." });
+      return;
+    }
+  } else if (parsed.data.targetType === "comment") {
+    const post = await postForComment(parsed.data.targetId);
+    if (!post || !(await visiblePostFor(viewerId, post.id))) {
+      res.status(404).json({ error: "Comment not found." });
+      return;
+    }
+  } else if (!(await userExists(parsed.data.targetId)) || await isBlocked(viewerId, parsed.data.targetId)) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
   await db
     .insert(socialReportsTable)
     .values({
@@ -946,7 +1037,12 @@ router.get("/social/saved", async (req, res): Promise<void> => {
     )
     .orderBy(desc(socialPostSavesTable.createdAt))
     .limit(50);
-  res.json({ items: await serializePosts(rows.map((row) => row.post), viewerId) });
+  const [following, blocked] = await Promise.all([followingUserIds(viewerId), blockedUserIds(viewerId)]);
+  const visible: SocialPost[] = [];
+  for (const { post } of rows) {
+    if (await canSeePost(viewerId, post, following, blocked)) visible.push(post);
+  }
+  res.json({ items: await serializePosts(visible, viewerId) });
 });
 
 type Story = typeof socialStoriesTable.$inferSelect;

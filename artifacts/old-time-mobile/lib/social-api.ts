@@ -121,7 +121,11 @@ export function createSocialPost(
     content: string;
     visibility: SocialPost['visibility'];
     kind?: SocialPost['kind'];
+    media?: SocialPost['media'];
     linkUrl?: string | null;
+    linkTitle?: string | null;
+    linkDescription?: string | null;
+    linkImageUrl?: string | null;
   },
 ) {
   return request<SocialPost>(token, '/api/social/posts', {
