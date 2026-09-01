@@ -1,0 +1,1039 @@
+I am giving you full authority to implement this feature in the existing OldTime repository. Do not just give me instructions or mockups. Inspect the existing codebase first, understand the architecture, then implement the feature end-to-end.
+
+I want to transform the Update/Social section of OldTime into a serious social-media platform combining:
+
+* TikTok-style vertical feed
+* Twitter/X-style text-based social posting
+* Following/followers
+* Likes
+* Comments/replies
+* Reposts
+* News discovery
+* Automatic news aggregation
+* Proper source attribution/credits
+* Privacy controls
+* A lightweight user identity system
+
+Do NOT turn this into Instagram.
+
+The user should primarily experience the content, not giant profile pages.
+
+1. FIRST: INSPECT THE EXISTING APP
+
+Before modifying anything:
+
+* Inspect the entire existing repository.
+* Identify the current Expo/React Native architecture.
+* Identify navigation.
+* Identify authentication.
+* Identify Supabase configuration.
+* Identify existing users/profiles.
+* Identify existing Friends/Contacts functionality.
+* Identify the current Update/Social screen.
+* Identify the current design system.
+* Reuse existing components wherever appropriate.
+* Do not unnecessarily rewrite working parts of the app.
+* Do not create duplicate authentication/profile/friendship systems.
+
+Then implement the feature directly into the existing application.
+
+⸻
+
+SOCIAL HOME / UPDATE FEED
+
+The Update section should become the main social feed.
+
+Think:
+
+TikTok’s discovery/feed experience + Twitter’s conversation model.
+
+The feed should support two primary modes:
+
+FOR YOU
+
+Algorithmically selected content from:
+
+* People the user follows
+* Friends
+* Family
+* Popular posts
+* Trending conversations
+* News
+* Recommended content
+* Topics the user interacts with
+
+FOLLOWING
+
+Only content from accounts the user follows/friends they have connected with.
+
+Use tabs:
+
+For You | Following
+
+Make the feed fast and fluid.
+
+⸻
+
+FEED DESIGN
+
+The feed should be a vertical scrolling experience.
+
+Each post should support:
+
+User header
+
+Show:
+
+* Small avatar
+* Display name
+* Username
+* Follow status where appropriate
+* Timestamp
+
+Do NOT make the header huge.
+
+The user identity should remain compact.
+
+Post content
+
+Support:
+
+* Text
+* Photos
+* Videos
+* Links
+* News articles
+* Multiple media
+* Hashtags
+* Mentions
+
+Text posts should feel more like Twitter/X.
+
+Media posts can have a more immersive TikTok-style presentation.
+
+⸻
+
+INTERACTIONS
+
+Every post should have:
+
+❤️ Like
+
+💬 Comment
+
+🔁 Repost
+
+↗ Share
+
+🔖 Save
+
+More menu
+
+The counters should update immediately.
+
+Use optimistic UI where appropriate so the app feels fast.
+
+When the user likes a post:
+
+* Update UI immediately.
+* Persist the like to Supabase.
+* Prevent duplicate likes.
+* Allow unlike.
+
+When commenting:
+
+* Open a comment/reply interface.
+* Display existing comments.
+* Allow replies to comments.
+* Allow deleting the user’s own comment.
+* Enforce permissions.
+
+⸻
+
+COMMENTS / CONVERSATIONS
+
+I want Twitter-style conversations.
+
+A post can have:
+
+Post
+
+↓
+Comment
+
+↓
+Reply
+
+↓
+Reply
+
+Users should be able to:
+
+* Comment
+* Reply
+* Like comments
+* Delete their own comments
+* Report comments
+* Block users
+* Mute conversations
+
+Display comment counts.
+
+Do not create an unnecessarily complicated Reddit-style thread UI.
+
+Keep it clean.
+
+⸻
+
+FOLLOW SYSTEM
+
+Implement a real follow system.
+
+Users can:
+
+* Follow
+* Unfollow
+* See follower count
+* See following count
+
+The counts must update correctly.
+
+Prevent:
+
+* Following yourself
+* Duplicate follows
+* Invalid user IDs
+* Following blocked users
+
+When someone follows another user, create the appropriate relationship in Supabase.
+
+If the existing application has a friendship/contact system, keep that system separate from the social following system.
+
+A person can be:
+
+Friend + follower
+
+or:
+
+Follower only
+
+or:
+
+Contact only
+
+These should not automatically become the same thing.
+
+⸻
+
+VERY IMPORTANT: USER IDENTITY / PROFILE DESIGN
+
+This is one of the most important requirements.
+
+DO NOT create a giant Instagram-style profile page.
+
+I specifically want the user experience shown in the attached screenshot to influence the design.
+
+The existing account/user panel already has a compact identity area:
+
+* Avatar
+* Name
+* Phone number/username
+* Account status
+* Friends/contacts
+
+Keep this concept.
+
+When a user interacts with another person, show a compact user card/bottom sheet, not a giant profile page.
+
+For example:
+
+[ Avatar ]
+
+John Smith
+@johnsmith
+
+1.2K Followers    245 Following
+
+[ Follow ] [ Message ]
+
+Recent posts can be shown as a small preview if appropriate.
+
+But:
+
+DO NOT create a dedicated Instagram-style profile page.
+
+No giant:
+
+* Profile header
+* Cover photo
+* Huge biography
+* Grid of posts
+* Instagram clone layout
+
+The social identity should remain lightweight.
+
+The user’s social information should be accessible from:
+
+* Their post
+* Friends/contacts
+* Followers/following lists
+* Search
+* Mentions
+* Comments
+
+⸻
+
+FRIENDS / FAMILY / USERS
+
+The existing account panel concept should be expanded.
+
+Create sections such as:
+
+Friends
+
+Family
+
+Following
+
+Followers
+
+Suggested Users
+
+But keep the UI compact.
+
+Each person can display:
+
+Avatar
+Name
+Username
+Follower count
+Following count
+Follow button
+
+Do not send the user to a huge profile page just to follow somebody.
+
+⸻
+
+USER CARD
+
+Whenever someone taps a username/avatar, open a compact modal/bottom sheet.
+
+Example:
+
+⸻
+
+Avatar
+
+John Smith
+@johnsmith
+
+12.4K Followers
+342 Following
+
+[ Follow ]
+
+[ Message ]
+
+[ Mute ] [ Block ]
+
+⸻
+
+If the person is already followed:
+
+[ Following ]
+
+Do not create a separate profile screen unless there is a genuine functional reason.
+
+⸻
+
+SEARCH
+
+I want a powerful search system, but I do NOT want a giant search page dominating the application.
+
+Search should be accessible from the social section.
+
+Search:
+
+* Users
+* Usernames
+* Posts
+* Hashtags
+* Topics
+* News
+* Keywords
+
+Search results should be compact.
+
+⸻
+
+HIDDEN NEWS DISCOVERY ENGINE
+
+This is a major feature.
+
+Build an internal news discovery/aggregation layer.
+
+The purpose is:
+
+The user should be able to see current news inside the OldTime social feed without OldTime pretending that the news is original OldTime reporting.
+
+News should be automatically discovered from legitimate sources and inserted into the feed as news cards.
+
+Examples of categories:
+
+* Breaking News
+* U.S.
+* World
+* Politics
+* Business
+* Technology
+* Sports
+* Entertainment
+* Local
+* Trending
+
+The news engine should intelligently determine what is relevant and current.
+
+⸻
+
+NEWS ATTRIBUTION
+
+THIS IS EXTREMELY IMPORTANT.
+
+Never present aggregated news as if OldTime wrote it.
+
+Every news card must clearly identify the original source.
+
+Example:
+
+BREAKING NEWS
+
+Major event headline here…
+
+Source: Reuters
+
+Published: 24 minutes ago
+
+[ Read Full Story ]
+
+The card should link to the original source.
+
+Use the source’s:
+
+* Name
+* Article title
+* Publication time where available
+* Original article URL
+* Appropriate attribution
+
+Do NOT scrape entire articles and republish them.
+
+Prefer:
+
+headline + short summary + source + link
+
+rather than copying the article.
+
+Respect robots.txt, API terms, licensing, copyright, and source requirements.
+
+If an official news API/RSS feed is used, keep the source information attached to every article.
+
+⸻
+
+NEWS SHOULD FEEL NATIVE
+
+News shouldn’t look like an ugly external website pasted into the feed.
+
+Create a beautiful OldTime news card.
+
+Example:
+
+⸻
+
+🔴 BREAKING
+
+Major headline
+
+Short summary generated from available metadata/content where legally and technically appropriate.
+
+[Article image]
+
+Reuters · 32m
+
+Read Full Story →
+
+⸻
+
+Tapping it should open the original article.
+
+⸻
+
+NEWS + SOCIAL
+
+This is where I want the platform to become powerful.
+
+A news article can become a social conversation.
+
+For example:
+
+Reuters
+
+Major breaking-news headline…
+
+[Read]
+
+❤️ 1,240
+💬 342
+🔁 188
+↗ Share
+
+Users can comment on the news card.
+
+Users can repost the news card.
+
+Users can discuss the story.
+
+But the original source must remain clearly credited.
+
+⸻
+
+NEWS DUPLICATION
+
+Do not show the same news story 15 times because different sources reported the same event.
+
+Create basic story/event deduplication.
+
+If Reuters, AP, CNN, BBC, etc. are all reporting the same event, intelligently group or rank them.
+
+For example:
+
+Major Event
+
+Reported by:
+
+Reuters · AP · BBC
+
+Then allow the user to select the source.
+
+Do not incorrectly claim different articles are the same event if confidence is low.
+
+⸻
+
+NEWS FEED RANKING
+
+Build a basic ranking system.
+
+Feed ranking can consider:
+
+* Following relationships
+* Friends
+* Engagement
+* Recency
+* User interests
+* Topics
+* News freshness
+* Previous interactions
+* Muted topics
+* Blocked users
+* Content quality
+
+Do NOT create an overly complicated machine-learning system initially.
+
+Build a clean scoring architecture that can later be upgraded.
+
+⸻
+
+CONTENT MIX
+
+The For You feed should intelligently mix:
+
+Social posts
+↓
+Videos
+↓
+Photos
+↓
+Text posts
+↓
+News
+↓
+Trending discussions
+↓
+Recommended accounts
+
+Don’t make it 100% news.
+
+Don’t make it 100% videos.
+
+The goal is:
+
+OldTime = social network + conversation + discovery + news.
+
+⸻
+
+PRIVACY
+
+Privacy must be enforced server-side.
+
+A user should be able to control:
+
+* Who can follow them
+* Who can comment
+* Who can mention them
+* Who can message them
+* Who can see their posts
+* Who can see their follower/following information where appropriate
+
+Implement blocking.
+
+If A blocks B:
+
+B cannot:
+
+* Follow A
+* See A’s private content
+* Comment on A’s posts
+* Mention A
+* Message A
+* Interact with A’s content where prohibited
+
+Do not rely only on frontend hiding.
+
+Use Supabase RLS/database security.
+
+⸻
+
+CONTENT REPORTING
+
+Every post should have a More menu:
+
+Report
+
+Reasons:
+
+* Spam
+* Harassment
+* Hate
+* Violence
+* Sexual content
+* Misinformation
+* Copyright
+* Other
+
+Allow users to submit reports.
+
+Create a backend structure for moderation.
+
+⸻
+
+MUTE
+
+Users should be able to mute:
+
+* Users
+* Topics
+* Conversations
+
+Muted users should not appear prominently in For You.
+
+⸻
+
+SAVE
+
+Allow users to save posts/news.
+
+Create:
+
+Saved
+
+inside the user’s account/settings area.
+
+⸻
+
+SHARE
+
+Allow:
+
+* Share to OldTime conversation
+* Copy link
+* Native iOS share sheet
+
+Use Expo-compatible sharing functionality.
+
+⸻
+
+NOTIFICATIONS
+
+Create notifications for:
+
+* New follower
+* Like
+* Comment
+* Reply
+* Repost
+* Mention
+* Follow request if applicable
+
+Don’t notify users about every single action unnecessarily.
+
+Group notifications where appropriate.
+
+Example:
+
+John and 14 others liked your post.
+
+⸻
+
+DATABASE
+
+Inspect the existing database first.
+
+Reuse existing users/profiles.
+
+Create migrations only for missing functionality.
+
+Potential tables:
+
+profiles
+follows
+posts
+post_media
+post_likes
+comments
+comment_likes
+reposts
+saved_posts
+mentions
+hashtags
+notifications
+blocks
+mutes
+reports
+news_articles
+news_sources
+news_topics
+news_events
+user_interests
+
+Adapt names to the existing architecture instead of blindly creating duplicates.
+
+⸻
+
+SECURITY
+
+Use Supabase Row Level Security.
+
+Examples:
+
+Users can:
+
+* Create their own posts.
+* Edit their own posts.
+* Delete their own posts.
+* Like/unlike posts.
+* Comment where permitted.
+* Follow/unfollow users.
+* Manage their own saves.
+* Manage their own blocks/mutes.
+
+Users cannot:
+
+* Modify someone else’s post.
+* Modify another user’s followers.
+* Delete another user’s comments.
+* Access private content they’re not authorized to see.
+* Bypass blocks.
+* Manipulate engagement counts.
+
+Use database constraints to prevent duplicate relationships.
+
+⸻
+
+PERFORMANCE
+
+This feed needs to work on a real iPhone.
+
+Do NOT load 1,000 posts at once.
+
+Implement:
+
+* Pagination
+* Infinite scrolling
+* Pull-to-refresh
+* Image optimization
+* Video optimization
+* Caching where appropriate
+* Lazy loading
+* Skeleton loaders
+
+The feed should feel extremely fast.
+
+⸻
+
+TIKTOK-STYLE VIDEO EXPERIENCE
+
+If a post contains video:
+
+* Display video efficiently.
+* Autoplay when appropriate.
+* Pause when off-screen.
+* Avoid playing multiple videos simultaneously.
+* Respect mute/unmute state.
+* Support vertical video.
+* Don’t download huge videos unnecessarily.
+
+Use Expo-compatible libraries already present or install appropriate maintained packages only when necessary.
+
+⸻
+
+UI STYLE
+
+The interface should feel like OldTime, not Snapchat, Instagram, or Facebook.
+
+Use the existing OldTime visual language.
+
+Modern.
+
+Clean.
+
+Fast.
+
+Minimal.
+
+Professional.
+
+The social feed should be the star.
+
+Avoid excessive rounded cards everywhere.
+
+Avoid giant profile headers.
+
+Avoid unnecessary screens.
+
+⸻
+
+NAVIGATION
+
+Do not create unnecessary navigation complexity.
+
+The main experience should be something like:
+
+Chats | Updates | Map | Settings
+
+or whatever navigation already exists in the app.
+
+Updates opens:
+
+For You | Following
+
+From there:
+
+Post
+→ comments
+→ conversation
+
+Avatar
+→ compact user card
+
+News
+→ article view / external source
+
+Search
+→ compact search experience
+
+⸻
+
+POST COMPOSER
+
+Add a prominent compose button.
+
+Users can create:
+
+Post
+
+Text:
+
+“What’s happening?”
+
+Allow:
+
+* Text
+* Photo
+* Video
+* Mention
+* Hashtag
+* Link
+
+Before posting:
+
+Who can see this?
+
+* Everyone
+* Friends
+* Followers
+* Custom
+
+Do not automatically make everything public.
+
+⸻
+
+ORIGINAL CONTENT VS NEWS
+
+Clearly distinguish:
+
+USER POST
+
+John Smith
+
+“This is what I think about today’s news…”
+
+NEWS
+
+Reuters
+
+“Headline…”
+
+Source attribution must always be visible.
+
+Do not blur the difference between user-generated content and journalism.
+
+⸻
+
+ADMIN/MODERATION ARCHITECTURE
+
+Build the backend so an admin dashboard can eventually manage:
+
+* Reported posts
+* Reported users
+* News sources
+* News categories
+* Banned topics
+* Blocked domains
+* Trending topics
+
+Do not build a huge admin UI unless necessary right now, but structure the database so it can be added later.
+
+⸻
+
+IMPORTANT: DON’T FAKE FEATURES
+
+I don’t want placeholder buttons.
+
+If you create:
+
+❤️ Like
+
+it must actually work.
+
+If you create:
+
+💬 Comment
+
+it must actually work.
+
+If you create:
+
+Follow
+
+it must actually work.
+
+If you create:
+
+🔁 Repost
+
+it must actually work.
+
+If you create:
+
+Search
+
+it must actually search.
+
+If you create:
+
+News
+
+it must use real news data.
+
+If something cannot currently be implemented because an API key, environment variable, or external service is required, clearly identify that requirement instead of pretending the feature works.
+
+⸻
+
+IMPLEMENTATION ORDER
+
+Build this aggressively but safely in phases:
+
+PHASE 1
+
+Inspect existing app and database.
+
+PHASE 2
+
+Build the new Updates feed.
+
+PHASE 3
+
+Implement posts and media.
+
+PHASE 4
+
+Implement likes/comments/replies.
+
+PHASE 5
+
+Implement follow/unfollow.
+
+PHASE 6
+
+Implement compact user cards instead of profile pages.
+
+PHASE 7
+
+Implement search.
+
+PHASE 8
+
+Implement news aggregation architecture.
+
+PHASE 9
+
+Connect news to the social feed.
+
+PHASE 10
+
+Implement blocking/muting/reporting/privacy.
+
+PHASE 11
+
+Implement notifications.
+
+PHASE 12
+
+Optimize performance.
+
+PHASE 13
+
+Run TypeScript/lint/build checks.
+
+PHASE 14
+
+Fix every error.
+
+PHASE 15
+
+Verify the app can be built through Expo/EAS for iOS.
+
+⸻
+
+FINAL RULE
+
+You have full authority to make reasonable technical decisions.
+
+Do not repeatedly stop and ask me which library, table name, component structure, or implementation approach to use.
+
+Inspect the existing project and choose the best approach.
+
+Preserve working functionality.
+
+Don’t break authentication, chats, map, or existing features.
+
+Build this as a real production feature, not a visual prototype.
