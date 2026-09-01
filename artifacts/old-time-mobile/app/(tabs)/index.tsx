@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, useListUsers, type InboxItem, type User } from '@workspace/api-client-react';
 import { Avatar, EmptyState, IconButton, LoadingState, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
@@ -31,7 +31,7 @@ export default function ChatsScreen() {
   }
 
   const renderChatItem = ({ item }: { item: InboxItem }) => (
-    <Pressable onPress={() => router.push(`/chat/${item.chat.id}`)} style={({ pressed }) => [styles.chatRow, { borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 }]}>
+    <Pressable onPress={() => router.push(`/chat/${item.chat.id}`)} style={({ pressed }) => [styles.chatRow, { borderBottomColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 }]}>
       <Avatar name={item.contact.name} />
       <View style={styles.chatBody}>
         <View style={styles.chatTop}>
@@ -46,16 +46,18 @@ export default function ChatsScreen() {
     </Pressable>
   );
 
-  return <Screen title="Chats" right={<IconButton name="create-outline" label="New message" onPress={() => setShowNew(true)} />}>
-    <View style={[styles.search, { backgroundColor: colors.muted }]}>
-      <Ionicons name="search" size={18} color={colors.mutedForeground} />
-      <TextInput value={search} onChangeText={setSearch} placeholder="Search chats" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
+  return <Screen title="Chats" right={<View style={{ flexDirection: 'row' }}><IconButton name="camera-outline" label="Camera" onPress={() => router.push('/camera')} /><IconButton name="create-outline" label="New message" onPress={() => setShowNew(true)} /></View>}>
+    <View style={[styles.searchWrap, { backgroundColor: colors.background }]}>
+      <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Ionicons name="search" size={18} color={colors.mutedForeground} />
+        <TextInput value={search} onChangeText={setSearch} placeholder="Search chats" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
+      </View>
     </View>
-    {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection and pull to refresh." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '700' }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation with someone from your Old Time contacts." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100 }} renderItem={renderChatItem} />}
+    {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection and pull to refresh." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '700' }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation with someone from your Old Time contacts." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 12, paddingTop: 4 }} refreshControl={<RefreshControl refreshing={Boolean(inbox.isRefetching)} onRefresh={() => void inbox.refetch()} tintColor={colors.primary} />} renderItem={renderChatItem} />}
     <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
       <View style={styles.modalShade}>
         <View style={[styles.sheet, { backgroundColor: colors.card }]}>
-          <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>New message</Text><IconButton name="close" onPress={() => setShowNew(false)} /></View>
+          <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>New message</Text><IconButton name="close" color={colors.foreground} onPress={() => setShowNew(false)} /></View>
            {users.isLoading ? <LoadingState /> : (users.data ?? []).filter((user) => user.id !== session?.id).map((user) => (
             <Pressable key={user.id} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
                <Avatar name={user.name} size={42} />
@@ -70,9 +72,10 @@ export default function ChatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  search: { minHeight: 44, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13, marginBottom: 5 },
+  searchWrap: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
+  search: { minHeight: 44, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13 },
   searchInput: { flex: 1, fontSize: 15 },
-  chatRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 2 },
+  chatRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, marginBottom: 6 },
   chatBody: { flex: 1 },
   chatTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   chatName: { fontSize: 15, fontWeight: '700', flex: 1 },
