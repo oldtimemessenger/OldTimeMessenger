@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.26.1",
   "scripts": {
     "build": "pnpm run typecheck && pnpm --filter @workspace/api-server --filter @workspace/old-time-chat --if-present run build",
+    "eas:mobile": "node ./scripts/run-eas-mobile.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },

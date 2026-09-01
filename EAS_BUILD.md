@@ -21,7 +21,16 @@
 ## Local build command
 
 ```sh
-cd artifacts/old-time-mobile
+pnpm eas:mobile -- build --profile development --platform ios
+```
+
+This wrapper always runs EAS from `artifacts/old-time-mobile` and prints the exact
+git branch and commit being built before it starts.
+
+If you still want to run the CLI directly, use:
+
+```sh
+cd /home/runner/work/OldTimeMessenger/OldTimeMessenger/artifacts/old-time-mobile
 npx eas-cli build --profile development --platform ios
 ```
 
