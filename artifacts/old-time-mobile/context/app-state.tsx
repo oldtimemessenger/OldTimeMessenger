@@ -34,6 +34,7 @@ export type UpdatePost = {
 export type CallRecord = {
   id: string;
   name: string;
+  phone?: string;
   type: 'voice' | 'video';
   direction: 'incoming' | 'outgoing' | 'missed';
   createdAt: number;
@@ -94,6 +95,7 @@ type AppState = {
   hidePost: (id: string) => void;
   addCall: (record: Omit<CallRecord, 'id' | 'createdAt'>) => void;
   addSavedMessage: (value: string) => void;
+  removeSavedMessage: (value: string) => void;
   updateProfile: (profile: Partial<Profile>) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
   resetLocalData: () => void;
@@ -234,7 +236,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toggleFollow: (handle) => setFollowedCreators((current) => current.includes(handle) ? current.filter((item) => item !== handle) : [...current, handle]),
     hidePost: (id) => setHiddenPostIds((current) => current.includes(id) ? current : [...current, id]),
     addCall: (record) => setCalls((items) => [{ ...record, id: `${Date.now()}`, createdAt: Date.now() }, ...items]),
-    addSavedMessage: (value) => setSavedMessages((items) => [value, ...items]),
+     addSavedMessage: (value) => setSavedMessages((items) => [value, ...items]),
+     removeSavedMessage: (value) => setSavedMessages((items) => items.filter((item) => item !== value)),
     updateProfile: (next) => setProfile((current) => ({ ...current, ...next })),
     updateSettings: (next) => setSettings((current) => ({ ...current, ...next })),
     resetLocalData: () => {

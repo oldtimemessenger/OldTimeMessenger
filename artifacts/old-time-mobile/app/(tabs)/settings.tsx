@@ -12,6 +12,7 @@ import { useLogout } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib/social-api';
+import { t } from '@/lib/i18n';
 
 type Panel = 'profile' | 'notifications' | 'socialPrivacy' | 'storage' | 'appearance' | 'power' | 'language' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
 
@@ -30,7 +31,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const logout = useLogout();
-  const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, setSession, resetLocalData } = useApp();
+  const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, removeSavedMessage, setSession, resetLocalData } = useApp();
+  const translate = (key: Parameters<typeof t>[1]) => t(settings.language, key);
 
   const [panel, setPanel] = useState<Panel>(null);
   const [query, setQuery] = useState('');
@@ -69,7 +71,6 @@ export default function SettingsScreen() {
   function signOut() {
     logout.mutate(undefined);
     setSession(null);
-    resetLocalData();
     queryClient.clear();
     router.replace('/');
   }
@@ -149,26 +150,26 @@ export default function SettingsScreen() {
 
   const groups = useMemo(() => ([
       { items: [
-      { key: "profile", icon: "person", bg: colors.settingsRed, label: "My Profile", value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
-      { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: "Saved Messages", value: String(savedMessages.length), onPress: () => setPanel('saved') },
+      { key: "profile", icon: "person", bg: colors.settingsRed, label: translate('myProfile'), value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
+      { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
     ]},
     { items: [
-      { key: "calls", icon: "call", bg: colors.settingsGreen, label: "Recent Calls", onPress: () => setPanel('calls') },
-      { key: "chatSettings", icon: "chatbubbles", bg: colors.settingsCyan, label: "Chat Settings", onPress: () => setPanel('chatSettings') },
+      { key: "calls", icon: "call", bg: colors.settingsGreen, label: translate('recentCalls'), onPress: () => setPanel('calls') },
+      { key: "chatSettings", icon: "chatbubbles", bg: colors.settingsCyan, label: translate('chatSettings'), onPress: () => setPanel('chatSettings') },
     ]},
     { items: [
-      { key: "notifications", icon: "notifications", bg: colors.settingsRed, label: "Notifications and Sounds", value: settings.notifications ? "On" : "Off", onPress: () => setPanel('notifications') },
-      { key: "socialPrivacy", icon: "lock-closed", bg: colors.settingsGray, label: "Privacy and Security", value: "Status, location, presence", onPress: () => setPanel('socialPrivacy') },
-      { key: "storage", icon: "server", bg: colors.settingsGreen, label: "Data and Storage", value: "On device", onPress: () => setPanel('storage') },
-      { key: "appearance", icon: "contrast", bg: colors.settingsCyan, label: "Appearance", onPress: () => setPanel('appearance') },
-      { key: "power", icon: "battery-half", bg: colors.settingsYellow, label: "Power Saving", value: settings.lowPower ? "On" : "Off", onPress: () => setPanel('power') },
-      { key: "language", icon: "globe", bg: colors.settingsViolet, label: "Language", value: settings.language, onPress: () => setPanel('language') },
+      { key: "notifications", icon: "notifications", bg: colors.settingsRed, label: translate('notificationsSounds'), value: settings.notifications ? "On" : "Off", onPress: () => setPanel('notifications') },
+      { key: "socialPrivacy", icon: "lock-closed", bg: colors.settingsGray, label: translate('privacySecurity'), value: "Status, location, presence", onPress: () => setPanel('socialPrivacy') },
+      { key: "storage", icon: "server", bg: colors.settingsGreen, label: translate('dataStorage'), value: "On device", onPress: () => setPanel('storage') },
+      { key: "appearance", icon: "contrast", bg: colors.settingsCyan, label: translate('appearance'), onPress: () => setPanel('appearance') },
+      { key: "power", icon: "battery-half", bg: colors.settingsYellow, label: translate('powerSaving'), value: settings.lowPower ? "On" : "Off", onPress: () => setPanel('power') },
+      { key: "language", icon: "globe", bg: colors.settingsViolet, label: translate('language'), value: settings.language, onPress: () => setPanel('language') },
     ]},
     { title: "Old Time", items: [
-       { key: "faq", icon: "help-circle", bg: colors.settingsCyan, label: "Old Time FAQ", onPress: () => setPanel('faq') },
+       { key: "faq", icon: "help-circle", bg: colors.settingsCyan, label: translate('faq'), onPress: () => setPanel('faq') },
     ]},
     { items: [
-       { key: "logout", icon: "log-out", bg: colors.settingsRed, label: "Log Out", danger: true, onPress: signOut },
+       { key: "logout", icon: "log-out", bg: colors.settingsRed, label: translate('logout'), danger: true, onPress: signOut },
     ]},
   ] as const), [colors, profile, savedMessages.length, settings, logout]);
 
@@ -243,6 +244,10 @@ export default function SettingsScreen() {
         return (
           <DetailShell title="Saved Messages" onBack={() => setPanel(null)}>
             <View style={{ flex: 1 }}>
+              <View style={[styles.localNotice, { backgroundColor: colors.secondary }]}>
+                <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
+                <Text style={[styles.localNoticeText, { color: colors.foreground }]}>These notes are stored on this device. Server-saved chat messages will appear here after the messages service is connected.</Text>
+              </View>
               <View style={[styles.saveComposer, { backgroundColor: colors.background }]}>
                 <TextInput
                   value={savedInput}
@@ -258,10 +263,18 @@ export default function SettingsScreen() {
               {savedMessages.length === 0 ? (
                  <Text style={{ padding: 16, color: colors.mutedForeground, textAlign: 'center' }}>Keep reminders, recipes, and anything you want to find later.</Text>
               ) : savedMessages.map((msg, i) => (
-                <View key={i} style={[styles.savedBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Text style={{ color: colors.foreground, fontSize: 15 }}>{msg}</Text>
+                <View key={`${msg}-${i}`} style={[styles.savedBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={{ color: colors.foreground, fontSize: 15, flex: 1 }}>{msg}</Text>
+                  <Pressable onPress={() => removeSavedMessage(msg)} accessibilityRole="button" accessibilityLabel={`Delete saved note ${i + 1}`} hitSlop={8}>
+                    <Ionicons name="trash-outline" size={18} color={colors.mutedForeground} />
+                  </Pressable>
                 </View>
               ))}
+              {savedMessages.length > 0 ? (
+                <Pressable onPress={() => Alert.alert('Clear saved notes?', 'This only clears notes stored on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear all', style: 'destructive', onPress: () => savedMessages.forEach((message) => removeSavedMessage(message)) }])} style={styles.clearLocalButton} accessibilityRole="button">
+                  <Text style={[styles.clearLocalButtonText, { color: colors.destructive }]}>Clear all local notes</Text>
+                </Pressable>
+              ) : null}
             </View>
           </DetailShell>
         );
@@ -414,6 +427,15 @@ export default function SettingsScreen() {
               </Pressable>
               <PanelToggleRow label="Automatic media downloads" value={settings.autoDownload} onChange={() => toggle('autoDownload')} />
               <PanelToggleRow label="Wi-Fi only" sub="Only download media automatically on Wi-Fi." value={settings.wifiOnly} onChange={() => toggle('wifiOnly')} isLast />
+            </PanelSection>
+            <PanelSection title="Local app data">
+              <Pressable onPress={() => Alert.alert('Clear local app data?', 'This removes local Stories, drafts, calls, saved notes, preferences, and profile data from this device. Your server account is not deleted.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear data', style: 'destructive', onPress: () => { resetLocalData(); setPanel(null); } }])} style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: 'transparent' }]} accessibilityRole="button">
+                <View style={[styles.settingIcon, { backgroundColor: `${colors.destructive}22` }]}><Ionicons name="trash-outline" size={16} color={colors.destructive} /></View>
+                <View style={{ flex: 1, marginLeft: 16 }}>
+                  <Text style={[styles.panelRowLabel, { color: colors.destructive }]}>Clear local app data</Text>
+                  <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>Remove device-only data without deleting your account.</Text>
+                </View>
+              </Pressable>
             </PanelSection>
           </DetailShell>
         );
@@ -649,5 +671,9 @@ const styles = StyleSheet.create({
   saveComposer: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12, marginBottom: 16 },
   saveInput: { flex: 1, height: 44, borderRadius: 22, borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
   saveBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  savedBubble: { padding: 14, borderRadius: 16, borderWidth: 1, marginBottom: 8, alignSelf: 'flex-start', maxWidth: '85%' },
+  savedBubble: { padding: 14, borderRadius: 16, borderWidth: 1, marginBottom: 8, alignSelf: 'stretch', maxWidth: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  localNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderRadius: 12, padding: 12, marginBottom: 14 },
+  localNoticeText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  clearLocalButton: { alignItems: 'center', paddingVertical: 13 },
+  clearLocalButtonText: { fontSize: 13, fontWeight: '700' },
 });

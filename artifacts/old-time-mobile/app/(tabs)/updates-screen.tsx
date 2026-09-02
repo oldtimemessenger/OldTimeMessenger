@@ -98,7 +98,6 @@ export default function UpdatesScreen() {
   const [compose, setCompose] = useState<'status' | 'post' | null>(null);
   const [commentPost, setCommentPost] = useState<UpdatePost | null>(null);
   const [socialCommentPost, setSocialCommentPost] = useState<SocialPost | null>(null);
-  const [profileOpen, setProfileOpen] = useState<string | null>(null);
   const [capturedStatusMedia, setCapturedStatusMedia] = useState<{
     uri: string;
     type: 'photo' | 'video';
@@ -365,7 +364,7 @@ export default function UpdatesScreen() {
               recordPostInteraction(id, 'share');
               void Share.share({ message: `${post.author} on Old Time:\n\n${post.caption}` });
             }}
-            onOpenProfile={(handle: string) => setProfileOpen(handle)}
+            onOpenProfile={() => Alert.alert('Profile moved to Inbox', 'Open a conversation or use People search in Updates to view the full profile.')}
             onFollow={(handle: string) => toggleFollow(handle)}
             followedCreators={followedCreators}
             onHide={(post: UpdatePost) => hidePost(post)}
@@ -458,12 +457,6 @@ export default function UpdatesScreen() {
               setSocialPosts((items) => items.map((item) => item.id === updated.id ? updated : item));
             }}
           />
-        ) : null}
-      </Modal>
-
-      <Modal visible={profileOpen !== null} transparent animationType="slide" onRequestClose={() => setProfileOpen(null)}>
-        {profileOpen ? (
-          <ProfileSheet handle={profileOpen} onClose={() => setProfileOpen(null)} colors={colors} followed={followedCreators.includes(profileOpen)} onFollow={() => toggleFollow(profileOpen)} />
         ) : null}
       </Modal>
 
@@ -1747,24 +1740,3 @@ const styles = StyleSheet.create({
   pipelineFootnote: { fontSize: 11, lineHeight: 16, marginTop: 8 },
   backButton: { width: 44, height: 44, marginTop: 16, alignItems: 'center', justifyContent: 'center' },
 });
-
-function ProfileSheet({ handle, onClose, colors, followed, onFollow }: any) {
-  return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, minHeight: 250, alignItems: 'center' }}>
-        <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'flex-end' }}>
-          <IconButton name="close" onPress={onClose} size={24} />
-        </View>
-        <View style={{ alignItems: 'center', marginTop: -10 }}>
-          <Avatar name={handle} size={80} color={colors.primary} />
-          <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: '600', marginTop: 12 }}>@{handle}</Text>
-          <Text style={{ color: colors.mutedForeground, fontSize: 14, marginTop: 4 }}>Creator on Old Time</Text>
-          <Pressable onPress={onFollow} style={{ marginTop: 20, backgroundColor: followed ? colors.secondary : colors.primary, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20 }}>
-            <Text style={{ color: followed ? colors.foreground : '#fff', fontWeight: '600' }}>{followed ? 'Following' : 'Follow'}</Text>
-          </Pressable>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
-  );
-}

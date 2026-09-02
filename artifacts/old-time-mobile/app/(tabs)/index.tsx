@@ -26,7 +26,7 @@ export default function ChatsScreen() {
     mediaFit?: 'contain' | 'cover';
   }>();
   const queryClient = useQueryClient();
-  const { profile, session, setSession, resetLocalData } = useApp();
+  const { profile, session, setSession } = useApp();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -81,7 +81,6 @@ export default function ChatsScreen() {
     setShowProfile(false);
     logout.mutate(undefined);
     setSession(null);
-    resetLocalData();
     queryClient.clear();
     router.replace('/');
   }

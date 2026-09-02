@@ -8,17 +8,19 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/app-state';
 import { typography } from '@/constants/typography';
+import { t } from '@/lib/i18n';
 
 const tabDefinitions = {
-  index: { label: 'Chats', icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
   updates: { label: 'Updates', icon: 'newspaper-outline', activeIcon: 'newspaper' },
   map: { label: 'Map', icon: 'location-outline', activeIcon: 'location' },
+  index: { label: 'Chat', icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
   calls: { label: 'Calls', icon: 'call-outline', activeIcon: 'call' },
   settings: { label: 'Settings', icon: 'settings-outline', activeIcon: 'settings' },
 } as const satisfies Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }>;
 
 function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const colors = useColors();
+  const { settings } = useApp();
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const routes = state.routes.filter((route) => route.name in tabDefinitions);
@@ -31,7 +33,8 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         style={[styles.pill, { backgroundColor: colors.card, borderColor: colors.border }]}
       >
         {routes.map((route) => {
-          const definition = tabDefinitions[route.name as keyof typeof tabDefinitions];
+           const definition = tabDefinitions[route.name as keyof typeof tabDefinitions];
+           const labelKey = route.name === 'index' ? 'chat' : route.name;
           const focused = state.index === state.routes.findIndex((item) => item.key === route.key);
           const onPress = () => {
             const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -44,7 +47,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               key={route.key}
               accessibilityRole="tab"
               accessibilityState={focused ? { selected: true } : {}}
-              accessibilityLabel={descriptors[route.key]?.options.tabBarAccessibilityLabel ?? definition.label}
+               accessibilityLabel={descriptors[route.key]?.options.tabBarAccessibilityLabel ?? t(settings.language, labelKey as 'updates' | 'map' | 'chat' | 'calls' | 'settings')}
               onPress={onPress}
               onLongPress={onLongPress}
               style={({ pressed }) => [styles.tabPressable, { opacity: pressed ? 0.66 : 1 }]}
@@ -55,7 +58,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                   size={focused ? 22 : 21}
                   color={focused ? colors.primary : colors.mutedForeground}
                 />
-                <Text style={[styles.tabLabel, { color: focused ? colors.primary : colors.mutedForeground }]}>{definition.label}</Text>
+                 <Text style={[styles.tabLabel, { color: focused ? colors.primary : colors.mutedForeground }]}>{t(settings.language, labelKey as 'updates' | 'map' | 'chat' | 'calls' | 'settings')}</Text>
               </View>
             </Pressable>
           );
@@ -71,9 +74,9 @@ export default function TabLayout() {
   if (!hydrated) return null;
   if (!session) return <Redirect href="/" />;
   return <Tabs tabBar={(props) => <FloatingTabBar {...props} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.background } }}>
-    <Tabs.Screen name="index" options={{ title: 'Chats', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="updates" options={{ title: 'Updates', tabBarIcon: ({ color, size }) => <Ionicons name="radio-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="map" options={{ title: 'Map', tabBarIcon: ({ color, size }) => <Ionicons name="location-outline" color={color} size={size} /> }} />
+    <Tabs.Screen name="index" options={{ title: 'Chat', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="calls" options={{ title: 'Calls', tabBarIcon: ({ color, size }) => <Ionicons name="call-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="updates-screen" options={{ href: null }} />

@@ -178,7 +178,7 @@ export default function ChatDetailScreen() {
     if (!contact?.phone) return;
     try {
       await Linking.openURL(`tel:${contact.phone}`);
-      addCall({ name: contact.name, type: 'voice', direction: 'outgoing' });
+      addCall({ name: contact.name, phone: contact.phone, type: 'voice', direction: 'outgoing' });
     } catch {
       Alert.alert('Call unavailable', 'This device cannot open the phone dialer.');
     }
