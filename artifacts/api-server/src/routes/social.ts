@@ -15,6 +15,9 @@ import {
 import { z } from "@workspace/api-zod";
 import {
   db,
+  chatMessageRequestsTable,
+  chatParticipantsTable,
+  chatsTable,
   socialBlocksTable,
   socialCommentLikesTable,
   socialCommentsTable,
@@ -133,12 +136,57 @@ function distanceKm(from: { latitude: number; longitude: number }, to: { latitud
   return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function handleForUser(user: { id: number; name: string }): string {
+function handleForUser(user: { id: number; name: string; username?: string | null }): string {
+  if (user.username) return user.username;
   const normalized = user.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "")
     .slice(0, 18);
   return normalized || `user${user.id}`;
+}
+
+function publicUser(user: { id: number; name: string; username?: string | null; bio?: string | null }) {
+  return { id: user.id, name: user.name, username: handleForUser(user), bio: user.bio ?? "" };
+}
+
+type MessageRequest = typeof chatMessageRequestsTable.$inferSelect;
+
+async function directChatForUsers(userOneId: number, userTwoId: number) {
+  const first = await db
+    .select({ chatId: chatParticipantsTable.chatId })
+    .from(chatParticipantsTable)
+    .innerJoin(chatsTable, eq(chatsTable.id, chatParticipantsTable.chatId))
+    .where(and(eq(chatParticipantsTable.userId, userOneId), eq(chatsTable.isGroup, false)));
+  if (!first.length) return undefined;
+  const [shared] = await db
+    .select({ chatId: chatParticipantsTable.chatId })
+    .from(chatParticipantsTable)
+    .where(
+      and(
+        eq(chatParticipantsTable.userId, userTwoId),
+        inArray(chatParticipantsTable.chatId, first.map((item) => item.chatId)),
+      ),
+    )
+    .limit(1);
+  if (!shared) return undefined;
+  const [chat] = await db.select().from(chatsTable).where(eq(chatsTable.id, shared.chatId)).limit(1);
+  return chat;
+}
+
+async function serializeMessageRequest(request: MessageRequest) {
+  const [sender, recipient] = await Promise.all([
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(eq(usersTable.id, request.senderId)).limit(1),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(eq(usersTable.id, request.recipientId)).limit(1),
+  ]);
+  return {
+    id: request.id,
+    sender: sender[0] ? publicUser(sender[0]) : null,
+    recipient: recipient[0] ? publicUser(recipient[0]) : null,
+    status: request.status,
+    chatId: request.chatId,
+    createdAt: request.createdAt,
+    updatedAt: request.updatedAt,
+  };
 }
 
 async function userExists(userId: number): Promise<boolean> {
@@ -268,7 +316,7 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
   const [authors, likes, reposts, saves, comments, viewerLikes, viewerReposts, viewerSaves, follows] =
     await Promise.all([
       db
-        .select({ id: usersTable.id, name: usersTable.name })
+        .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio })
         .from(usersTable)
         .where(inArray(usersTable.id, authorIds)),
       db
@@ -665,6 +713,8 @@ router.get("/social/posts/:postId/comments", async (req, res): Promise<void> => 
       content: socialCommentsTable.content,
       createdAt: socialCommentsTable.createdAt,
       authorName: usersTable.name,
+      authorUsername: usersTable.username,
+      authorBio: usersTable.bio,
     })
     .from(socialCommentsTable)
     .innerJoin(usersTable, eq(usersTable.id, socialCommentsTable.authorId))
@@ -695,7 +745,8 @@ router.get("/social/posts/:postId/comments", async (req, res): Promise<void> => 
       author: {
         id: comment.authorId,
         name: comment.authorName,
-        username: handleForUser({ id: comment.authorId, name: comment.authorName }),
+        username: handleForUser({ id: comment.authorId, name: comment.authorName, username: comment.authorUsername }),
+        bio: comment.authorBio ?? "",
       },
       liked: likedIds.has(comment.id),
     })),
@@ -854,16 +905,185 @@ router.delete("/social/users/:userId/follow", async (req, res): Promise<void> =>
   res.json({ success: true, following: false });
 });
 
+router.get("/social/message-requests", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const box = req.query.box === "outgoing" ? "outgoing" : "incoming";
+  const where = box === "outgoing"
+    ? and(eq(chatMessageRequestsTable.senderId, viewerId), eq(chatMessageRequestsTable.status, "pending"))
+    : and(eq(chatMessageRequestsTable.recipientId, viewerId), eq(chatMessageRequestsTable.status, "pending"));
+  const requests = await db
+    .select()
+    .from(chatMessageRequestsTable)
+    .where(where)
+    .orderBy(desc(chatMessageRequestsTable.updatedAt))
+    .limit(50);
+  const blocked = await blockedUserIds(viewerId);
+  const visible = requests.filter((request) =>
+    !blocked.has(box === "outgoing" ? request.recipientId : request.senderId),
+  );
+  res.json({ items: await Promise.all(visible.map(serializeMessageRequest)) });
+});
+
+router.post("/social/message-requests/to/:userId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const targetId = parseId(req.params.userId);
+  if (viewerId === null || targetId === null) return;
+  if (viewerId === targetId || !(await userExists(targetId))) {
+    res.status(400).json({ error: "Choose another existing user." });
+    return;
+  }
+  if (await isBlocked(viewerId, targetId)) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  const [recipient] = await db
+    .select({ id: usersTable.id, contactPermission: usersTable.contactPermission })
+    .from(usersTable)
+    .where(eq(usersTable.id, targetId))
+    .limit(1);
+  if (!recipient) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  const [existingChat] = await Promise.all([
+    directChatForUsers(viewerId, targetId),
+  ]);
+  if (existingChat) {
+    res.status(409).json({ error: "You already have a conversation with this user.", chatId: existingChat.id });
+    return;
+  }
+  if (recipient.contactPermission === "nobody") {
+    res.status(403).json({ error: "This user is not accepting new message requests." });
+    return;
+  }
+  if (recipient.contactPermission === "followers") {
+    const [follow] = await db
+      .select({ followerId: socialFollowsTable.followerId })
+      .from(socialFollowsTable)
+      .where(
+        and(
+          eq(socialFollowsTable.followerId, viewerId),
+          eq(socialFollowsTable.followingId, targetId),
+        ),
+      )
+      .limit(1);
+    if (!follow) {
+      res.status(403).json({ error: "Follow this user before sending a message request." });
+      return;
+    }
+  }
+  const timestamp = Date.now();
+  const [existing] = await db
+    .select()
+    .from(chatMessageRequestsTable)
+    .where(
+      and(
+        eq(chatMessageRequestsTable.senderId, viewerId),
+        eq(chatMessageRequestsTable.recipientId, targetId),
+      ),
+    )
+    .limit(1);
+  const request = existing
+    ? (await db
+        .update(chatMessageRequestsTable)
+        .set({ status: "pending", chatId: null, createdAt: timestamp, updatedAt: timestamp })
+        .where(eq(chatMessageRequestsTable.id, existing.id))
+        .returning())[0]
+    : (await db
+        .insert(chatMessageRequestsTable)
+        .values({
+          senderId: viewerId,
+          recipientId: targetId,
+          status: "pending",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .returning())[0];
+  res.status(201).json(await serializeMessageRequest(request));
+});
+
+router.put("/social/message-requests/:requestId/accept", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const requestId = parseId(req.params.requestId);
+  if (viewerId === null || requestId === null) return;
+  const [messageRequest] = await db
+    .select()
+    .from(chatMessageRequestsTable)
+    .where(
+      and(
+        eq(chatMessageRequestsTable.id, requestId),
+        eq(chatMessageRequestsTable.recipientId, viewerId),
+        eq(chatMessageRequestsTable.status, "pending"),
+      ),
+    )
+    .limit(1);
+  if (!messageRequest || await isBlocked(viewerId, messageRequest.senderId)) {
+    res.status(404).json({ error: "Message request not found." });
+    return;
+  }
+  let chat = await directChatForUsers(messageRequest.senderId, messageRequest.recipientId);
+  if (!chat) {
+    const timestamp = Date.now();
+    const [created] = await db
+      .insert(chatsTable)
+      .values({ isGroup: false, name: "", createdAt: timestamp })
+      .returning();
+    await db.insert(chatParticipantsTable).values([
+      { chatId: created.id, userId: messageRequest.senderId },
+      { chatId: created.id, userId: messageRequest.recipientId },
+    ]);
+    chat = created;
+  }
+  const [updated] = await db
+    .update(chatMessageRequestsTable)
+    .set({ status: "accepted", chatId: chat.id, updatedAt: Date.now() })
+    .where(
+      and(
+        eq(chatMessageRequestsTable.id, requestId),
+        eq(chatMessageRequestsTable.status, "pending"),
+      ),
+    )
+    .returning();
+  if (!updated) {
+    res.status(409).json({ error: "This message request was already handled." });
+    return;
+  }
+  res.json({ success: true, chatId: chat.id });
+});
+
+router.delete("/social/message-requests/:requestId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const requestId = parseId(req.params.requestId);
+  if (viewerId === null || requestId === null) return;
+  const [declined] = await db
+    .update(chatMessageRequestsTable)
+    .set({ status: "declined", updatedAt: Date.now() })
+    .where(
+      and(
+        eq(chatMessageRequestsTable.id, requestId),
+        eq(chatMessageRequestsTable.recipientId, viewerId),
+        eq(chatMessageRequestsTable.status, "pending"),
+      ),
+    )
+    .returning({ id: chatMessageRequestsTable.id });
+  if (!declined) {
+    res.status(404).json({ error: "Message request not found." });
+    return;
+  }
+  res.json({ success: true });
+});
+
 router.get("/social/privacy/exclusions", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   if (viewerId === null) return;
   const rows = await db
-    .select({ id: usersTable.id, name: usersTable.name })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio })
     .from(socialSharingExclusionsTable)
     .innerJoin(usersTable, eq(usersTable.id, socialSharingExclusionsTable.excludedUserId))
     .where(eq(socialSharingExclusionsTable.ownerId, viewerId))
     .orderBy(asc(usersTable.name));
-  res.json({ items: rows.map((user) => ({ ...user, username: handleForUser(user) })) });
+  res.json({ items: rows.map((user) => ({ ...user, username: handleForUser(user), bio: user.bio ?? "" })) });
 });
 
 router.put("/social/privacy/exclusions/:userId", async (req, res): Promise<void> => {
@@ -1021,12 +1241,15 @@ router.get("/social/users/search", async (req, res): Promise<void> => {
   }
   const blocked = await blockedUserIds(viewerId);
   const users = await db
-    .select({ id: usersTable.id, name: usersTable.name })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, contactPermission: usersTable.contactPermission })
     .from(usersTable)
     .where(
       and(
         ne(usersTable.id, viewerId),
-        ilike(usersTable.name, `%${query.slice(0, 80)}%`),
+        or(
+          ilike(usersTable.name, `%${query.slice(0, 80)}%`),
+          ilike(usersTable.username, `%${query.slice(0, 80)}%`),
+        ),
       ),
     )
     .orderBy(asc(usersTable.name))
@@ -1037,6 +1260,7 @@ router.get("/social/users/search", async (req, res): Promise<void> => {
       id: user.id,
       name: user.name,
       username: handleForUser(user),
+      bio: user.bio ?? "",
     }));
   const posts = await db
     .select()
@@ -1062,7 +1286,7 @@ router.get("/social/users/:userId/card", async (req, res): Promise<void> => {
   const targetId = parseId(req.params.userId);
   if (viewerId === null || targetId === null) return;
   const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, contactPermission: usersTable.contactPermission })
     .from(usersTable)
     .where(eq(usersTable.id, targetId))
     .limit(1);
@@ -1104,12 +1328,41 @@ router.get("/social/users/:userId/card", async (req, res): Promise<void> => {
     id: user.id,
     name: user.name,
     username: handleForUser(user),
+    bio: user.bio ?? "",
     followerCount: Number(followers[0]?.count ?? 0),
     followingCount: Number(following[0]?.count ?? 0),
     following: follow.length > 0,
     muted: muted.length > 0,
-    canMessage: !(await isBlocked(viewerId, targetId)),
+    canMessage: user.contactPermission !== "nobody" || user.id === viewerId,
   });
+});
+
+router.get("/social/users/:userId/posts", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const authorId = parseId(req.params.userId);
+  if (viewerId === null || authorId === null) return;
+  if (!(await userExists(authorId)) || await isBlocked(viewerId, authorId)) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  const candidates = await db
+    .select()
+    .from(socialPostsTable)
+    .where(
+      and(
+        eq(socialPostsTable.authorId, authorId),
+        eq(socialPostsTable.deleted, false),
+      ),
+    )
+    .orderBy(desc(socialPostsTable.createdAt))
+    .limit(parseLimit(req.query.limit));
+  const following = await followingUserIds(viewerId);
+  const blocked = await blockedUserIds(viewerId);
+  const visible = [];
+  for (const post of candidates) {
+    if (await canSeePost(viewerId, post, following, blocked)) visible.push(post);
+  }
+  res.json({ items: await serializePosts(visible, viewerId) });
 });
 
 router.get("/social/saved", async (req, res): Promise<void> => {
@@ -1167,7 +1420,7 @@ async function serializeStories(stories: Story[], viewerId: number) {
   const storyIds = stories.map((story) => story.id);
   const authorIds = [...new Set(stories.map((story) => story.authorId))];
   const [authors, views, reactions, mine] = await Promise.all([
-    db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, authorIds)),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(inArray(usersTable.id, authorIds)),
     db.select({ storyId: socialStoryViewersTable.storyId, count: sql<number>`count(*)` }).from(socialStoryViewersTable).where(inArray(socialStoryViewersTable.storyId, storyIds)).groupBy(socialStoryViewersTable.storyId),
     db.select({ storyId: socialStoryReactionsTable.storyId, count: sql<number>`count(*)` }).from(socialStoryReactionsTable).where(inArray(socialStoryReactionsTable.storyId, storyIds)).groupBy(socialStoryReactionsTable.storyId),
     db.select({ storyId: socialStoryViewersTable.storyId }).from(socialStoryViewersTable).where(and(eq(socialStoryViewersTable.viewerId, viewerId), inArray(socialStoryViewersTable.storyId, storyIds))),
@@ -1182,7 +1435,7 @@ async function serializeStories(stories: Story[], viewerId: number) {
       id: story.id, kind: story.kind, content: story.content, visibility: story.visibility, media: story.media,
       createdAt: story.createdAt, expiresAt: story.expiresAt,
       location: story.latitude !== null && story.longitude !== null ? { latitude: story.latitude, longitude: story.longitude } : null,
-      author: author ? { id: author.id, name: author.name, username: handleForUser(author) } : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}` },
+      author: author ? publicUser(author) : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}`, bio: "" },
       viewer: { viewed: viewed.has(story.id), isOwner: story.authorId === viewerId },
       counts: { views: viewsById.get(story.id) ?? 0, reactions: reactionsById.get(story.id) ?? 0 },
     };
@@ -1353,7 +1606,7 @@ router.get("/social/stories/:storyId/viewers", async (req, res): Promise<void> =
   const storyId = parseId(req.params.storyId); if (storyId === null) { res.status(400).json({ error: "A valid story ID is required." }); return; }
   const story = await storyById(storyId);
   if (!story || story.authorId !== viewerId) { res.status(404).json({ error: "Story not found." }); return; }
-  const viewers = await db.select({ id: usersTable.id, name: usersTable.name, viewedAt: socialStoryViewersTable.viewedAt }).from(socialStoryViewersTable).innerJoin(usersTable, eq(usersTable.id, socialStoryViewersTable.viewerId)).where(eq(socialStoryViewersTable.storyId, storyId)).orderBy(desc(socialStoryViewersTable.viewedAt));
+  const viewers = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, viewedAt: socialStoryViewersTable.viewedAt }).from(socialStoryViewersTable).innerJoin(usersTable, eq(usersTable.id, socialStoryViewersTable.viewerId)).where(eq(socialStoryViewersTable.storyId, storyId)).orderBy(desc(socialStoryViewersTable.viewedAt));
   res.json({ items: viewers.map((item) => ({ ...item, username: handleForUser(item) })) });
 });
 
@@ -1369,8 +1622,8 @@ router.delete("/social/close-friends/:userId", async (req, res): Promise<void> =
 });
 router.get("/social/close-friends", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
-  const rows = await db.select({ id: usersTable.id, name: usersTable.name }).from(socialCloseFriendsTable).innerJoin(usersTable, eq(usersTable.id, socialCloseFriendsTable.memberId)).where(eq(socialCloseFriendsTable.ownerId, viewerId));
-  res.json({ items: rows.map((row) => ({ ...row, username: handleForUser(row) })) });
+  const rows = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(socialCloseFriendsTable).innerJoin(usersTable, eq(usersTable.id, socialCloseFriendsTable.memberId)).where(eq(socialCloseFriendsTable.ownerId, viewerId));
+  res.json({ items: rows.map((row) => ({ ...row, username: handleForUser(row), bio: row.bio ?? "" })) });
 });
 
 router.post("/social/highlights", async (req, res): Promise<void> => {
@@ -1401,8 +1654,8 @@ router.get("/social/highlights", async (req, res): Promise<void> => {
 });
 router.get("/social/notifications", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
-  const rows = await db.select({ notification: socialNotificationsTable, name: usersTable.name }).from(socialNotificationsTable).innerJoin(usersTable, eq(usersTable.id, socialNotificationsTable.actorId)).where(eq(socialNotificationsTable.recipientId, viewerId)).orderBy(desc(socialNotificationsTable.createdAt)).limit(parseLimit(req.query.limit));
-  res.json({ items: rows.map(({ notification, name }) => ({ ...notification, actor: { id: notification.actorId, name, username: handleForUser({ id: notification.actorId, name }) } })) });
+  const rows = await db.select({ notification: socialNotificationsTable, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(socialNotificationsTable).innerJoin(usersTable, eq(usersTable.id, socialNotificationsTable.actorId)).where(eq(socialNotificationsTable.recipientId, viewerId)).orderBy(desc(socialNotificationsTable.createdAt)).limit(parseLimit(req.query.limit));
+  res.json({ items: rows.map(({ notification, name, username, bio }) => ({ ...notification, actor: { id: notification.actorId, name, username: handleForUser({ id: notification.actorId, name, username }), bio: bio ?? "" } })) });
 });
 router.put("/social/notifications/:notificationId/read", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;

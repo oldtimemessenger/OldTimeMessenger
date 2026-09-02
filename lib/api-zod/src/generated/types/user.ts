@@ -5,11 +5,15 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { UserContactPermission } from './userContactPermission';
 
 export interface User {
   id: number;
   phone: string;
   name: string;
+  username: string;
+  bio: string;
+  contactPermission: UserContactPermission;
   online: boolean;
   lastSeen: number;
   lastSeenVisible: boolean;

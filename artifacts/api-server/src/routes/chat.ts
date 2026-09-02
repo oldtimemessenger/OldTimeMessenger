@@ -35,11 +35,13 @@ import {
 import {
   authChallengesTable,
   authSessionsTable,
+  chatMessageRequestsTable,
   chatParticipantsTable,
   chatsTable,
   db,
   messagesTable,
   socialBlocksTable,
+  socialFollowsTable,
   socialPostsTable,
   socialStoriesTable,
   uploadSlotsTable,
@@ -54,6 +56,7 @@ import {
 } from "../lib/chat-auth";
 import {
   checkPhoneVerification,
+  isTestOtpBypassPhone,
   normalizePhone,
   privacyHash,
   sendPhoneVerification,
@@ -88,10 +91,17 @@ function parseUser(user: ChatUser, viewerId = user.id) {
     id: user.id,
     phone: user.phone,
     name: user.name,
+    username: user.username,
+    bio: user.bio,
+    contactPermission: user.contactPermission,
     online: revealPresence && user.online,
     lastSeen: revealPresence ? user.lastSeen : 0,
     lastSeenVisible: user.lastSeenVisible,
   };
+}
+
+function defaultUsernameForPhone(phone: string): string {
+  return `user${privacyHash(phone).slice(0, 12)}`;
 }
 
 function parseChat(chat: ChatRecord, participantIds: number[]) {
@@ -320,10 +330,12 @@ router.post("/auth/request-otp", async (req, res): Promise<void> => {
     .where(eq(authChallengesTable.phone, phone))
     .orderBy(desc(authChallengesTable.createdAt))
     .limit(1);
+  const isTestPhone = isTestOtpBypassPhone(phone);
   if (
-    Number(phoneRequests) >= MAX_PHONE_REQUESTS_PER_WINDOW ||
-    Number(ipRequests) >= MAX_IP_REQUESTS_PER_WINDOW ||
-    (latest && latest.createdAt > requestTime - OTP_RESEND_DELAY_MS)
+    !isTestPhone &&
+    (Number(phoneRequests) >= MAX_PHONE_REQUESTS_PER_WINDOW ||
+      Number(ipRequests) >= MAX_IP_REQUESTS_PER_WINDOW ||
+      (latest && latest.createdAt > requestTime - OTP_RESEND_DELAY_MS))
   ) {
     res.setHeader("Retry-After", "60");
     res.status(429).json({ error: "Please wait before requesting another code." });
@@ -457,6 +469,7 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
       .values({
         phone,
         name: `User ${phone.slice(-4)}`,
+        username: defaultUsernameForPhone(phone),
         online: true,
         lastSeen: timestamp,
       })
@@ -533,6 +546,55 @@ router.put("/users/:userId/presence-privacy", async (req, res): Promise<void> =>
     return;
   }
   res.json({ success: true, lastSeenVisible: updated.lastSeenVisible });
+});
+
+router.put("/users/:userId/profile", async (req, res): Promise<void> => {
+  const userId = Number(req.params.userId);
+  const body = req.body ?? {};
+  const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : undefined;
+  const name = typeof body.name === "string" ? body.name.trim() : undefined;
+  const bio = typeof body.bio === "string" ? body.bio.trim() : undefined;
+  const contactPermission = body.contactPermission;
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    (name === undefined && username === undefined && bio === undefined && contactPermission === undefined) ||
+    (name !== undefined && (name.length < 1 || name.length > 80)) ||
+    (username !== undefined && !/^[a-z0-9_]{3,24}$/.test(username)) ||
+    (bio !== undefined && bio.length > 150) ||
+    (contactPermission !== undefined &&
+      !["everyone", "followers", "nobody"].includes(contactPermission))
+  ) {
+    res.status(400).json({ error: "Enter a valid name, username, bio, or contact permission." });
+    return;
+  }
+  if (!(await callerMatches(req, res, userId))) return;
+  if (username !== undefined) {
+    const [taken] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.username, username), ne(usersTable.id, userId)))
+      .limit(1);
+    if (taken) {
+      res.status(409).json({ error: "That username is already taken." });
+      return;
+    }
+  }
+  const [updated] = await db
+    .update(usersTable)
+    .set({
+      ...(name !== undefined ? { name } : {}),
+      ...(username !== undefined ? { username } : {}),
+      ...(bio !== undefined ? { bio } : {}),
+      ...(contactPermission !== undefined ? { contactPermission } : {}),
+    })
+    .where(eq(usersTable.id, userId))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  res.json(parseUser(updated));
 });
 
 router.put("/users/:userId/presence", async (req, res): Promise<void> => {
@@ -702,6 +764,33 @@ router.post("/chats", async (req, res): Promise<void> => {
       CreateChatResponse.parse(parseChat(existing, await getChatParticipants(existing.id))),
     );
     return;
+  }
+
+  const recipientId = userIds.find((userId) => userId !== authUserId);
+  const recipient = users.find((user) => user.id === recipientId);
+  if (!recipient) {
+    res.status(400).json({ error: "The recipient must exist." });
+    return;
+  }
+  if (recipient.contactPermission === "nobody") {
+    res.status(403).json({ error: "This user is not accepting new conversations." });
+    return;
+  }
+  if (recipient.contactPermission === "followers") {
+    const [follow] = await db
+      .select({ followerId: socialFollowsTable.followerId })
+      .from(socialFollowsTable)
+      .where(
+        and(
+          eq(socialFollowsTable.followerId, authUserId),
+          eq(socialFollowsTable.followingId, recipient.id),
+        ),
+      )
+      .limit(1);
+    if (!follow) {
+      res.status(403).json({ error: "Follow this user before starting a conversation." });
+      return;
+    }
   }
 
   const timestamp = now();

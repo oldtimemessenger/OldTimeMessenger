@@ -1,7 +1,10 @@
+import { apiBaseUrl } from '@/lib/api-base-url';
+
 export type SocialUser = {
   id: number;
   name: string;
   username: string;
+  bio?: string;
 };
 
 export type SocialPost = {
@@ -54,6 +57,17 @@ export type UserCard = SocialUser & {
   canMessage: boolean;
 };
 
+export type ContactPermission = 'everyone' | 'followers' | 'nobody';
+export type MessageRequest = {
+  id: number;
+  sender: SocialUser;
+  recipient: SocialUser;
+  status: 'pending' | 'accepted' | 'declined';
+  chatId: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type FeedPage = {
   mode: 'for-you' | 'following';
   items: SocialPost[];
@@ -84,8 +98,7 @@ export type SocialNotification = {
 };
 
 function baseUrl(): string {
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  return domain ? `https://${domain}` : '';
+  return apiBaseUrl();
 }
 
 async function request<T>(
@@ -226,6 +239,31 @@ export function getUserCard(token: string, userId: number) {
   return request<UserCard>(token, `/api/social/users/${userId}/card`);
 }
 
+export function getUserPosts(token: string, userId: number) {
+  return request<{ items: SocialPost[] }>(token, `/api/social/users/${userId}/posts?limit=30`);
+}
+
+export function updateUserProfile(
+  token: string,
+  userId: number,
+  input: { name?: string; username?: string; bio?: string; contactPermission?: ContactPermission },
+) {
+  return request<{
+    id: number;
+    phone: string;
+    name: string;
+    username: string;
+    bio: string;
+    contactPermission: ContactPermission;
+    online: boolean;
+    lastSeen: number;
+    lastSeenVisible: boolean;
+  }>(token, `/api/users/${userId}/profile`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
 export function setUserBlocked(token: string, userId: number, active: boolean) {
   return request<{ success: boolean; blocked: boolean }>(
     token,
@@ -239,6 +277,35 @@ export function setUserMuted(token: string, userId: number, active: boolean) {
     token,
     `/api/social/users/${userId}/mute`,
     { method: active ? 'PUT' : 'DELETE' },
+  );
+}
+
+export function createMessageRequest(token: string, userId: number) {
+  return request<MessageRequest>(token, `/api/social/message-requests/to/${userId}`, {
+    method: 'POST',
+  });
+}
+
+export function getMessageRequests(token: string, box: 'incoming' | 'outgoing' = 'incoming') {
+  return request<{ items: MessageRequest[] }>(
+    token,
+    `/api/social/message-requests?box=${box}`,
+  );
+}
+
+export function acceptMessageRequest(token: string, requestId: number) {
+  return request<{ success: boolean; chatId: number }>(
+    token,
+    `/api/social/message-requests/${requestId}/accept`,
+    { method: 'PUT' },
+  );
+}
+
+export function declineMessageRequest(token: string, requestId: number) {
+  return request<{ success: boolean }>(
+    token,
+    `/api/social/message-requests/${requestId}`,
+    { method: 'DELETE' },
   );
 }
 

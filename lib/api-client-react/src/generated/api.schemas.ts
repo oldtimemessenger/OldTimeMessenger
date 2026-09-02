@@ -46,10 +46,22 @@ export interface LogoutResponse {
   success: boolean;
 }
 
+export type UserContactPermission = typeof UserContactPermission[keyof typeof UserContactPermission];
+
+
+export const UserContactPermission = {
+  everyone: 'everyone',
+  followers: 'followers',
+  nobody: 'nobody',
+} as const;
+
 export interface User {
   id: number;
   phone: string;
   name: string;
+  username: string;
+  bio: string;
+  contactPermission: UserContactPermission;
   online: boolean;
   lastSeen: number;
   lastSeenVisible: boolean;
@@ -164,6 +176,7 @@ export interface SocialUser {
   id: number;
   name: string;
   username: string;
+  bio: string;
 }
 
 export type SocialMediaType = typeof SocialMediaType[keyof typeof SocialMediaType];
@@ -333,6 +346,35 @@ export type SocialUserCard = SocialUser & {
   muted: boolean;
   canMessage: boolean;
 };
+
+export type MessageRequestStatus = typeof MessageRequestStatus[keyof typeof MessageRequestStatus];
+
+
+export const MessageRequestStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+} as const;
+
+export interface MessageRequest {
+  id: number;
+  sender: SocialUser;
+  recipient: SocialUser;
+  status: MessageRequestStatus;
+  /** @nullable */
+  chatId: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MessageRequestList {
+  items: MessageRequest[];
+}
+
+export interface MessageRequestAcceptResult {
+  success: boolean;
+  chatId: number;
+}
 
 export interface SocialSearchResults {
   users: SocialUser[];
@@ -776,6 +818,32 @@ export type UpdatePresence200 = {
   lastSeen: number;
 };
 
+export type UpdateUserProfileBodyContactPermission = typeof UpdateUserProfileBodyContactPermission[keyof typeof UpdateUserProfileBodyContactPermission];
+
+
+export const UpdateUserProfileBodyContactPermission = {
+  everyone: 'everyone',
+  followers: 'followers',
+  nobody: 'nobody',
+} as const;
+
+export type UpdateUserProfileBody = {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name?: string;
+  /**
+     * @minLength 3
+     * @maxLength 24
+     * @pattern ^[a-zA-Z0-9_]+$
+     */
+  username?: string;
+  /** @maxLength 150 */
+  bio?: string;
+  contactPermission?: UpdateUserProfileBodyContactPermission;
+};
+
 export type ListMessagesParams = {
 /**
  * @minimum 1
@@ -808,6 +876,26 @@ export type SearchSocialParams = {
  */
 q: string;
 };
+
+export type GetSocialUserPostsParams = {
+/**
+ * @minimum 1
+ * @maximum 30
+ */
+limit?: number;
+};
+
+export type ListMessageRequestsParams = {
+box?: ListMessageRequestsBox;
+};
+
+export type ListMessageRequestsBox = typeof ListMessageRequestsBox[keyof typeof ListMessageRequestsBox];
+
+
+export const ListMessageRequestsBox = {
+  incoming: 'incoming',
+  outgoing: 'outgoing',
+} as const;
 
 export type GetNearbyStoriesParams = {
 /**

@@ -55,6 +55,7 @@ export type AppSettings = {
   sounds: boolean;
   previews: boolean;
   lastSeen: boolean;
+  contactPermission: 'everyone' | 'followers' | 'nobody';
   readReceipts: boolean;
   autoDownload: boolean;
   wifiOnly: boolean;
@@ -106,11 +107,12 @@ const initialPosts: UpdatePost[] = [];
 
 const defaultSettings: AppSettings = {
   darkMode: false,
-  accent: '#63BFFB',
+  accent: '#243C82',
   notifications: true,
   sounds: true,
   previews: true,
   lastSeen: true,
+  contactPermission: 'everyone',
   readReceipts: true,
   autoDownload: true,
   wifiOnly: false,
@@ -154,7 +156,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setCalls(state.calls ?? []);
           setSavedMessages(state.savedMessages ?? []);
           setProfile({ ...defaultProfile, ...(state.profile ?? {}) });
-          setSettings({ ...defaultSettings, ...(state.settings ?? {}) });
+           const savedSettings = { ...defaultSettings, ...(state.settings ?? {}) };
+           if (savedSettings.accent === '#2F63D0' || savedSettings.accent === '#123B73') savedSettings.accent = defaultSettings.accent;
+           setSettings(savedSettings);
           setInterests((state.interests ?? defaultInterests).filter((interest: string) => interest !== 'haiti'));
           setInterestWeights(state.interestWeights ?? {});
           setFollowedCreators(state.followedCreators ?? defaultFollowedCreators);
@@ -195,7 +199,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     hiddenPostIds,
     setSession: (user) => {
       setSessionState(user);
-      if (user) setSettings((current) => ({ ...current, lastSeen: user.lastSeenVisible }));
+      if (user) {
+        setProfile((current) => ({
+          ...current,
+          name: user.name,
+          username: user.username,
+          bio: user.bio,
+          phone: user.phone,
+        }));
+        setSettings((current) => ({
+          ...current,
+          lastSeen: user.lastSeenVisible,
+          contactPermission: user.contactPermission,
+        }));
+      }
     },
     addStatus: (caption, color, type = 'text', uri, audience = 'friends') => setStatuses((items) => [{ id: `${Date.now()}`, author: 'You', caption, color, type, uri, audience, viewers: [], viewed: false, createdAt: Date.now() }, ...items]),
     markStatusViewed: (id, viewer) => setStatuses((items) => items.map((item) => {

@@ -10,4 +10,5 @@ export interface SocialUser {
   id: number;
   name: string;
   username: string;
+  bio: string;
 }

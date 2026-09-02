@@ -11,9 +11,9 @@ import { useColors } from '@/hooks/useColors';
 import { useLogout } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { setPresencePrivacy, setSharingExcluded } from '@/lib/social-api';
+import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib/social-api';
 
-type Panel = 'profile' | 'socialPrivacy' | 'storage' | 'appearance' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
+type Panel = 'profile' | 'notifications' | 'socialPrivacy' | 'storage' | 'appearance' | 'power' | 'language' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
 
 export default function SettingsScreen() {
   const colors = useColors();
@@ -29,6 +29,7 @@ export default function SettingsScreen() {
   // Profile state
   const [draftName, setDraftName] = useState(profile.name);
   const [draftUsername, setDraftUsername] = useState(profile.username);
+  const [draftBio, setDraftBio] = useState(profile.bio);
 
   const faqs = [
     { q: 'What is Old Time?', a: 'A private messenger with chats, status updates, device location sharing, and phone calls to your contacts.' },
@@ -88,6 +89,43 @@ export default function SettingsScreen() {
     }
   }
 
+  async function saveProfileChanges(input: { name?: string; username?: string; bio?: string }) {
+    if (!session?.authToken) {
+      updateProfile(input);
+      return;
+    }
+    try {
+      const updated = await updateUserProfile(session.authToken, session.id, input);
+      updateProfile({ name: updated.name, username: updated.username, bio: updated.bio, phone: updated.phone });
+      setSession({ ...session, ...updated });
+      return true;
+    } catch (error) {
+      Alert.alert('Profile not saved', error instanceof Error ? error.message : 'Please try again.');
+      return false;
+    }
+  }
+
+  async function handleSaveProfile() {
+    const saved = await saveProfileChanges({ name: draftName, username: draftUsername, bio: draftBio });
+    if (saved !== false) {
+      Alert.alert('Profile saved', 'Your Old Time identity is up to date.');
+      setPanel(null);
+    }
+  }
+
+  async function updateContactPermission(next: 'everyone' | 'followers' | 'nobody') {
+    const previous = settings.contactPermission;
+    updateSettings({ contactPermission: next });
+    if (!session?.authToken) return;
+    try {
+      const updated = await updateUserProfile(session.authToken, session.id, { contactPermission: next });
+      setSession({ ...session, ...updated });
+    } catch (error) {
+      updateSettings({ contactPermission: previous });
+      Alert.alert('Contact setting not saved', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
+
   async function clearCache() {
     setCacheStatus('clearing');
     try {
@@ -101,25 +139,28 @@ export default function SettingsScreen() {
 
   const groups = useMemo(() => ([
       { items: [
-      { key: "profile", icon: "person", bg: "#FF7A59", label: "My Profile", value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setPanel('profile'); } },
-      { key: "socialPrivacy", icon: "shield-checkmark", bg: "#5B6EF5", label: "Privacy", value: "Status, location, presence", onPress: () => setPanel('socialPrivacy') },
+      { key: "profile", icon: "person", bg: colors.settingsRed, label: "My Profile", value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
+      { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: "Saved Messages", value: String(savedMessages.length), onPress: () => setPanel('saved') },
     ]},
     { items: [
-      { key: "saved", icon: "bookmark", bg: "#4C9CF5", label: "Saved Messages", value: String(savedMessages.length), onPress: () => setPanel('saved') },
-      { key: "calls", icon: "call", bg: "#34C77E", label: "Recent Calls", onPress: () => setPanel('calls') },
+      { key: "calls", icon: "call", bg: colors.settingsGreen, label: "Recent Calls", onPress: () => setPanel('calls') },
+      { key: "chatSettings", icon: "chatbubbles", bg: colors.settingsCyan, label: "Chat Settings", onPress: () => setPanel('chatSettings') },
     ]},
     { items: [
-      { key: "storage", icon: "server", bg: "#34C77E", label: "Data and Storage", value: "On device", onPress: () => setPanel('storage') },
-      { key: "appearance", icon: "color-palette", bg: "#26A69A", label: "Appearance", onPress: () => setPanel('appearance') },
+      { key: "notifications", icon: "notifications", bg: colors.settingsRed, label: "Notifications and Sounds", value: settings.notifications ? "On" : "Off", onPress: () => setPanel('notifications') },
+      { key: "socialPrivacy", icon: "lock-closed", bg: colors.settingsGray, label: "Privacy and Security", value: "Status, location, presence", onPress: () => setPanel('socialPrivacy') },
+      { key: "storage", icon: "server", bg: colors.settingsGreen, label: "Data and Storage", value: "On device", onPress: () => setPanel('storage') },
+      { key: "appearance", icon: "contrast", bg: colors.settingsCyan, label: "Appearance", onPress: () => setPanel('appearance') },
+      { key: "power", icon: "battery-half", bg: colors.settingsYellow, label: "Power Saving", value: settings.lowPower ? "On" : "Off", onPress: () => setPanel('power') },
+      { key: "language", icon: "globe", bg: colors.settingsViolet, label: "Language", value: settings.language, onPress: () => setPanel('language') },
     ]},
-    { title: "Chats", items: [
-      { key: "chatSettings", icon: "chatbubbles", bg: "#26A69A", label: "Chats", onPress: () => setPanel('chatSettings') },
-      { key: "faq", icon: "help-circle", bg: "#26A69A", label: "Old Time FAQ", onPress: () => setPanel('faq') },
+    { title: "Old Time", items: [
+       { key: "faq", icon: "help-circle", bg: colors.settingsCyan, label: "Old Time FAQ", onPress: () => setPanel('faq') },
     ]},
     { items: [
-      { key: "logout", icon: "log-out", bg: "#F0537A", label: "Log Out", danger: true, onPress: signOut },
+       { key: "logout", icon: "log-out", bg: colors.settingsRed, label: "Log Out", danger: true, onPress: signOut },
     ]},
-  ] as const), [profile, savedMessages.length, settings, logout]);
+  ] as const), [colors, profile, savedMessages.length, settings, logout]);
 
   const filteredGroups = useMemo(() => {
     if (!query.trim()) return groups;
@@ -149,17 +190,29 @@ export default function SettingsScreen() {
                   textAlign="center"
                 />
                 <Text style={[styles.profileEditorPhone, { color: colors.mutedForeground }]}>{session?.phone}</Text>
-                <PrimaryButton label="Save Profile" onPress={() => { updateProfile({ name: draftName }); setPanel(null); }} />
+                <TextInput
+                  value={draftBio}
+                  onChangeText={setDraftBio}
+                  placeholder="Add a bio"
+                  placeholderTextColor={colors.mutedForeground}
+                  maxLength={150}
+                  multiline
+                  textAlignVertical="top"
+                  style={[styles.profileEditorBioInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+                  accessibilityLabel="Profile bio"
+                />
+                <Text style={[styles.profileEditorBioCount, { color: colors.mutedForeground }]}>{draftBio.length}/150</Text>
+                <PrimaryButton label="Save Profile" onPress={() => void handleSaveProfile()} />
               </View>
             </PanelSection>
             <PanelSection>
               <Pressable onPress={() => void chooseProfilePhoto()} style={[styles.panelRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-                <View style={[styles.settingIcon, { backgroundColor: '#4C9CF5' }]}><Ionicons name="camera" size={16} color="#fff" /></View>
+                <View style={[styles.settingIcon, { backgroundColor: colors.brandBlue }]}><Ionicons name="camera" size={16} color="#fff" /></View>
                 <Text style={[styles.panelRowLabel, { flex: 1, color: colors.foreground, marginLeft: 16 }]}>Set Profile Photo</Text>
                 <Text style={[styles.panelActionText, { color: colors.primary }]}>Choose</Text>
               </Pressable>
               <View style={[styles.panelRow, { borderBottomColor: 'transparent', backgroundColor: colors.card }]}>
-                <View style={[styles.settingIcon, { backgroundColor: '#8B5CF6' }]}><Ionicons name="at" size={16} color="#fff" /></View>
+                 <View style={[styles.settingIcon, { backgroundColor: '#8B5CF6' }]}><Ionicons name="at" size={16} color="#fff" /></View>
                 <TextInput
                   value={draftUsername}
                   onChangeText={setDraftUsername}
@@ -168,7 +221,7 @@ export default function SettingsScreen() {
                   placeholderTextColor={colors.mutedForeground}
                   style={{ flex: 1, fontSize: 16, color: colors.foreground, marginLeft: 16 }}
                 />
-                <Pressable onPress={() => updateProfile({ username: draftUsername })}>
+                <Pressable onPress={() => void saveProfileChanges({ username: draftUsername })}>
                   <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>Save</Text>
                 </Pressable>
               </View>
@@ -218,6 +271,22 @@ export default function SettingsScreen() {
                 onChange={() => void toggleLastSeen()}
                 isLast
               />
+            </PanelSection>
+            <PanelSection title="Who may message you">
+              {([
+                ['everyone', 'Everyone', 'Anyone can send a message request.'],
+                ['followers', 'People you follow', 'Only accounts you follow can send a request.'],
+                ['nobody', 'No one', 'Keep new message requests turned off.'],
+              ] as const).map(([permission, label, sub], index, items) => (
+                <AudienceRow
+                  key={permission}
+                  label={label}
+                  sub={sub}
+                  value={settings.contactPermission === permission}
+                  onPress={() => void updateContactPermission(permission)}
+                  isLast={index === items.length - 1}
+                />
+              ))}
             </PanelSection>
             <PanelSection title="Default status audience">
               {(['public', 'friends', 'followers', 'close_friends', 'private'] as const).map((audience, index, items) => (
@@ -280,7 +349,19 @@ export default function SettingsScreen() {
           <DetailShell title="Chats" onBack={() => setPanel(null)}>
             <PanelSection>
               <PanelToggleRow label="Enter to send" value={settings.enterToSend} onChange={() => toggle('enterToSend')} />
-              <PanelToggleRow label="Autoplay media" value={settings.autoplay} onChange={() => toggle('autoplay')} isLast />
+              <PanelToggleRow label="Autoplay media" value={settings.autoplay} onChange={() => toggle('autoplay')} />
+              <PanelToggleRow label="Read receipts" value={settings.readReceipts} onChange={() => toggle('readReceipts')} isLast />
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'notifications':
+        return (
+          <DetailShell title="Notifications and Sounds" onBack={() => setPanel(null)}>
+            <PanelSection>
+              <PanelToggleRow label="Notifications" sub="Show alerts for new messages and activity." value={settings.notifications} onChange={() => toggle('notifications')} />
+              <PanelToggleRow label="Sounds" sub="Play a sound for new messages and calls." value={settings.sounds} onChange={() => toggle('sounds')} />
+              <PanelToggleRow label="Message previews" sub="Show message text in notifications." value={settings.previews} onChange={() => toggle('previews')} isLast />
             </PanelSection>
           </DetailShell>
         );
@@ -321,6 +402,8 @@ export default function SettingsScreen() {
                 </View>
                 <Ionicons name={cacheStatus === 'cleared' ? 'checkmark-circle' : 'trash'} size={18} color={cacheStatus === 'cleared' ? '#34C77E' : '#F0537A'} />
               </Pressable>
+              <PanelToggleRow label="Automatic media downloads" value={settings.autoDownload} onChange={() => toggle('autoDownload')} />
+              <PanelToggleRow label="Wi-Fi only" sub="Only download media automatically on Wi-Fi." value={settings.wifiOnly} onChange={() => toggle('wifiOnly')} isLast />
             </PanelSection>
           </DetailShell>
         );
@@ -333,7 +416,7 @@ export default function SettingsScreen() {
             </PanelSection>
             <PanelSection title="Accent Color">
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, padding: 16, backgroundColor: colors.card }}>
-                {['#63BFFB', '#5B6EF5', '#34C77E', '#F0537A', '#8B5CF6', '#E8963C'].map((accent) => (
+                {[colors.brandBlue, colors.brandOrange, colors.brandPurple, '#3F7BE8', '#A855F7', '#E06C16'].map((accent) => (
                   <Pressable key={accent} onPress={() => updateSettings({ accent })} style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: settings.accent === accent ? 2 : 0, borderColor: accent }}>
                     <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: accent, alignItems: 'center', justifyContent: 'center' }}>
                       {settings.accent === accent && <Ionicons name="checkmark" size={18} color="#fff" />}
@@ -341,6 +424,26 @@ export default function SettingsScreen() {
                   </Pressable>
                 ))}
               </View>
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'power':
+        return (
+          <DetailShell title="Power Saving" onBack={() => setPanel(null)}>
+            <PanelSection>
+              <PanelToggleRow label="Power saving mode" sub="Reduce background activity and media autoplay." value={settings.lowPower} onChange={() => toggle('lowPower')} isLast />
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'language':
+        return (
+          <DetailShell title="Language" onBack={() => setPanel(null)}>
+            <PanelSection>
+              {['English'].map((language) => (
+                <AudienceRow key={language} label={language} value={settings.language === language} onPress={() => updateSettings({ language })} isLast />
+              ))}
             </PanelSection>
           </DetailShell>
         );
@@ -353,6 +456,16 @@ export default function SettingsScreen() {
   return (
     <Screen title="Settings" scroll={false}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, paddingTop: 14 }}>
+        <View style={[styles.settingsProfileHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Avatar name={profile.name || 'You'} size={54} color={colors.primary} uri={profile.avatarUri} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingsProfileName, { color: colors.foreground }]}>{profile.name || 'Your profile'}</Text>
+            <Text style={[styles.settingsProfileHandle, { color: colors.mutedForeground }]}>{profile.username ? `@${profile.username}` : 'Add a username and bio'}</Text>
+          </View>
+          <Pressable onPress={() => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); }} style={[styles.settingsEditButton, { backgroundColor: colors.secondary }]} accessibilityRole="button" accessibilityLabel="Edit profile">
+            <Text style={{ color: colors.primary, fontWeight: '700' }}>Edit</Text>
+          </Pressable>
+        </View>
 
         <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Ionicons name="search" size={18} color={colors.mutedForeground} style={{ marginLeft: 12 }} />
@@ -396,8 +509,8 @@ export default function SettingsScreen() {
 
 function SettingRow({ item, isLast, colors }: any) {
   return (
-    <Pressable onPress={item.onPress} style={({pressed}) => [styles.settingRow, { borderBottomColor: isLast ? 'transparent' : colors.border, backgroundColor: pressed ? colors.muted : 'transparent' }]}>
-       <View style={[styles.settingIcon, { backgroundColor: item.danger ? `${colors.destructive}16` : colors.muted }]}>
+    <Pressable testID={`setting-${item.key}`} accessibilityRole="button" accessibilityLabel={item.label} onPress={item.onPress} style={({pressed}) => [styles.settingRow, { borderBottomColor: isLast ? 'transparent' : colors.border, backgroundColor: pressed ? colors.muted : 'transparent' }]}>
+       <View style={[styles.settingIcon, { backgroundColor: item.danger ? `${colors.destructive}16` : item.bg }]}>
           <Ionicons name={item.icon as any} size={17} color={item.danger ? colors.destructive : colors.foreground} />
        </View>
        <Text style={[styles.settingLabel, { color: item.danger ? colors.destructive : colors.foreground }]}>{item.label}</Text>
@@ -435,16 +548,19 @@ function PanelToggleRow({ label, sub, value, onChange, isLast }: any) {
         <Text style={[styles.panelRowLabel, { color: colors.foreground }]}>{label}</Text>
         {sub && <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>{sub}</Text>}
       </View>
-      <Switch value={value} onValueChange={onChange} trackColor={{ false: colors.muted, true: '#34C759' }} />
+                 <Switch value={value} onValueChange={onChange} trackColor={{ false: colors.muted, true: colors.brandBlue }} />
     </View>
   )
 }
 
-function AudienceRow({ label, value, onPress, isLast }: { label: string; value: boolean; onPress: () => void; isLast: boolean }) {
+function AudienceRow({ label, sub, value, onPress, isLast }: { label: string; sub?: string; value: boolean; onPress: () => void; isLast: boolean }) {
   const colors = useColors();
   return (
     <Pressable onPress={onPress} style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: isLast ? 'transparent' : colors.border }]}>
-      <Text style={[styles.panelRowLabel, { color: colors.foreground, flex: 1 }]}>{label}</Text>
+      <View style={{ flex: 1, marginRight: 16 }}>
+        <Text style={[styles.panelRowLabel, { color: colors.foreground }]}>{label}</Text>
+        {sub ? <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>{sub}</Text> : null}
+      </View>
       <View style={[styles.radio, { borderColor: value ? colors.primary : colors.border }]}>{value ? <View style={[styles.radioDot, { backgroundColor: colors.primary }]} /> : null}</View>
     </Pressable>
   );
@@ -474,11 +590,15 @@ const styles = StyleSheet.create({
   searchContainer: { flexDirection: 'row', alignItems: 'center', height: 44, borderRadius: 10, borderWidth: 1, marginBottom: 20 },
   searchInput: { flex: 1, paddingHorizontal: 10, fontSize: 16, height: '100%' },
   sectionTitle: { textTransform: 'uppercase', fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginLeft: 4, marginBottom: 6, marginTop: 4 },
-  group: { borderRadius: 11, overflow: 'hidden', borderWidth: 1 },
-  settingRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth },
-  settingIcon: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  group: { borderRadius: 18, overflow: 'hidden', borderWidth: 1 },
+  settingRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, minHeight: 62, borderBottomWidth: StyleSheet.hairlineWidth },
+  settingIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   settingLabel: { flex: 1, fontSize: 16.5, marginLeft: 14 },
   settingValue: { fontSize: 15, marginRight: 8 },
+  settingsProfileHeader: { minHeight: 82, borderRadius: 20, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
+  settingsProfileName: { fontSize: 18, fontWeight: '700' },
+  settingsProfileHandle: { fontSize: 13, marginTop: 4 },
+  settingsEditButton: { minWidth: 58, minHeight: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
 
   shellHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   shellBack: { flexDirection: 'row', alignItems: 'center', height: 44, paddingRight: 16 },
@@ -506,6 +626,8 @@ const styles = StyleSheet.create({
   profileEditorCamera: { position: 'absolute', bottom: 0, right: 0, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
   profileEditorNameInput: { fontSize: 22, fontWeight: '700', borderBottomWidth: 2, paddingVertical: 4, minWidth: '60%', marginBottom: 6 },
   profileEditorPhone: { fontSize: 15, marginBottom: 20 },
+  profileEditorBioInput: { width: '100%', minHeight: 88, borderWidth: 1, borderRadius: 14, padding: 12, fontSize: 16, lineHeight: 22, marginBottom: 4 },
+  profileEditorBioCount: { alignSelf: 'flex-end', fontSize: 12, marginBottom: 14 },
 
   walletCard: { alignItems: 'center', paddingVertical: 32 },
   walletSub: { fontSize: 14, marginBottom: 4 },

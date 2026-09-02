@@ -67,6 +67,9 @@ export const VerifyOtpResponse = zod.object({
   "id": zod.number(),
   "phone": zod.string(),
   "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string(),
+  "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
   "lastSeen": zod.number(),
   "lastSeenVisible": zod.boolean()
@@ -97,6 +100,9 @@ export const ListUsersResponseItem = zod.object({
   "id": zod.number(),
   "phone": zod.string(),
   "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string(),
+  "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
   "lastSeen": zod.number(),
   "lastSeenVisible": zod.boolean()
@@ -146,6 +152,47 @@ export const UpdatePresenceResponse = zod.object({
 
 
 /**
+ * @summary Update the signed-in user's identity and contact settings
+ */
+
+
+
+export const UpdateUserProfileParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const updateUserProfileBodyNameMax = 80;
+
+export const updateUserProfileBodyUsernameMin = 3;
+export const updateUserProfileBodyUsernameMax = 24;
+
+
+export const updateUserProfileBodyUsernameRegExp = new RegExp('^[a-zA-Z0-9_]+$');
+export const updateUserProfileBodyBioMax = 150;
+
+
+
+export const UpdateUserProfileBody = zod.object({
+  "name": zod.string().min(1).max(updateUserProfileBodyNameMax).optional(),
+  "username": zod.string().min(updateUserProfileBodyUsernameMin).max(updateUserProfileBodyUsernameMax).regex(updateUserProfileBodyUsernameRegExp).optional(),
+  "bio": zod.string().max(updateUserProfileBodyBioMax).optional(),
+  "contactPermission": zod.enum(['everyone', 'followers', 'nobody']).optional()
+})
+
+export const UpdateUserProfileResponse = zod.object({
+  "id": zod.number(),
+  "phone": zod.string(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string(),
+  "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
+  "online": zod.boolean(),
+  "lastSeen": zod.number(),
+  "lastSeenVisible": zod.boolean()
+})
+
+
+/**
  * @summary Get the viewer's inbox previews
  */
 
@@ -177,6 +224,9 @@ export const GetInboxResponseItem = zod.object({
   "id": zod.number(),
   "phone": zod.string(),
   "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string(),
+  "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
   "lastSeen": zod.number(),
   "lastSeenVisible": zod.boolean()
@@ -564,7 +614,8 @@ export const GetSocialFeedResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -649,7 +700,8 @@ export const CreateSocialPostResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -803,7 +855,8 @@ export const GetSocialPostCommentsResponseItem = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "liked": zod.boolean()
 })
@@ -839,7 +892,8 @@ export const CreateSocialPostCommentResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "liked": zod.boolean()
 })
@@ -913,7 +967,8 @@ export const SearchSocialResponse = zod.object({
   "users": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 })),
   "posts": zod.array(zod.object({
   "id": zod.number(),
@@ -943,7 +998,8 @@ export const SearchSocialResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -974,7 +1030,8 @@ export const GetSocialUserCardParams = zod.object({
 export const GetSocialUserCardResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }).and(zod.object({
   "followerCount": zod.number(),
   "followingCount": zod.number(),
@@ -982,6 +1039,76 @@ export const GetSocialUserCardResponse = zod.object({
   "muted": zod.boolean(),
   "canMessage": zod.boolean()
 }))
+
+
+/**
+ * @summary List visible posts from a social user's profile
+ */
+
+
+
+export const GetSocialUserPostsParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const getSocialUserPostsQueryLimitDefault = 24;
+export const getSocialUserPostsQueryLimitMax = 30;
+
+
+
+export const GetSocialUserPostsQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(getSocialUserPostsQueryLimitMax).default(getSocialUserPostsQueryLimitDefault)
+})
+
+export const getSocialUserPostsResponseItemsItemVisibilityDefault = `friends`;
+export const getSocialUserPostsResponseItemsItemAllowRepostsDefault = false;
+
+export const GetSocialUserPostsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(getSocialUserPostsResponseItemsItemVisibilityDefault),
+  "allowReposts": zod.boolean().default(getSocialUserPostsResponseItemsItemAllowRepostsDefault),
+  "media": zod.array(zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional()
+})),
+  "linkUrl": zod.string().nullable(),
+  "linkTitle": zod.string().nullable(),
+  "linkDescription": zod.string().nullable(),
+  "linkImageUrl": zod.string().nullable(),
+  "news": zod.union([zod.object({
+  "source": zod.string(),
+  "publishedAt": zod.number().nullable(),
+  "url": zod.string()
+}),zod.null()]),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+}),
+  "counts": zod.object({
+  "likes": zod.number(),
+  "comments": zod.number(),
+  "reposts": zod.number(),
+  "saves": zod.number()
+}),
+  "viewer": zod.object({
+  "liked": zod.boolean(),
+  "reposted": zod.boolean(),
+  "saved": zod.boolean(),
+  "followingAuthor": zod.boolean()
+})
+}))
+})
 
 
 /**
@@ -1019,13 +1146,108 @@ export const UnfollowSocialUserResponse = zod.object({
 
 
 /**
+ * @summary List pending incoming or outgoing social message requests
+ */
+export const listMessageRequestsQueryBoxDefault = `incoming`;
+
+export const ListMessageRequestsQueryParams = zod.object({
+  "box": zod.enum(['incoming', 'outgoing']).default(listMessageRequestsQueryBoxDefault)
+})
+
+export const ListMessageRequestsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "sender": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+}),
+  "recipient": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+}),
+  "status": zod.enum(['pending', 'accepted', 'declined']),
+  "chatId": zod.number().nullable(),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number()
+}))
+})
+
+
+/**
+ * @summary Request a conversation with a social user
+ */
+
+
+
+export const CreateMessageRequestParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const CreateMessageRequestResponse = zod.object({
+  "id": zod.number(),
+  "sender": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+}),
+  "recipient": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+}),
+  "status": zod.enum(['pending', 'accepted', 'declined']),
+  "chatId": zod.number().nullable(),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number()
+})
+
+
+/**
+ * @summary Accept a message request and create the main chat
+ */
+
+
+
+export const AcceptMessageRequestParams = zod.object({
+  "requestId": zod.coerce.number().min(1)
+})
+
+export const AcceptMessageRequestResponse = zod.object({
+  "success": zod.boolean(),
+  "chatId": zod.number()
+})
+
+
+/**
+ * @summary Decline a pending message request
+ */
+
+
+
+export const DeclineMessageRequestParams = zod.object({
+  "requestId": zod.coerce.number().min(1)
+})
+
+export const DeclineMessageRequestResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
  * @summary List people excluded from the signed-in user's social sharing
  */
 export const GetSocialPrivacyExclusionsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }))
 })
 
@@ -1187,7 +1409,8 @@ export const GetSavedSocialPostsResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -1241,7 +1464,8 @@ export const GetStoriesResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
@@ -1320,7 +1544,8 @@ export const CreateStoryResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
@@ -1391,7 +1616,8 @@ export const GetNearbyStoriesResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
@@ -1456,7 +1682,8 @@ export const GetStoryResponse = zod.object({
   "author": zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
@@ -1590,7 +1817,8 @@ export const GetCloseFriendsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "username": zod.string()
+  "username": zod.string(),
+  "bio": zod.string()
 }))
 })
 

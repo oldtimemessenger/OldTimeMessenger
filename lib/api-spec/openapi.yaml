@@ -200,6 +200,48 @@ paths:
                   online: { type: boolean }
                   lastSeen: { type: number }
                 required: [success, online, lastSeen]
+  /users/{userId}/profile:
+    put:
+      operationId: updateUserProfile
+      tags: [users]
+      summary: Update the signed-in user's identity and contact settings
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 24
+                  pattern: "^[a-zA-Z0-9_]+$"
+                bio:
+                  type: string
+                  maxLength: 150
+                contactPermission:
+                  type: string
+                  enum: [everyone, followers, nobody]
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "409":
+          description: Username already taken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /users/{userId}/inbox:
     get:
       operationId: getInbox
@@ -657,6 +699,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SocialUserCard"
+  /social/users/{userId}/posts:
+    get:
+      operationId: getSocialUserPosts
+      tags: [social]
+      summary: List visible posts from a social user's profile
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 30
+            default: 24
+      responses:
+        "200":
+          description: Visible profile posts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialPostList"
   /social/users/{userId}/follow:
     put:
       operationId: followSocialUser
@@ -684,6 +748,78 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FollowActionResult"
+  /social/message-requests:
+    get:
+      operationId: listMessageRequests
+      tags: [social]
+      summary: List pending incoming or outgoing social message requests
+      parameters:
+        - name: box
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [incoming, outgoing]
+            default: incoming
+      responses:
+        "200":
+          description: Pending message requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageRequestList"
+  /social/message-requests/to/{userId}:
+    post:
+      operationId: createMessageRequest
+      tags: [social]
+      summary: Request a conversation with a social user
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "201":
+          description: Message request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageRequest"
+  /social/message-requests/{requestId}/accept:
+    put:
+      operationId: acceptMessageRequest
+      tags: [social]
+      summary: Accept a message request and create the main chat
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: number
+            minimum: 1
+      responses:
+        "200":
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageRequestAcceptResult"
+  /social/message-requests/{requestId}:
+    delete:
+      operationId: declineMessageRequest
+      tags: [social]
+      summary: Decline a pending message request
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: number
+            minimum: 1
+      responses:
+        "200":
+          description: Request declined
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
   /social/privacy/exclusions:
     get:
       operationId: getSocialPrivacyExclusions
@@ -1221,13 +1357,20 @@ components:
           type: string
         name:
           type: string
+        username:
+          type: string
+        bio:
+          type: string
+        contactPermission:
+          type: string
+          enum: [everyone, followers, nobody]
         online:
           type: boolean
         lastSeen:
           type: number
         lastSeenVisible:
           type: boolean
-      required: [id, phone, name, online, lastSeen, lastSeenVisible]
+      required: [id, phone, name, username, bio, contactPermission, online, lastSeen, lastSeenVisible]
     AuthenticatedUser:
       allOf:
         - $ref: "#/components/schemas/User"
@@ -1408,7 +1551,9 @@ components:
           type: string
         username:
           type: string
-      required: [id, name, username]
+        bio:
+          type: string
+      required: [id, name, username, bio]
     SocialMedia:
       type: object
       properties:
@@ -1603,6 +1748,41 @@ components:
             canMessage:
               type: boolean
           required: [followerCount, followingCount, following, muted, canMessage]
+    MessageRequest:
+      type: object
+      properties:
+        id:
+          type: number
+        sender:
+          $ref: "#/components/schemas/SocialUser"
+        recipient:
+          $ref: "#/components/schemas/SocialUser"
+        status:
+          type: string
+          enum: [pending, accepted, declined]
+        chatId:
+          type: [number, "null"]
+        createdAt:
+          type: number
+        updatedAt:
+          type: number
+      required: [id, sender, recipient, status, chatId, createdAt, updatedAt]
+    MessageRequestList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageRequest"
+      required: [items]
+    MessageRequestAcceptResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        chatId:
+          type: number
+      required: [success, chatId]
     SocialSearchResults:
       type: object
       properties:

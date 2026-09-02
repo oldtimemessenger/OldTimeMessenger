@@ -17,6 +17,9 @@ export const usersTable = pgTable("chat_users", {
   id: serial("id").primaryKey(),
   phone: text("phone").notNull().unique(),
   name: text("name").notNull(),
+  username: text("username").notNull().unique(),
+  bio: text("bio").notNull().default(""),
+  contactPermission: text("contact_permission").notNull().default("everyone"),
   online: boolean("online").notNull().default(false),
   lastSeen: pgBigint("last_seen", { mode: "number" }).notNull(),
   lastSeenVisible: boolean("last_seen_visible").notNull().default(true),
@@ -37,6 +40,33 @@ export const chatParticipantsTable = pgTable(
   },
   (table) => ({
     primaryKey: primaryKey({ columns: [table.chatId, table.userId] }),
+  }),
+);
+
+export const chatMessageRequestsTable = pgTable(
+  "chat_message_requests",
+  {
+    id: serial("id").primaryKey(),
+    senderId: integer("sender_id").notNull(),
+    recipientId: integer("recipient_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    chatId: integer("chat_id"),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: pgBigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    senderRecipientIndex: uniqueIndex("chat_message_requests_sender_recipient_idx").on(
+      table.senderId,
+      table.recipientId,
+    ),
+    recipientStatusIndex: index("chat_message_requests_recipient_status_idx").on(
+      table.recipientId,
+      table.status,
+    ),
+    senderStatusIndex: index("chat_message_requests_sender_status_idx").on(
+      table.senderId,
+      table.status,
+    ),
   }),
 );
 
@@ -149,6 +179,7 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertChat = z.infer<typeof insertChatSchema>;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type User = typeof usersTable.$inferSelect;
+export type ChatMessageRequest = typeof chatMessageRequestsTable.$inferSelect;
 export type Chat = typeof chatsTable.$inferSelect;
 export type Message = typeof messagesTable.$inferSelect;
 export type AuthChallenge = typeof authChallengesTable.$inferSelect;
