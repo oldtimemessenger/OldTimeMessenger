@@ -76,6 +76,10 @@ import type {
   StoryReply,
   StoryReplyInput,
   StoryViewerList,
+  UpdatePresence200,
+  UpdatePresenceBody,
+  UpdatePresencePrivacy200,
+  UpdatePresencePrivacyBody,
   UploadUrlRequest,
   UploadUrlResponse,
   User
@@ -560,6 +564,150 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
 
 
 
+
+export const getUpdatePresencePrivacyUrl = (userId: number,) => {
+
+
+
+
+  return `/api/users/${userId}/presence-privacy`
+}
+
+/**
+ * @summary Update online and last-seen visibility
+ */
+export const updatePresencePrivacy = async (userId: number,
+    updatePresencePrivacyBody: UpdatePresencePrivacyBody, options?: Parameters<typeof customFetch>[1]): Promise<UpdatePresencePrivacy200> => {
+
+  return customFetch<UpdatePresencePrivacy200>(getUpdatePresencePrivacyUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updatePresencePrivacyBody)
+  }
+);}
+
+
+
+
+
+export const getUpdatePresencePrivacyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePresencePrivacy>>, TError,{userId: number;data: BodyType<UpdatePresencePrivacyBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePresencePrivacy>>, TError,{userId: number;data: BodyType<UpdatePresencePrivacyBody>}, TContext> => {
+
+const mutationKey = ['updatePresencePrivacy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePresencePrivacy>>, {userId: number;data: BodyType<UpdatePresencePrivacyBody>}> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  updatePresencePrivacy(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePresencePrivacyMutationResult = NonNullable<Awaited<ReturnType<typeof updatePresencePrivacy>>>
+    export type UpdatePresencePrivacyMutationBody = BodyType<UpdatePresencePrivacyBody>
+    export type UpdatePresencePrivacyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update online and last-seen visibility
+ */
+export const useUpdatePresencePrivacy = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePresencePrivacy>>, TError,{userId: number;data: BodyType<UpdatePresencePrivacyBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePresencePrivacy>>,
+        TError,
+        {userId: number;data: BodyType<UpdatePresencePrivacyBody>},
+        TContext
+      > => {
+      return useMutation(getUpdatePresencePrivacyMutationOptions(options));
+    }
+
+export const getUpdatePresenceUrl = (userId: number,) => {
+
+
+
+
+  return `/api/users/${userId}/presence`
+}
+
+/**
+ * @summary Update the caller's online presence
+ */
+export const updatePresence = async (userId: number,
+    updatePresenceBody: UpdatePresenceBody, options?: Parameters<typeof customFetch>[1]): Promise<UpdatePresence200> => {
+
+  return customFetch<UpdatePresence200>(getUpdatePresenceUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updatePresenceBody)
+  }
+);}
+
+
+
+
+
+export const getUpdatePresenceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePresence>>, TError,{userId: number;data: BodyType<UpdatePresenceBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePresence>>, TError,{userId: number;data: BodyType<UpdatePresenceBody>}, TContext> => {
+
+const mutationKey = ['updatePresence'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePresence>>, {userId: number;data: BodyType<UpdatePresenceBody>}> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  updatePresence(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePresenceMutationResult = NonNullable<Awaited<ReturnType<typeof updatePresence>>>
+    export type UpdatePresenceMutationBody = BodyType<UpdatePresenceBody>
+    export type UpdatePresenceMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update the caller's online presence
+ */
+export const useUpdatePresence = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePresence>>, TError,{userId: number;data: BodyType<UpdatePresenceBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePresence>>,
+        TError,
+        {userId: number;data: BodyType<UpdatePresenceBody>},
+        TContext
+      > => {
+      return useMutation(getUpdatePresenceMutationOptions(options));
+    }
 
 export const getGetInboxUrl = (userId: number,) => {
 
