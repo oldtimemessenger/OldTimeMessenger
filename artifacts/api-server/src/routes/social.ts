@@ -59,6 +59,7 @@ const postInput = z.object({
   content: z.string().trim().max(2_000).default(""),
   kind: postKind.default("text"),
   visibility: postVisibility.default("friends"),
+  allowReposts: z.boolean().default(false),
   media: z
     .array(
       z.object({
@@ -352,6 +353,7 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
       kind: post.kind,
       content: post.content,
       visibility: post.visibility,
+      allowReposts: post.allowReposts,
       media,
       linkUrl: post.linkUrl,
       linkTitle: post.linkTitle,
@@ -519,6 +521,7 @@ router.post("/social/posts", async (req, res): Promise<void> => {
     [created] = await db.transaction(async (tx) => {
       const inserted = await tx.insert(socialPostsTable).values({
         authorId: viewerId, kind: input.kind, content: input.content, visibility: input.visibility,
+        allowReposts: input.allowReposts && input.visibility === "public",
         media: input.media ?? null, linkUrl: input.linkUrl ?? null, linkTitle: input.linkTitle ?? null,
         linkDescription: input.linkDescription ?? null, linkImageUrl: input.linkImageUrl ?? null,
         createdAt: timestamp, updatedAt: timestamp,
@@ -568,6 +571,10 @@ async function togglePostRelation(
   const post = await visiblePostFor(viewerId, postId);
   if (!post) {
     res.status(404).json({ error: "Post not found." });
+    return;
+  }
+  if (relation === "repost" && post.authorId !== viewerId && !(post.visibility === "public" && post.allowReposts)) {
+    res.status(403).json({ error: "The author has not allowed reposts for this post." });
     return;
   }
   const timestamp = Date.now();
