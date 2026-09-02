@@ -1,4 +1,260 @@
-.uri ? (
+import { Ionicons } from '@expo/vector-icons';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import * as Location from 'expo-location';
+import {
+  ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  FlatList, Dimensions, Platform, Share
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { Image } from 'expo-image';
+import { File } from 'expo-file-system';
+import { fetch as expoFetch } from 'expo/fetch';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Avatar, EmptyState, IconButton, Screen, SectionLabel, StoryAvatar } from '@/components/ui';
+import { useApp, type StatusItem, type UpdatePost } from '@/context/app-state';
+import { INTEREST_OPTIONS, rankForYou } from '@/lib/for-you';
+import { useColors } from '@/hooks/useColors';
+import { VideoSurface } from '@/components/video-surface';
+import { ServerStoryViewer } from '@/components/server-story-viewer';
+import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
+import { useCreateChat, useRequestUploadUrl } from '@workspace/api-client-react';
+import {
+  createStory,
+  createSocialPost,
+  getSocialFeed,
+  getSocialNotifications,
+  getSharingExclusions,
+  getStories,
+  getUserCard,
+  markSocialNotificationRead,
+  setFollowing,
+  setPostRelation,
+  setSharingExcluded,
+  socialMediaUrl,
+  viewStory,
+  type SocialNotification,
+  type SocialPost,
+  type Story,
+  type UserCard,
+} from '@/lib/social-api';
+
+const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
+
+const postColors = ['#3B8FD6', '#5F91B8', '#447AA4', '#6388A6', '#3E6D91', '#6A94B2'];
+const creatorTags = ['comedy', 'music', 'food', 'fitness', 'travel', 'technology', 'art', 'sports'];
+type FeedTab = 'for-you' | 'following' | 'interests';
+
+function timeAgo(createdAt: number) {
+  const hours = Math.floor((Date.now() - createdAt) / 3600000);
+  if (hours < 1) return 'Just now';
+  return `${hours}h ago`;
+}
+
+type StatusUserGroup = {
+  author: string;
+  items: StatusItem[];
+  seen: boolean;
+};
+
+export default function UpdatesScreen() {
+  const colors = useColors();
+  const router = useRouter();
+  const { mediaUri, mediaType, mediaFit } = useLocalSearchParams<{
+    mediaUri?: string;
+    mediaType?: 'photo' | 'video';
+    mediaFit?: 'contain' | 'cover';
+  }>();
+  const { statuses, posts, interests, interestWeights, followedCreators, hiddenPostIds, markStatusViewed, togglePostLike, togglePostSaved, addPostComment, recordPostInteraction, toggleInterest, toggleFollow, hidePost: persistHiddenPost, session, settings, updateSettings } = useApp();
+  const createChat = useCreateChat();
+  const requestUploadUrl = useRequestUploadUrl();
+
+  const [viewMode, setViewMode] = useState<'landing' | 'feed' | 'status'>('landing');
+  const [tab, setTab] = useState<FeedTab>('for-you');
+  const [feedIndex, setFeedIndex] = useState(0);
+  const [storyGroupOpen, setStoryGroupOpen] = useState<StatusUserGroup | null>(null);
+  const [compose, setCompose] = useState<'status' | 'post' | null>(null);
+  const [commentPost, setCommentPost] = useState<UpdatePost | null>(null);
+  const [profileOpen, setProfileOpen] = useState<string | null>(null);
+  const [capturedStatusMedia, setCapturedStatusMedia] = useState<{
+    uri: string;
+    type: 'photo' | 'video';
+    fit?: 'contain' | 'cover';
+  } | null>(null);
+  const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
+  const [socialStories, setSocialStories] = useState<Story[]>([]);
+  const [socialLoading, setSocialLoading] = useState(true);
+  const [socialError, setSocialError] = useState<string | null>(null);
+  const [profileUserId, setProfileUserId] = useState<number | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<SocialNotification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [ownCard, setOwnCard] = useState<UserCard | null>(null);
+  const [serverStoryOpen, setServerStoryOpen] = useState<Story | null>(null);
+
+  const loadSocial = useCallback(async () => {
+    if (!session?.authToken) return;
+    setSocialLoading(true);
+    setSocialError(null);
+    try {
+      const [feed, storyPage, card, notificationPage, exclusions] = await Promise.all([
+        getSocialFeed(session.authToken, 'for-you'),
+        getStories(session.authToken),
+        getUserCard(session.authToken, session.id),
+        getSocialNotifications(session.authToken),
+        getSharingExclusions(session.authToken),
+      ]);
+      setSocialPosts(feed.items);
+      setSocialStories(storyPage.items);
+      setOwnCard(card);
+      setNotifications(notificationPage.items);
+      updateSettings({ excludedPeople: exclusions.items.map((item) => ({ id: item.id, name: item.name })) });
+    } catch (error) {
+      setSocialError(error instanceof Error ? error.message : 'Social updates are unavailable right now.');
+    } finally {
+      setSocialLoading(false);
+    }
+  }, [session?.authToken, session?.id]);
+
+  useEffect(() => {
+    void loadSocial();
+  }, [loadSocial]);
+
+  async function openNotifications() {
+    if (!session?.authToken) return;
+    setShowNotifications(true);
+    setNotificationsLoading(true);
+    try {
+      setNotifications((await getSocialNotifications(session.authToken)).items);
+    } catch {
+      setNotifications([]);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }
+
+  const unreadNotifications = notifications.filter((item) => !item.readAt).length;
+  const firstOtherStory = socialStories.find((story) => !story.viewer.isOwner);
+
+  function openStatusShortcut() {
+    if (firstOtherStory) {
+      setServerStoryOpen(firstOtherStory);
+      return;
+    }
+    const firstLocalGroup = otherGroups[0];
+    if (firstLocalGroup) {
+      setStoryGroupOpen(firstLocalGroup);
+      setViewMode('status');
+      return;
+    }
+    setCompose('status');
+  }
+
+  useEffect(() => {
+    if (!mediaUri) return;
+    setCapturedStatusMedia({
+      uri: mediaUri,
+      type: mediaType === 'video' ? 'video' : 'photo',
+      fit: mediaFit,
+    });
+    setCompose('status');
+    router.setParams({ mediaUri: undefined, mediaType: undefined, mediaFit: undefined });
+  }, [mediaUri]);
+
+  const now = Date.now();
+  const activeStatuses = statuses.filter(s => now - s.createdAt < 86400000);
+  const statusGroups = useMemo(() => {
+    const groups: Record<string, StatusUserGroup> = {};
+    activeStatuses.forEach(s => {
+      if (!groups[s.author]) {
+        groups[s.author] = { author: s.author, items: [], seen: true };
+      }
+      groups[s.author].items.push(s);
+      if (!s.viewed) groups[s.author].seen = false;
+    });
+
+    Object.values(groups).forEach(g => g.items.sort((a, b) => a.createdAt - b.createdAt));
+
+    return Object.values(groups).sort((a, b) => {
+      if (a.author === 'You') return -1;
+      if (b.author === 'You') return 1;
+      if (a.seen !== b.seen) return a.seen ? 1 : -1;
+      return b.items[b.items.length -1].createdAt - a.items[a.items.length -1].createdAt;
+    });
+  }, [activeStatuses]);
+
+  const myGroup = statusGroups.find(g => g.author === 'You');
+  const otherGroups = statusGroups.filter(g => g.author !== 'You');
+
+  const forYouPosts = useMemo(() => rankForYou(posts.filter((post) => !hiddenPostIds.includes(post.id)), interests, interestWeights), [posts, interests, interestWeights, hiddenPostIds]);
+  const followingPosts = useMemo(() => posts.filter((post) => followedCreators.includes(post.handle) && !hiddenPostIds.includes(post.id)), [posts, followedCreators, hiddenPostIds]);
+  const visiblePosts = tab === 'following' ? followingPosts : forYouPosts;
+
+  function hidePost(post: UpdatePost) {
+    persistHiddenPost(post.id);
+    recordPostInteraction(post.id, 'hide');
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
+      <Screen title="Updates" left={<IconButton name="albums-outline" label="Open stories" onPress={openStatusShortcut} />} right={
+        <View style={styles.socialHeaderActions}>
+          <Pressable onPress={() => session && setProfileUserId(session.id)} style={styles.headerAvatarButton} accessibilityRole="button" accessibilityLabel="Open profile">
+            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={34} color={colors.primary} />
+            {unreadNotifications > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
+          </Pressable>
+          <IconButton name="add" label="Add story" onPress={() => setCompose('status')} />
+        </View>
+      }>
+         <FlatList
+           testID="landing-grid"
+           data={tab === 'interests' ? [] : visiblePosts}
+           numColumns={3}
+           keyExtractor={item => item.id}
+           columnWrapperStyle={{ gap: 2 }}
+           ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
+           contentContainerStyle={{ paddingHorizontal: 2, paddingBottom: 100 }}
+           showsVerticalScrollIndicator={false}
+            ListHeaderComponent={<>
+               <SocialHubPanel
+                 posts={socialPosts}
+                 stories={socialStories}
+                 card={ownCard}
+                 loading={socialLoading}
+                 error={socialError}
+                 colors={colors}
+                 token={session?.authToken ?? ''}
+                 onRetry={() => void loadSocial()}
+                 onOpenProfile={setProfileUserId}
+                 onOpenStory={(story) => setServerStoryOpen(story)}
+                 onCreate={() => setCompose('status')}
+                  onShare={(post) => {
+                    if (post.visibility !== 'public' || !post.allowReposts) {
+                      Alert.alert('Sharing is off', 'This post is not public or the author has not allowed reposts.');
+                      return;
+                    }
+                    void Share.share({ message: `${post.author.name} on Old Time:\n\n${post.content}` });
+                  }}
+                 onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
+               />
+
+              <View style={[styles.feedTabs, { borderBottomColor: colors.border }]}>
+                {(['for-you', 'following', 'interests'] as FeedTab[]).map(item => (
+                  <Pressable key={item} testID={`tab-${item}`} onPress={() => setTab(item)} style={[styles.feedTab, tab === item && { borderBottomColor: colors.primary }]}>
+                    <Text style={[styles.feedTabText, { color: tab === item ? colors.primary : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : item === 'following' ? 'Following' : 'Interests'}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {tab === 'interests' && <InterestPanel interests={interests} interestWeights={interestWeights} onToggle={toggleInterest} onBack={() => setTab('for-you')} colors={colors} />}
+
+              {tab !== 'interests' && visiblePosts.length === 0 && (
+                <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '600' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
+              )}
+           </>}
+           renderItem={({ item, index }) => (
+             <Pressable testID={`grid-item-${item.id}`} onPress={() => { setFeedIndex(index); setViewMode('feed'); }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: item.color, justifyContent: 'flex-end', padding: 8 }}>
+               {(item as any).uri ? (
                  <Image source={{ uri: (item as any).uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
                ) : null}
                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.15)' }]} />
@@ -92,7 +348,8 @@
                     content: data.caption,
                     kind: media?.type === 'video' ? 'video' : media?.type === 'image' ? 'photo' : 'text',
                     media: media ? [media] : undefined,
-                    visibility: data.audience,
+                 visibility: data.audience,
+                 allowReposts: Boolean(data.allowReposts),
                   });
                   setSocialPosts((items) => [post, ...items]);
                 }
@@ -453,6 +710,7 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
   );
    const [publishing, setPublishing] = useState(false);
    const [shareLocation, setShareLocation] = useState(false);
+   const [allowReposts, setAllowReposts] = useState(false);
 
   async function pickMedia() {
     const ImagePicker = await import('expo-image-picker');
@@ -474,7 +732,7 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
        if (type === 'status') {
           await onPublish({ caption: draft.trim(), color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, shareLocation, fit: mediaFit });
        } else {
-          await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, fit: mediaFit });
+           await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, fit: mediaFit, allowReposts });
        }
        onClose();
      } catch (error) {
@@ -526,6 +784,21 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
             </ScrollView>
             {audience === 'public' ? <Text style={{ color: '#fff', textAlign: 'center', fontSize: 11, marginTop: 7 }}>Public was selected explicitly. Anyone on Old Time may see this.</Text> : null}
           </View>
+
+          {type === 'post' && audience === 'public' ? (
+            <Pressable onPress={() => setAllowReposts((value) => !value)} style={styles.repostPermission} accessibilityRole="switch" accessibilityState={{ checked: allowReposts }}>
+              <View style={[styles.repostPermissionIcon, { backgroundColor: allowReposts ? '#fff' : 'rgba(255,255,255,0.2)' }]}>
+                <Ionicons name="repeat-outline" size={17} color={allowReposts ? selectedColor : '#fff'} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.repostPermissionTitle}>Allow reposts</Text>
+                <Text style={styles.repostPermissionHint}>Let people share this public post in Old Time.</Text>
+              </View>
+              <View style={[styles.repostPermissionSwitch, { backgroundColor: allowReposts ? '#fff' : 'rgba(255,255,255,0.25)' }]}>
+                <View style={[styles.repostPermissionThumb, { backgroundColor: allowReposts ? selectedColor : '#fff', transform: [{ translateX: allowReposts ? 16 : 0 }] }]} />
+              </View>
+            </Pressable>
+          ) : null}
 
          {type === 'post' && (
            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
@@ -611,6 +884,23 @@ function audienceLabel(audience: string) {
   return audience.charAt(0).toUpperCase() + audience.slice(1);
 }
 
+function StoryCard({ story, name, isOwn, colors, token, onPress }: { story?: Story; name: string; isOwn?: boolean; colors: any; token: string; onPress: () => void }) {
+  const mediaUri = story?.media ? socialMediaUrl(story.media.objectPath) : undefined;
+  return (
+    <Pressable onPress={onPress} style={[styles.socialStoryCard, { backgroundColor: colors.secondary }]} accessibilityRole="button" accessibilityLabel={isOwn ? 'View your story' : `View ${name}'s story`}>
+      {mediaUri ? <Image source={{ uri: mediaUri }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: mediaUri ? 'rgba(0,0,0,0.22)' : colors.primary }]} />
+      <View style={styles.socialStoryCardTop}>
+        <StoryAvatar name={name} size={42} color={colors.card} uri={mediaUri} viewed={Boolean(story?.viewer.viewed)} add={isOwn && !story} />
+      </View>
+      <View style={styles.socialStoryCardBottom}>
+        {isOwn ? <Ionicons name={story ? 'play' : 'add'} size={12} color="#fff" /> : null}
+        <Text style={styles.socialStoryCardName} numberOfLines={1}>{isOwn ? (story ? 'Your story' : 'Add story') : name}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function SocialHubPanel({
   posts,
   stories,
@@ -623,6 +913,7 @@ function SocialHubPanel({
   onOpenProfile,
   onOpenStory,
   onCreate,
+  onShare,
   onChanged,
 }: {
   posts: SocialPost[];
@@ -636,23 +927,25 @@ function SocialHubPanel({
   onOpenProfile: (id: number) => void;
   onOpenStory: (story: Story) => void;
   onCreate: () => void;
+  onShare: (post: SocialPost) => void;
   onChanged: (post: SocialPost) => void;
 }) {
   const ownStory = stories.find((story) => story.viewer.isOwner);
   const otherStories = stories.filter((story) => !story.viewer.isOwner);
   return (
     <View style={styles.socialHub}>
+      <View style={styles.socialStoryHeading}>
+        <View>
+          <Text style={[styles.socialSectionTitle, { color: colors.foreground }]}>Stories</Text>
+          <Text style={[styles.socialSectionHint, { color: colors.mutedForeground }]}>Share a moment with your people</Text>
+        </View>
+        <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.socialStoryRail}>
-        <Pressable onPress={ownStory ? () => onOpenStory(ownStory) : onCreate} style={styles.socialStoryItem} accessibilityRole="button" accessibilityLabel={ownStory ? 'View your story' : 'Add your story'}>
-          <StoryAvatar name={card?.name ?? 'You'} color={colors.muted} viewed={Boolean(ownStory?.viewer.viewed)} add />
-          <Text style={[styles.socialStoryName, { color: colors.foreground }]} numberOfLines={1}>My Story</Text>
-        </Pressable>
-          {otherStories.slice(0, 10).map((story) => (
-            <Pressable key={story.id} onPress={() => onOpenStory(story)} style={styles.socialStoryItem} accessibilityRole="button" accessibilityLabel={`View ${story.author.name}'s story`}>
-              <StoryAvatar name={story.author.name} color={colors.secondary} viewed={story.viewer.viewed} />
-              <Text style={[styles.socialStoryName, { color: colors.foreground }]} numberOfLines={1}>{story.author.name}</Text>
-            </Pressable>
-          ))}
+        <StoryCard story={ownStory} name={card?.name ?? 'You'} isOwn colors={colors} token={token} onPress={ownStory ? () => onOpenStory(ownStory) : onCreate} />
+        {otherStories.slice(0, 10).map((story) => (
+          <StoryCard key={story.id} story={story} name={story.author.name} colors={colors} token={token} onPress={() => onOpenStory(story)} />
+        ))}
       </ScrollView>
 
       {loading ? (
@@ -668,7 +961,7 @@ function SocialHubPanel({
       ) : posts.length > 0 ? (
         <View style={styles.socialPostList}>
           {posts.slice(0, 3).map((post) => (
-            <SocialPostCard key={post.id} post={post} colors={colors} token={token} onOpenProfile={() => onOpenProfile(post.author.id)} onChanged={onChanged} />
+               <SocialPostCard key={post.id} post={post} colors={colors} token={token} onOpenProfile={() => onOpenProfile(post.author.id)} onShare={() => onShare(post)} onChanged={onChanged} />
           ))}
         </View>
       ) : (
@@ -678,24 +971,28 @@ function SocialHubPanel({
   );
 }
 
-function SocialPostCard({ post, colors, token, onOpenProfile, onChanged }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onChanged: (post: SocialPost) => void }) {
+function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onChanged }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onChanged: (post: SocialPost) => void }) {
   const [busy, setBusy] = useState(false);
   const media = post.media[0];
-  async function toggle(relation: 'like' | 'save') {
+  const canRepost = post.visibility === 'public' && post.allowReposts;
+
+  async function toggle(relation: 'like' | 'save' | 'repost') {
     if (busy) return;
-    const active = relation === 'like' ? !post.viewer.liked : !post.viewer.saved;
+    const countKey = relation === 'like' ? 'likes' : relation === 'save' ? 'saves' : 'reposts';
+    const viewerKey = relation === 'like' ? 'liked' : relation === 'save' ? 'saved' : 'reposted';
+    const active = !post.viewer[viewerKey];
     const next: SocialPost = {
       ...post,
-      counts: { ...post.counts, [relation === 'like' ? 'likes' : 'saves']: Math.max(0, post.counts[relation === 'like' ? 'likes' : 'saves'] + (active ? 1 : -1)) },
-      viewer: { ...post.viewer, [relation === 'like' ? 'liked' : 'saved']: active },
+      counts: { ...post.counts, [countKey]: Math.max(0, post.counts[countKey] + (active ? 1 : -1)) },
+      viewer: { ...post.viewer, [viewerKey]: active },
     };
     onChanged(next);
     setBusy(true);
     try {
       await setPostRelation(token, post.id, relation, active);
-    } catch {
+    } catch (error) {
       onChanged(post);
-      Alert.alert('Action not saved', 'Please try again.');
+      Alert.alert('Action not saved', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setBusy(false);
     }
@@ -734,6 +1031,24 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onChanged }: { pos
         <Pressable onPress={() => void toggle('save')} style={styles.socialAction} accessibilityRole="button" accessibilityLabel={post.viewer.saved ? 'Unsave post' : 'Save post'}>
           <Ionicons name={post.viewer.saved ? 'bookmark' : 'bookmark-outline'} size={18} color={post.viewer.saved ? colors.primary : colors.mutedForeground} />
           <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{post.counts.saves}</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            if (!canRepost) {
+              Alert.alert('Reposts are off', 'This post must be public and the author must allow reposts.');
+              return;
+            }
+            void toggle('repost');
+          }}
+          style={styles.socialAction}
+          accessibilityRole="button"
+          accessibilityLabel={canRepost ? (post.viewer.reposted ? 'Remove repost' : 'Repost') : 'Reposts are disabled'}
+        >
+          <Ionicons name="repeat-outline" size={19} color={post.viewer.reposted ? colors.primary : canRepost ? colors.mutedForeground : colors.border} />
+          <Text style={{ color: canRepost ? colors.mutedForeground : colors.border, fontSize: 12 }}>{post.counts.reposts}</Text>
+        </Pressable>
+        <Pressable onPress={onShare} style={styles.socialAction} accessibilityRole="button" accessibilityLabel="Share post">
+          <Ionicons name="arrow-redo-outline" size={18} color={canRepost ? colors.mutedForeground : colors.border} />
         </Pressable>
         <Text style={[styles.socialPostTime, { color: colors.mutedForeground }]}>{relativeSocialTime(post.createdAt)}</Text>
       </View>
@@ -928,6 +1243,11 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 15, fontWeight: '600' },
   statLabel: { fontSize: 9, marginTop: 2 },
   socialStoryRail: { gap: 14, paddingVertical: 14, paddingHorizontal: 4 },
+  socialStoryHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingTop: 4 },
+  socialStoryCard: { width: 92, height: 142, borderRadius: 18, overflow: 'hidden', padding: 8, justifyContent: 'space-between' },
+  socialStoryCardTop: { alignItems: 'flex-start' },
+  socialStoryCardBottom: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  socialStoryCardName: { flex: 1, color: '#fff', fontSize: 11, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.4)', textShadowRadius: 4 },
   socialStoryItem: { width: 64, alignItems: 'center' },
   socialStoryName: { fontSize: 10.5, fontWeight: '600', width: 64, textAlign: 'center', marginTop: 5 },
   socialStoryAudience: { fontSize: 8, marginTop: 1 },
@@ -947,6 +1267,12 @@ const styles = StyleSheet.create({
   socialLinkTitle: { fontSize: 12, fontWeight: '600' },
   socialLinkUrl: { fontSize: 10, marginTop: 2 },
   socialPostActions: { flexDirection: 'row', alignItems: 'center', gap: 18, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, marginTop: 11 },
+  repostPermission: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.16)' },
+  repostPermissionIcon: { width: 31, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  repostPermissionTitle: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  repostPermissionHint: { color: 'rgba(255,255,255,0.78)', fontSize: 11, marginTop: 2 },
+  repostPermissionSwitch: { width: 40, height: 24, borderRadius: 14, padding: 3, justifyContent: 'center' },
+  repostPermissionThumb: { width: 18, height: 18, borderRadius: 9 },
   socialAction: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5 },
   socialPostTime: { fontSize: 10, marginLeft: 'auto' },
   sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
