@@ -5,8 +5,18 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { StoryMediaFit } from './storyMediaFit';
+import type { StoryMediaType } from './storyMediaType';
 
 /**
  * @nullable
  */
-export type StoryMedia = { [key: string]: unknown } | null;
+export type StoryMedia = {
+  type: StoryMediaType;
+  objectPath: string;
+  mimeType: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  fit?: StoryMediaFit;
+} | null;
