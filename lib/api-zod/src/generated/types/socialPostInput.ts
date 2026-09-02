@@ -14,6 +14,7 @@ export interface SocialPostInput {
   content?: string;
   kind?: SocialPostInputKind;
   visibility?: SocialPostInputVisibility;
+  allowReposts?: boolean;
   /** @maxItems 8 */
   media?: SocialMedia[];
   linkUrl?: string;
