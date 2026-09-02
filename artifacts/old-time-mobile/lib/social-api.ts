@@ -9,6 +9,7 @@ export type SocialPost = {
   kind: 'text' | 'photo' | 'video' | 'link' | 'news';
   content: string;
   visibility: 'public' | 'friends' | 'followers' | 'private';
+  allowReposts: boolean;
   media: Array<{
     type: 'image' | 'video';
     objectPath: string;
@@ -131,6 +132,7 @@ export function createSocialPost(
   input: {
     content: string;
     visibility: SocialPost['visibility'];
+    allowReposts?: boolean;
     kind?: SocialPost['kind'];
     media?: SocialPost['media'];
     linkUrl?: string | null;
@@ -143,6 +145,22 @@ export function createSocialPost(
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+export function setPresencePrivacy(token: string, userId: number, lastSeenVisible: boolean) {
+  return request<{ success: boolean; lastSeenVisible: boolean }>(
+    token,
+    `/api/users/${userId}/presence-privacy`,
+    { method: 'PUT', body: JSON.stringify({ lastSeenVisible }) },
+  );
+}
+
+export function setPresence(token: string, userId: number, online: boolean) {
+  return request<{ success: boolean; online: boolean; lastSeen: number }>(
+    token,
+    `/api/users/${userId}/presence`,
+    { method: 'PUT', body: JSON.stringify({ online }) },
+  );
 }
 
 export function setPostRelation(
