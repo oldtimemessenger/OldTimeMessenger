@@ -1,0 +1,128 @@
+# Old Time Messenger — Phase 1 Build Spec (Low-Risk Launch Version)
+**For: Replit AI Agent**
+**Scope: Build this phase only.**
+
+This version swaps out "scrape news outlets" for launch-safe sources: public data feeds, your own seeded content, and user-shared links. No licensed news API, no scraping — nothing here needs a lawyer before you ship it. Save the outlet-headline version (the earlier `old-time-messenger-map-spec.md`) for later, once you either have a licensed news feed or legal sign-off.
+
+---
+
+## 0. What Phase 1 delivers
+1. The Snap Map–style social map screen (avatar pins, clustering, horizontal card row — matches the reference screenshot).
+2. A location-privacy model, applied from day one.
+3. A TikTok-style full-screen vertical story viewer that opens when any pin/card is tapped.
+4. A "What's Happening" layer powered by **safe sources only**: public data feeds + your own seeded posts + user-shared links — no scraped/republished news articles.
+
+---
+
+## 1. Map Shell UI
+
+- Full-screen map. Top bar: search field + notification bell.
+- Category filter chips under the search bar.
+- **User pins:** circular avatar photo, colored ring:
+  - Pink ring = live / just posted
+  - Blue ring = active / online now
+  - "+N" badge when a cluster of nearby people exists
+- Tapping a lone pin opens that user's story (Section 3). Tapping a cluster expands into a mini-list, then the story viewer.
+- Below the map: draggable bottom sheet, location header ("Mythenquai, Zürich" style) + "See all", horizontal scroll of cards (thumbnail, view count, poster avatar + name, time posted).
+- Bottom tab bar: Map / Explore / Camera / Chat / Profile.
+
+Straight build from the reference screenshot — wire pins to your existing user posts/location data.
+
+---
+
+## 2. Location & Privacy Model
+
+Every post/check-in gets a **location precision choice** at post time:
+
+| Option | What's stored | Who can see exact coordinates |
+|---|---|---|
+| Exact location | Precise lat/lng | Governed by visibility setting below |
+| Approximate pin | Neighborhood/area centroid, jittered | Same |
+| City only | City centroid | Visible to whoever can see the post at all |
+
+**Visibility tiers** (default = most private, user opts to widen):
+- `close_friends` — only the poster's designated close-friends list
+- `friends` — full friends list
+- `public` — anyone using the map
+
+**The two sides of the map behave differently:**
+
+- **Regular/Social map** (Section 1): public/friends visibility works like Snap Map — exact location shows to whoever the post's visibility tier allows.
+- **"What's Happening" side** (Section 4): if a user's post gets surfaced there, **exact coordinates are never public**, regardless of the post's own visibility setting elsewhere — only `close_friends`/`friends` (per the poster's choice) can see the precise pin there. Everyone else sees only the general area/city label.
+
+**Implementation:**
+```sql
+alter table posts add column location_precision text
+  check (location_precision in ('exact','approximate','city_only')) default 'approximate';
+alter table posts add column visibility text
+  check (visibility in ('close_friends','friends','public')) default 'friends';
+
+-- Enforce server-side (Supabase RLS / Edge Function), never client-side only:
+-- strip lat/lng to city-level in any "What's Happening" surface unless
+-- viewer is in the poster's friends/close_friends list.
+```
+
+---
+
+## 3. Story Viewer (TikTok-style, opens on tap)
+
+Tapping any pin, cluster, or "What's Happening" card opens a full-screen vertical scroll:
+
+- Full-bleed photo/video, autoplay, swipe up/down to move through the queue.
+- Overlay: poster avatar + name (or source label for feed-sourced items), caption/headline, timestamp, like/comment/share.
+- Queue mixes nearby user posts + public-feed alerts + seeded content, ranked by recency + proximity + engagement.
+- **Every non-user card carries a clear source line** ("Source: NWS", "Source: 511 Traffic", or the sharer's name for a user-shared link) — attribution stays even in the scroll format.
+- Priority styling (bigger type, bold/red) for time-sensitive items — traffic incidents, weather alerts — same content rules apply either way: short, factual, sourced.
+
+---
+
+## 4. "What's Happening" Layer — Safe Sources Only
+
+Three content sources, none of them require legal review to launch:
+
+### 4a. Public data feeds (covers Traffic + Weather + Official Alerts)
+Government/public infrastructure feeds are free to use and built for redistribution:
+- **Weather:** National Weather Service API (or your country's equivalent) — official alerts, warnings, forecasts.
+- **Traffic:** state/city DOT feeds (e.g. 511 systems), many published as open data (GeoJSON/XML) specifically for apps like this.
+- **Official alerts:** city/county open-data portals, emergency management RSS feeds — these are public-interest government communications, not copyrighted news writing.
+
+Pipeline: same shape as before, just pointed at these sources instead of news outlets:
+```
+PUBLIC FEED INGESTION → NORMALIZE → GEOCODE (most already include coords) → INSERT map_events
+```
+
+### 4b. Seeded content (covers "the map feels alive" problem directly)
+Before/at launch, post real local content yourself (or a small team) as normal user posts, in your own words — "Backup on I-95 near Davie Blvd," "Farmers market downtown this Saturday." This is just first-party content, not a sourcing question at all. Treat it exactly like any other user post in the schema.
+
+### 4c. User-shared links (covers "real breaking news," safely)
+Let users paste/share a link to a news story the normal social way — like sharing a link on any social app. You're not republishing or rewriting the article; you're showing a link card (title, thumbnail, source domain — standard link-preview metadata, the same way iMessage/Twitter/Slack unfurl links) that the user chose to share. This is normal, low-risk sharing behavior, not content redistribution on your part.
+
+```sql
+create table map_events (
+  id uuid primary key default gen_random_uuid(),
+  type text not null check (type in ('user_post','weather','traffic','official_alert','shared_link')),
+  title text not null,
+  summary text,
+  category text not null,
+  latitude double precision not null,
+  longitude double precision not null,
+  city text,
+  source_name text,      -- 'National Weather Service', '511 Traffic', or null for user_post
+  source_url text,        -- required for shared_link (the link the user shared) and public feeds
+  shared_by uuid references auth.users(id),  -- set for shared_link
+  author_id uuid references auth.users(id),  -- set for user_post
+  image_url text,
+  created_at timestamptz default now(),
+  expires_at timestamptz
+);
+```
+
+**No `news` type, no scraping, no AI-rewriting of outlet articles in this phase.** When you're ready to add real scraped/licensed news headlines later, that's the upgrade path in the other spec doc — gate it behind either a licensed news API or legal review, not before.
+
+---
+
+## 5. What to paste into Replit for this phase
+
+> "Build Phase 1: the Snap Map–style map screen (Section 1), the location-precision + visibility schema with server-side enforcement (Section 2), the TikTok-style full-screen story viewer (Section 3), and the 'What's Happening' layer powered only by public data feeds (NWS weather, 511 traffic), seeded first-party posts, and user-shared links with standard link-preview unfurling (Section 4). Do not scrape or rewrite content from news outlet websites in this phase — that's explicitly out of scope for now."
+
+This gets you a fully alive-feeling map with zero copyright exposure. Add licensed news headlines later as a clean follow-up phase once that's worth the legal spend.

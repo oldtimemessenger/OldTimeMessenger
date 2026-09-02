@@ -12,4 +12,5 @@ export type GetSocialFeedMode = typeof GetSocialFeedMode[keyof typeof GetSocialF
 export const GetSocialFeedMode = {
   'for-you': 'for-you',
   following: 'following',
+  community: 'community',
 } as const;

@@ -6,8 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type StoryViewer = {
-  viewed: boolean;
+export type NoteViewer = {
   isOwner: boolean;
-  reacted: boolean;
 };

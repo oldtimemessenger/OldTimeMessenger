@@ -1,6 +1,7 @@
 export * from "./chat";
 export * from "./social";
 export * from "./map";
+export * from "./current-events";
 //
 // Each model/table should ideally be split into different files.
 // Each model/table should define a Drizzle table, insert schema, and types:

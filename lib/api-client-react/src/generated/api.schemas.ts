@@ -283,6 +283,7 @@ export type SocialFeedPageMode = typeof SocialFeedPageMode[keyof typeof SocialFe
 export const SocialFeedPageMode = {
   'for-you': 'for-you',
   following: 'following',
+  community: 'community',
 } as const;
 
 export interface SocialFeedPage {
@@ -651,6 +652,7 @@ export type StoryLocation = {
 export type StoryViewer = {
   viewed: boolean;
   isOwner: boolean;
+  reacted: boolean;
 };
 
 export type StoryCounts = {
@@ -667,11 +669,38 @@ export interface Story {
   media?: StoryMedia;
   /** @nullable */
   location?: StoryLocation;
+  taggedUsers?: SocialUser[];
   createdAt: number;
   expiresAt: number;
   author: SocialUser;
   viewer: StoryViewer;
   counts: StoryCounts;
+}
+
+export type NoteViewer = {
+  isOwner: boolean;
+};
+
+export interface Note {
+  id: number;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+  owner: SocialUser;
+  viewer: NoteViewer;
+}
+
+export interface NoteList {
+  items: Note[];
+}
+
+export interface NoteInput {
+  /**
+     * @minLength 1
+     * @maxLength 280
+     */
+  content: string;
 }
 
 export interface SocialUserList {
@@ -743,6 +772,11 @@ export interface StoryInput {
   /** @nullable */
   location?: StoryInputLocation;
   expiresAt?: number;
+  /**
+     * @maxItems 20
+     * @items.minimum 1
+     */
+  taggedUserIds?: number[];
 }
 
 export interface StoryReactionInput {
@@ -767,6 +801,7 @@ export interface StoryReply {
   authorId: number;
   content: string;
   createdAt: number;
+  author: SocialUser;
 }
 
 export interface StoryList {
@@ -804,6 +839,206 @@ export interface NotificationList {
 export interface CleanupResult {
   success: boolean;
   removed: number;
+}
+
+export type CurrentEventTopic = typeof CurrentEventTopic[keyof typeof CurrentEventTopic];
+
+
+export const CurrentEventTopic = {
+  'for-you': 'for-you',
+  politics: 'politics',
+  markets: 'markets',
+  tech: 'tech',
+  culture: 'culture',
+  sports: 'sports',
+  world: 'world',
+} as const;
+
+export interface CurrentEventRoomInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  clubName?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title: string;
+  topic: CurrentEventTopic;
+  isOpen: boolean;
+  /**
+     * @minimum -90
+     * @maximum 90
+     * @nullable
+     */
+  latitude?: number | null;
+  /**
+     * @minimum -180
+     * @maximum 180
+     * @nullable
+     */
+  longitude?: number | null;
+}
+
+export interface CurrentEventUser {
+  id: number;
+  name: string;
+  username: string;
+}
+
+export type CurrentEventParticipantRole = typeof CurrentEventParticipantRole[keyof typeof CurrentEventParticipantRole];
+
+
+export const CurrentEventParticipantRole = {
+  host: 'host',
+  moderator: 'moderator',
+  speaker: 'speaker',
+  listener: 'listener',
+} as const;
+
+export interface CurrentEventParticipant {
+  id: number;
+  user: CurrentEventUser;
+  role: CurrentEventParticipantRole;
+  muted: boolean;
+  handRaised: boolean;
+  joinedAt: number;
+}
+
+export type CurrentEventRoomCounts = {
+  speakers: number;
+  listeners: number;
+};
+
+/**
+ * @nullable
+ */
+export type CurrentEventRoomViewerRole = typeof CurrentEventRoomViewerRole[keyof typeof CurrentEventRoomViewerRole] | null;
+
+
+export const CurrentEventRoomViewerRole = {
+  host: 'host',
+  moderator: 'moderator',
+  speaker: 'speaker',
+  listener: 'listener',
+} as const;
+
+export type CurrentEventRoomViewer = {
+  /** @nullable */
+  participantId: number | null;
+  /** @nullable */
+  role: CurrentEventRoomViewerRole;
+  muted: boolean;
+  handRaised: boolean;
+};
+
+export type CurrentEventRoomAudioProvider = typeof CurrentEventRoomAudioProvider[keyof typeof CurrentEventRoomAudioProvider];
+
+
+export const CurrentEventRoomAudioProvider = {
+  unconfigured: 'unconfigured',
+  livekit: 'livekit',
+  agora: 'agora',
+  daily: 'daily',
+} as const;
+
+export type CurrentEventRoomAudio = {
+  provider: CurrentEventRoomAudioProvider;
+  configured: boolean;
+};
+
+export interface CurrentEventRoom {
+  id: number;
+  clubName: string;
+  title: string;
+  topic: CurrentEventTopic;
+  isOpen: boolean;
+  isLive: boolean;
+  hostId: number;
+  /** @nullable */
+  latitude: number | null;
+  /** @nullable */
+  longitude: number | null;
+  createdAt: number;
+  participants: CurrentEventParticipant[];
+  counts: CurrentEventRoomCounts;
+  viewer: CurrentEventRoomViewer;
+  audio: CurrentEventRoomAudio;
+}
+
+export interface CurrentEventRoomList {
+  items: CurrentEventRoom[];
+}
+
+export interface CurrentEventHandInput {
+  raised: boolean;
+}
+
+export type CurrentEventParticipantActionAction = typeof CurrentEventParticipantActionAction[keyof typeof CurrentEventParticipantActionAction];
+
+
+export const CurrentEventParticipantActionAction = {
+  promote: 'promote',
+  demote: 'demote',
+  mute: 'mute',
+  unmute: 'unmute',
+  remove: 'remove',
+} as const;
+
+export interface CurrentEventParticipantAction {
+  action: CurrentEventParticipantActionAction;
+}
+
+export interface CurrentEventMessage {
+  id: number;
+  roomId: number;
+  sender: CurrentEventUser;
+  content: string;
+  createdAt: number;
+}
+
+export interface CurrentEventMessageList {
+  items: CurrentEventMessage[];
+}
+
+export interface CurrentEventMessageInput {
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  content: string;
+}
+
+export type CurrentEventGiftInputGift = typeof CurrentEventGiftInputGift[keyof typeof CurrentEventGiftInputGift];
+
+
+export const CurrentEventGiftInputGift = {
+  coffee: 'coffee',
+  idea: 'idea',
+  heart: 'heart',
+  gem: 'gem',
+  studio: 'studio',
+} as const;
+
+export interface CurrentEventGiftInput {
+  gift: CurrentEventGiftInputGift;
+  /** @minimum 1 */
+  recipientId: number;
+}
+
+export interface CurrentEventGiftResult {
+  success: boolean;
+  gift: string;
+  coinsSpent: number;
+  goldEarned: number;
+  coinsRemaining: number;
+}
+
+export interface CurrentEventWallet {
+  coins: number;
+  gold: number;
+  pendingGold: number;
 }
 
 export type ViewerIdParameter = number;
@@ -871,6 +1106,18 @@ viewerId: number;
 
 export type GetSocialFeedParams = {
 mode?: GetSocialFeedMode;
+/**
+ * Community-only filter. Community posts never enter the For You feed.
+ */
+filter?: GetSocialFeedFilter;
+/**
+ * Comma-separated selected interest IDs used when filter is interests.
+ */
+interests?: string;
+/**
+ * Return only photo and video posts for the creator Updates surface.
+ */
+mediaOnly?: boolean;
 cursor?: number;
 /**
  * @minimum 1
@@ -885,6 +1132,16 @@ export type GetSocialFeedMode = typeof GetSocialFeedMode[keyof typeof GetSocialF
 export const GetSocialFeedMode = {
   'for-you': 'for-you',
   following: 'following',
+  community: 'community',
+} as const;
+
+export type GetSocialFeedFilter = typeof GetSocialFeedFilter[keyof typeof GetSocialFeedFilter];
+
+
+export const GetSocialFeedFilter = {
+  friends: 'friends',
+  following: 'following',
+  interests: 'interests',
 } as const;
 
 export type SearchSocialParams = {
@@ -915,6 +1172,18 @@ export const ListMessageRequestsBox = {
   outgoing: 'outgoing',
 } as const;
 
+export type GetNotesParams = {
+surface?: GetNotesSurface;
+};
+
+export type GetNotesSurface = typeof GetNotesSurface[keyof typeof GetNotesSurface];
+
+
+export const GetNotesSurface = {
+  messages: 'messages',
+  chat: 'chat',
+} as const;
+
 export type GetNearbyStoriesParams = {
 /**
  * @minimum -90
@@ -938,6 +1207,10 @@ radiusKm?: number;
 limit?: number;
 };
 
+export type GetStoryReplies200 = {
+  items: StoryReply[];
+};
+
 export type GetNearbyMapPinsParams = {
 /**
  * @minimum -90
@@ -949,6 +1222,25 @@ latitude: number;
  * @maximum 180
  */
 longitude: number;
+/**
+ * @minimum 0.1
+ * @maximum 50
+ */
+radiusKm?: number;
+};
+
+export type GetCurrentEventRoomsParams = {
+topic?: CurrentEventTopic;
+/**
+ * @minimum -90
+ * @maximum 90
+ */
+latitude?: number;
+/**
+ * @minimum -180
+ * @maximum 180
+ */
+longitude?: number;
 /**
  * @minimum 0.1
  * @maximum 50

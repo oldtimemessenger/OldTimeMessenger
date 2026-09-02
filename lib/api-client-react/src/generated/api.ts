@@ -29,13 +29,27 @@ import type {
   ChatInput,
   CleanupResult,
   CompleteBirthdayBody,
+  CurrentEventGiftInput,
+  CurrentEventGiftResult,
+  CurrentEventHandInput,
+  CurrentEventMessage,
+  CurrentEventMessageInput,
+  CurrentEventMessageList,
+  CurrentEventParticipantAction,
+  CurrentEventRoom,
+  CurrentEventRoomInput,
+  CurrentEventRoomList,
+  CurrentEventWallet,
   DirectChat,
   ErrorResponse,
   FollowActionResult,
+  GetCurrentEventRoomsParams,
   GetNearbyMapPinsParams,
   GetNearbyStoriesParams,
+  GetNotesParams,
   GetSocialFeedParams,
   GetSocialUserPostsParams,
+  GetStoryReplies200,
   HealthStatus,
   Highlight,
   HighlightInput,
@@ -59,6 +73,9 @@ import type {
   MessageRequestAcceptResult,
   MessageRequestList,
   MuteActionResult,
+  Note,
+  NoteInput,
+  NoteList,
   NotificationList,
   OtpRequest,
   OtpResponse,
@@ -1483,7 +1500,7 @@ export const getGetSocialFeedUrl = (params?: GetSocialFeedParams,) => {
 }
 
 /**
- * @summary Get a ranked or following-only Updates feed
+ * @summary Get a ranked For You feed, a relationship-filtered Community feed, or a following-only feed
  */
 export const getSocialFeed = async (params?: GetSocialFeedParams, options?: Parameters<typeof customFetch>[1]): Promise<SocialFeedPage> => {
 
@@ -1530,7 +1547,7 @@ export type GetSocialFeedQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get a ranked or following-only Updates feed
+ * @summary Get a ranked For You feed, a relationship-filtered Community feed, or a following-only feed
  */
 
 export function useGetSocialFeed<TData = Awaited<ReturnType<typeof getSocialFeed>>, TError = ErrorType<unknown>>(
@@ -3969,6 +3986,304 @@ export const useCreateStory = <TError = ErrorType<unknown>,
       return useMutation(getCreateStoryMutationOptions(options));
     }
 
+export const getGetNotesUrl = (params?: GetNotesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/social/notes?${stringifiedParams}` : `/api/social/notes`
+}
+
+/**
+ * @summary List Notes visible in Messages and active in chats
+ */
+export const getNotes = async (params?: GetNotesParams, options?: Parameters<typeof customFetch>[1]): Promise<NoteList> => {
+
+  return customFetch<NoteList>(getGetNotesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNotesQueryKey = (params?: GetNotesParams,) => {
+    return [
+    `/api/social/notes`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetNotesQueryOptions = <TData = Awaited<ReturnType<typeof getNotes>>, TError = ErrorType<unknown>>(params?: GetNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNotesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNotes>>> = ({ signal }) => getNotes(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNotes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNotesQueryResult = NonNullable<Awaited<ReturnType<typeof getNotes>>>
+export type GetNotesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List Notes visible in Messages and active in chats
+ */
+
+export function useGetNotes<TData = Awaited<ReturnType<typeof getNotes>>, TError = ErrorType<unknown>>(
+ params?: GetNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNotesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateNoteUrl = () => {
+
+
+
+
+  return `/api/social/notes`
+}
+
+/**
+ * @summary Create or replace the current user's Note
+ */
+export const createNote = async (noteInput: NoteInput, options?: Parameters<typeof customFetch>[1]): Promise<Note> => {
+
+  return customFetch<Note>(getCreateNoteUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(noteInput)
+  }
+);}
+
+
+
+
+
+export const getCreateNoteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNote>>, TError,{data: BodyType<NoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createNote>>, TError,{data: BodyType<NoteInput>}, TContext> => {
+
+const mutationKey = ['createNote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createNote>>, {data: BodyType<NoteInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createNote(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateNoteMutationResult = NonNullable<Awaited<ReturnType<typeof createNote>>>
+    export type CreateNoteMutationBody = BodyType<NoteInput>
+    export type CreateNoteMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create or replace the current user's Note
+ */
+export const useCreateNote = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNote>>, TError,{data: BodyType<NoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createNote>>,
+        TError,
+        {data: BodyType<NoteInput>},
+        TContext
+      > => {
+      return useMutation(getCreateNoteMutationOptions(options));
+    }
+
+export const getUpdateNoteUrl = (noteId: number,) => {
+
+
+
+
+  return `/api/social/notes/${noteId}`
+}
+
+/**
+ * @summary Update a Note owned by the caller
+ */
+export const updateNote = async (noteId: number,
+    noteInput: NoteInput, options?: Parameters<typeof customFetch>[1]): Promise<Note> => {
+
+  return customFetch<Note>(getUpdateNoteUrl(noteId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(noteInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateNoteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateNote>>, TError,{noteId: number;data: BodyType<NoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateNote>>, TError,{noteId: number;data: BodyType<NoteInput>}, TContext> => {
+
+const mutationKey = ['updateNote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateNote>>, {noteId: number;data: BodyType<NoteInput>}> = (props) => {
+          const {noteId,data} = props ?? {};
+
+          return  updateNote(noteId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateNoteMutationResult = NonNullable<Awaited<ReturnType<typeof updateNote>>>
+    export type UpdateNoteMutationBody = BodyType<NoteInput>
+    export type UpdateNoteMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a Note owned by the caller
+ */
+export const useUpdateNote = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateNote>>, TError,{noteId: number;data: BodyType<NoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateNote>>,
+        TError,
+        {noteId: number;data: BodyType<NoteInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateNoteMutationOptions(options));
+    }
+
+export const getDeleteNoteUrl = (noteId: number,) => {
+
+
+
+
+  return `/api/social/notes/${noteId}`
+}
+
+/**
+ * @summary Delete a Note owned by the caller
+ */
+export const deleteNote = async (noteId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActionResult> => {
+
+  return customFetch<ActionResult>(getDeleteNoteUrl(noteId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteNoteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNote>>, TError,{noteId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteNote>>, TError,{noteId: number}, TContext> => {
+
+const mutationKey = ['deleteNote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteNote>>, {noteId: number}> = (props) => {
+          const {noteId} = props ?? {};
+
+          return  deleteNote(noteId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteNoteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteNote>>>
+
+    export type DeleteNoteMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a Note owned by the caller
+ */
+export const useDeleteNote = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNote>>, TError,{noteId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteNote>>,
+        TError,
+        {noteId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteNoteMutationOptions(options));
+    }
+
 export const getGetNearbyStoriesUrl = (params: GetNearbyStoriesParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -4485,6 +4800,83 @@ export const useRemoveStoryReaction = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRemoveStoryReactionMutationOptions(options));
     }
+
+export const getGetStoryRepliesUrl = (storyId: number,) => {
+
+
+
+
+  return `/api/social/stories/${storyId}/replies`
+}
+
+/**
+ * @summary List replies on a visible story
+ */
+export const getStoryReplies = async (storyId: number, options?: Parameters<typeof customFetch>[1]): Promise<GetStoryReplies200> => {
+
+  return customFetch<GetStoryReplies200>(getGetStoryRepliesUrl(storyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStoryRepliesQueryKey = (storyId: number,) => {
+    return [
+    `/api/social/stories/${storyId}/replies`
+    ] as const;
+    }
+
+
+export const getGetStoryRepliesQueryOptions = <TData = Awaited<ReturnType<typeof getStoryReplies>>, TError = ErrorType<unknown>>(storyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStoryReplies>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStoryRepliesQueryKey(storyId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStoryReplies>>> = ({ signal }) => getStoryReplies(storyId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: storyId !== null && storyId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStoryReplies>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStoryRepliesQueryResult = NonNullable<Awaited<ReturnType<typeof getStoryReplies>>>
+export type GetStoryRepliesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List replies on a visible story
+ */
+
+export function useGetStoryReplies<TData = Awaited<ReturnType<typeof getStoryReplies>>, TError = ErrorType<unknown>>(
+ storyId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStoryReplies>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStoryRepliesQueryOptions(storyId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getReplyToStoryUrl = (storyId: number,) => {
 
@@ -6098,6 +6490,824 @@ export const useReportMapPin = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getReportMapPinMutationOptions(options));
     }
+
+export const getGetCurrentEventRoomsUrl = (params?: GetCurrentEventRoomsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/current-events/rooms?${stringifiedParams}` : `/api/current-events/rooms`
+}
+
+/**
+ * @summary List live Current Events rooms
+ */
+export const getCurrentEventRooms = async (params?: GetCurrentEventRoomsParams, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventRoomList> => {
+
+  return customFetch<CurrentEventRoomList>(getGetCurrentEventRoomsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCurrentEventRoomsQueryKey = (params?: GetCurrentEventRoomsParams,) => {
+    return [
+    `/api/current-events/rooms`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCurrentEventRoomsQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentEventRooms>>, TError = ErrorType<unknown>>(params?: GetCurrentEventRoomsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventRooms>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentEventRoomsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentEventRooms>>> = ({ signal }) => getCurrentEventRooms(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventRooms>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCurrentEventRoomsQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentEventRooms>>>
+export type GetCurrentEventRoomsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List live Current Events rooms
+ */
+
+export function useGetCurrentEventRooms<TData = Awaited<ReturnType<typeof getCurrentEventRooms>>, TError = ErrorType<unknown>>(
+ params?: GetCurrentEventRoomsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventRooms>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCurrentEventRoomsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCurrentEventRoomUrl = () => {
+
+
+
+
+  return `/api/current-events/rooms`
+}
+
+/**
+ * @summary Start a live Current Events room
+ */
+export const createCurrentEventRoom = async (currentEventRoomInput: CurrentEventRoomInput, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventRoom> => {
+
+  return customFetch<CurrentEventRoom>(getCreateCurrentEventRoomUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(currentEventRoomInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCurrentEventRoomMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCurrentEventRoom>>, TError,{data: BodyType<CurrentEventRoomInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCurrentEventRoom>>, TError,{data: BodyType<CurrentEventRoomInput>}, TContext> => {
+
+const mutationKey = ['createCurrentEventRoom'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCurrentEventRoom>>, {data: BodyType<CurrentEventRoomInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCurrentEventRoom(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCurrentEventRoomMutationResult = NonNullable<Awaited<ReturnType<typeof createCurrentEventRoom>>>
+    export type CreateCurrentEventRoomMutationBody = BodyType<CurrentEventRoomInput>
+    export type CreateCurrentEventRoomMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Start a live Current Events room
+ */
+export const useCreateCurrentEventRoom = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCurrentEventRoom>>, TError,{data: BodyType<CurrentEventRoomInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCurrentEventRoom>>,
+        TError,
+        {data: BodyType<CurrentEventRoomInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCurrentEventRoomMutationOptions(options));
+    }
+
+export const getGetCurrentEventRoomUrl = (roomId: number,) => {
+
+
+
+
+  return `/api/current-events/rooms/${roomId}`
+}
+
+/**
+ * @summary Get a live Current Events room
+ */
+export const getCurrentEventRoom = async (roomId: number, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventRoom> => {
+
+  return customFetch<CurrentEventRoom>(getGetCurrentEventRoomUrl(roomId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCurrentEventRoomQueryKey = (roomId: number,) => {
+    return [
+    `/api/current-events/rooms/${roomId}`
+    ] as const;
+    }
+
+
+export const getGetCurrentEventRoomQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentEventRoom>>, TError = ErrorType<unknown>>(roomId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventRoom>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentEventRoomQueryKey(roomId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentEventRoom>>> = ({ signal }) => getCurrentEventRoom(roomId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: roomId !== null && roomId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventRoom>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCurrentEventRoomQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentEventRoom>>>
+export type GetCurrentEventRoomQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a live Current Events room
+ */
+
+export function useGetCurrentEventRoom<TData = Awaited<ReturnType<typeof getCurrentEventRoom>>, TError = ErrorType<unknown>>(
+ roomId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventRoom>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCurrentEventRoomQueryOptions(roomId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getJoinCurrentEventRoomUrl = (roomId: number,) => {
+
+
+
+
+  return `/api/current-events/rooms/${roomId}/join`
+}
+
+/**
+ * @summary Join a room as a listener
+ */
+export const joinCurrentEventRoom = async (roomId: number, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventRoom> => {
+
+  return customFetch<CurrentEventRoom>(getJoinCurrentEventRoomUrl(roomId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getJoinCurrentEventRoomMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinCurrentEventRoom>>, TError,{roomId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinCurrentEventRoom>>, TError,{roomId: number}, TContext> => {
+
+const mutationKey = ['joinCurrentEventRoom'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinCurrentEventRoom>>, {roomId: number}> = (props) => {
+          const {roomId} = props ?? {};
+
+          return  joinCurrentEventRoom(roomId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type JoinCurrentEventRoomMutationResult = NonNullable<Awaited<ReturnType<typeof joinCurrentEventRoom>>>
+
+    export type JoinCurrentEventRoomMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Join a room as a listener
+ */
+export const useJoinCurrentEventRoom = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinCurrentEventRoom>>, TError,{roomId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof joinCurrentEventRoom>>,
+        TError,
+        {roomId: number},
+        TContext
+      > => {
+      return useMutation(getJoinCurrentEventRoomMutationOptions(options));
+    }
+
+export const getLeaveCurrentEventRoomUrl = (roomId: number,) => {
+
+
+
+
+  return `/api/current-events/rooms/${roomId}/leave`
+}
+
+/**
+ * @summary Leave a live room
+ */
+export const leaveCurrentEventRoom = async (roomId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActionResult> => {
+
+  return customFetch<ActionResult>(getLeaveCurrentEventRoomUrl(roomId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getLeaveCurrentEventRoomMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveCurrentEventRoom>>, TError,{roomId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof leaveCurrentEventRoom>>, TError,{roomId: number}, TContext> => {
+
+const mutationKey = ['leaveCurrentEventRoom'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof leaveCurrentEventRoom>>, {roomId: number}> = (props) => {
+          const {roomId} = props ?? {};
+
+          return  leaveCurrentEventRoom(roomId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LeaveCurrentEventRoomMutationResult = NonNullable<Awaited<ReturnType<typeof leaveCurrentEventRoom>>>
+
+    export type LeaveCurrentEventRoomMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Leave a live room
+ */
+export const useLeaveCurrentEventRoom = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveCurrentEventRoom>>, TError,{roomId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof leaveCurrentEventRoom>>,
+        TError,
+        {roomId: number},
+        TContext
+      > => {
+      return useMutation(getLeaveCurrentEventRoomMutationOptions(options));
+    }
+
+export const getSetCurrentEventHandUrl = (roomId: number,) => {
+
+
+
+
+  return `/api/current-events/rooms/${roomId}/hand`
+}
+
+/**
+ * @summary Raise or lower the caller's hand
+ */
+export const setCurrentEventHand = async (roomId: number,
+    currentEventHandInput: CurrentEventHandInput, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventRoom> => {
+
+  return customFetch<CurrentEventRoom>(getSetCurrentEventHandUrl(roomId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(currentEventHandInput)
+  }
+);}
+
+
+
+
+
+export const getSetCurrentEventHandMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCurrentEventHand>>, TError,{roomId: number;data: BodyType<CurrentEventHandInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setCurrentEventHand>>, TError,{roomId: number;data: BodyType<CurrentEventHandInput>}, TContext> => {
+
+const mutationKey = ['setCurrentEventHand'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setCurrentEventHand>>, {roomId: number;data: BodyType<CurrentEventHandInput>}> = (props) => {
+          const {roomId,data} = props ?? {};
+
+          return  setCurrentEventHand(roomId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetCurrentEventHandMutationResult = NonNullable<Awaited<ReturnType<typeof setCurrentEventHand>>>
+    export type SetCurrentEventHandMutationBody = BodyType<CurrentEventHandInput>
+    export type SetCurrentEventHandMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Raise or lower the caller's hand
+ */
+export const useSetCurrentEventHand = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCurrentEventHand>>, TError,{roomId: number;data: BodyType<CurrentEventHandInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setCurrentEventHand>>,
+        TError,
+        {roomId: number;data: BodyType<CurrentEventHandInput>},
+        TContext
+      > => {
+      return useMutation(getSetCurrentEventHandMutationOptions(options));
+    }
+
+export const getUpdateCurrentEventParticipantUrl = (roomId: number,
+    participantId: number,) => {
+
+
+
+
+  return `/api/current-events/rooms/${roomId}/participants/${participantId}`
+}
+
+/**
+ * @summary Promote, demote, mute, or remove a participant
+ */
+export const updateCurrentEventParticipant = async (roomId: number,
+    participantId: number,
+    currentEventParticipantAction: CurrentEventParticipantAction, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventRoom> => {
+
+  return customFetch<CurrentEventRoom>(getUpdateCurrentEventParticipantUrl(roomId,participantId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(currentEventParticipantAction)
+  }
+);}
+
+
+
+
+
+export const getUpdateCurrentEventParticipantMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCurrentEventParticipant>>, TError,{roomId: number;participantId: number;data: BodyType<CurrentEventParticipantAction>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCurrentEventParticipant>>, TError,{roomId: number;participantId: number;data: BodyType<CurrentEventParticipantAction>}, TContext> => {
+
+const mutationKey = ['updateCurrentEventParticipant'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCurrentEventParticipant>>, {roomId: number;participantId: number;data: BodyType<CurrentEventParticipantAction>}> = (props) => {
+          const {roomId,participantId,data} = props ?? {};
+
+          return  updateCurrentEventParticipant(roomId,participantId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCurrentEventParticipantMutationResult = NonNullable<Awaited<ReturnType<typeof updateCurrentEventParticipant>>>
+    export type UpdateCurrentEventParticipantMutationBody = BodyType<CurrentEventParticipantAction>
+    export type UpdateCurrentEventParticipantMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Promote, demote, mute, or remove a participant
+ */
+export const useUpdateCurrentEventParticipant = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCurrentEventParticipant>>, TError,{roomId: number;participantId: number;data: BodyType<CurrentEventParticipantAction>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCurrentEventParticipant>>,
+        TError,
+        {roomId: number;participantId: number;data: BodyType<CurrentEventParticipantAction>},
+        TContext
+      > => {
+      return useMutation(getUpdateCurrentEventParticipantMutationOptions(options));
+    }
+
+export const getGetCurrentEventMessagesUrl = (roomId: number,) => {
+
+
+
+
+  return `/api/current-events/rooms/${roomId}/messages`
+}
+
+/**
+ * @summary List text messages for a room
+ */
+export const getCurrentEventMessages = async (roomId: number, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventMessageList> => {
+
+  return customFetch<CurrentEventMessageList>(getGetCurrentEventMessagesUrl(roomId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCurrentEventMessagesQueryKey = (roomId: number,) => {
+    return [
+    `/api/current-events/rooms/${roomId}/messages`
+    ] as const;
+    }
+
+
+export const getGetCurrentEventMessagesQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentEventMessages>>, TError = ErrorType<unknown>>(roomId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentEventMessagesQueryKey(roomId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentEventMessages>>> = ({ signal }) => getCurrentEventMessages(roomId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: roomId !== null && roomId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventMessages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCurrentEventMessagesQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentEventMessages>>>
+export type GetCurrentEventMessagesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List text messages for a room
+ */
+
+export function useGetCurrentEventMessages<TData = Awaited<ReturnType<typeof getCurrentEventMessages>>, TError = ErrorType<unknown>>(
+ roomId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCurrentEventMessagesQueryOptions(roomId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCurrentEventMessageUrl = (roomId: number,) => {
+
+
+
+
+  return `/api/current-events/rooms/${roomId}/messages`
+}
+
+/**
+ * @summary Send a text message in a room
+ */
+export const createCurrentEventMessage = async (roomId: number,
+    currentEventMessageInput: CurrentEventMessageInput, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventMessage> => {
+
+  return customFetch<CurrentEventMessage>(getCreateCurrentEventMessageUrl(roomId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(currentEventMessageInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCurrentEventMessageMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCurrentEventMessage>>, TError,{roomId: number;data: BodyType<CurrentEventMessageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCurrentEventMessage>>, TError,{roomId: number;data: BodyType<CurrentEventMessageInput>}, TContext> => {
+
+const mutationKey = ['createCurrentEventMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCurrentEventMessage>>, {roomId: number;data: BodyType<CurrentEventMessageInput>}> = (props) => {
+          const {roomId,data} = props ?? {};
+
+          return  createCurrentEventMessage(roomId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCurrentEventMessageMutationResult = NonNullable<Awaited<ReturnType<typeof createCurrentEventMessage>>>
+    export type CreateCurrentEventMessageMutationBody = BodyType<CurrentEventMessageInput>
+    export type CreateCurrentEventMessageMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Send a text message in a room
+ */
+export const useCreateCurrentEventMessage = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCurrentEventMessage>>, TError,{roomId: number;data: BodyType<CurrentEventMessageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCurrentEventMessage>>,
+        TError,
+        {roomId: number;data: BodyType<CurrentEventMessageInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCurrentEventMessageMutationOptions(options));
+    }
+
+export const getSendCurrentEventGiftUrl = (roomId: number,) => {
+
+
+
+
+  return `/api/current-events/rooms/${roomId}/gifts`
+}
+
+/**
+ * @summary Send a coin gift to a room speaker
+ */
+export const sendCurrentEventGift = async (roomId: number,
+    currentEventGiftInput: CurrentEventGiftInput, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventGiftResult> => {
+
+  return customFetch<CurrentEventGiftResult>(getSendCurrentEventGiftUrl(roomId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(currentEventGiftInput)
+  }
+);}
+
+
+
+
+
+export const getSendCurrentEventGiftMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendCurrentEventGift>>, TError,{roomId: number;data: BodyType<CurrentEventGiftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendCurrentEventGift>>, TError,{roomId: number;data: BodyType<CurrentEventGiftInput>}, TContext> => {
+
+const mutationKey = ['sendCurrentEventGift'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendCurrentEventGift>>, {roomId: number;data: BodyType<CurrentEventGiftInput>}> = (props) => {
+          const {roomId,data} = props ?? {};
+
+          return  sendCurrentEventGift(roomId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendCurrentEventGiftMutationResult = NonNullable<Awaited<ReturnType<typeof sendCurrentEventGift>>>
+    export type SendCurrentEventGiftMutationBody = BodyType<CurrentEventGiftInput>
+    export type SendCurrentEventGiftMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Send a coin gift to a room speaker
+ */
+export const useSendCurrentEventGift = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendCurrentEventGift>>, TError,{roomId: number;data: BodyType<CurrentEventGiftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendCurrentEventGift>>,
+        TError,
+        {roomId: number;data: BodyType<CurrentEventGiftInput>},
+        TContext
+      > => {
+      return useMutation(getSendCurrentEventGiftMutationOptions(options));
+    }
+
+export const getGetCurrentEventWalletUrl = () => {
+
+
+
+
+  return `/api/current-events/wallet`
+}
+
+/**
+ * @summary Get the caller's Current Events coins and Gold
+ */
+export const getCurrentEventWallet = async ( options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventWallet> => {
+
+  return customFetch<CurrentEventWallet>(getGetCurrentEventWalletUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCurrentEventWalletQueryKey = () => {
+    return [
+    `/api/current-events/wallet`
+    ] as const;
+    }
+
+
+export const getGetCurrentEventWalletQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentEventWallet>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentEventWalletQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentEventWallet>>> = ({ signal }) => getCurrentEventWallet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventWallet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCurrentEventWalletQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentEventWallet>>>
+export type GetCurrentEventWalletQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the caller's Current Events coins and Gold
+ */
+
+export function useGetCurrentEventWallet<TData = Awaited<ReturnType<typeof getCurrentEventWallet>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentEventWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCurrentEventWalletQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getRequestUploadUrlUrl = () => {
 

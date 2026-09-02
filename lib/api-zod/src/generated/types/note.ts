@@ -5,13 +5,15 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { NoteViewer } from './noteViewer';
 import type { SocialUser } from './socialUser';
 
-export interface StoryReply {
+export interface Note {
   id: number;
-  storyId: number;
-  authorId: number;
   content: string;
   createdAt: number;
-  author: SocialUser;
+  updatedAt: number;
+  expiresAt: number;
+  owner: SocialUser;
+  viewer: NoteViewer;
 }

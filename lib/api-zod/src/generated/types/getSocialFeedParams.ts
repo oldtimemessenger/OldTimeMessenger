@@ -5,10 +5,23 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { GetSocialFeedFilter } from './getSocialFeedFilter';
 import type { GetSocialFeedMode } from './getSocialFeedMode';
 
 export type GetSocialFeedParams = {
 mode?: GetSocialFeedMode;
+/**
+ * Community-only filter. Community posts never enter the For You feed.
+ */
+filter?: GetSocialFeedFilter;
+/**
+ * Comma-separated selected interest IDs used when filter is interests.
+ */
+interests?: string;
+/**
+ * Return only photo and video posts for the creator Updates surface.
+ */
+mediaOnly?: boolean;
 cursor?: number;
 /**
  * @minimum 1

@@ -6,8 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type StoryViewer = {
-  viewed: boolean;
-  isOwner: boolean;
-  reacted: boolean;
-};
+export interface CurrentEventMessageInput {
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  content: string;
+}

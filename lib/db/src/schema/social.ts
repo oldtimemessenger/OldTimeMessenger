@@ -202,6 +202,7 @@ export const socialStoriesTable = pgTable(
     kind: text("kind").notNull().default("text"),
     content: text("content").notNull().default(""),
     visibility: text("visibility").notNull().default("friends"),
+    taggedUserIds: jsonb("tagged_user_ids").$type<number[]>().notNull().default([]),
     media: jsonb("media").$type<{
       type: "image" | "video";
       objectPath: string;

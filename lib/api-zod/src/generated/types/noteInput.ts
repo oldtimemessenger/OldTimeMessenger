@@ -6,8 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type StoryViewer = {
-  viewed: boolean;
-  isOwner: boolean;
-  reacted: boolean;
-};
+export interface NoteInput {
+  /**
+     * @minLength 1
+     * @maxLength 280
+     */
+  content: string;
+}

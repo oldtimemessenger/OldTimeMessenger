@@ -12,4 +12,5 @@ export type SocialFeedPageMode = typeof SocialFeedPageMode[keyof typeof SocialFe
 export const SocialFeedPageMode = {
   'for-you': 'for-you',
   following: 'following',
+  community: 'community',
 } as const;

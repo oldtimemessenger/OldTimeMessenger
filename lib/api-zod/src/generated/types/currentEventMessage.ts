@@ -5,13 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { SocialUser } from './socialUser';
+import type { CurrentEventUser } from './currentEventUser';
 
-export interface StoryReply {
+export interface CurrentEventMessage {
   id: number;
-  storyId: number;
-  authorId: number;
+  roomId: number;
+  sender: CurrentEventUser;
   content: string;
   createdAt: number;
-  author: SocialUser;
 }

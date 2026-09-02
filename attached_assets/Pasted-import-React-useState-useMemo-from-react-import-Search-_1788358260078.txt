@@ -1,0 +1,421 @@
+import React, { useState, useMemo } from "react";
+import { Search, ChevronDown, Check, X } from "lucide-react";
+
+/* ---------------------------------------------------------
+   DATA
+   Each node: { id, name, blurb?, sub?: Node[] }
+   Nesting can go as deep as needed — Sports > League > Team,
+   or just Category > Subtopic.
+--------------------------------------------------------- */
+
+const flat = (names, prefix) =>
+  names.map((n) => ({ id: `${prefix}-${n.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: n }));
+
+const NBA_TEAMS = [
+  "Atlanta Hawks","Boston Celtics","Brooklyn Nets","Charlotte Hornets","Chicago Bulls",
+  "Cleveland Cavaliers","Dallas Mavericks","Denver Nuggets","Detroit Pistons","Golden State Warriors",
+  "Houston Rockets","Indiana Pacers","LA Clippers","Los Angeles Lakers","Memphis Grizzlies",
+  "Miami Heat","Milwaukee Bucks","Minnesota Timberwolves","New Orleans Pelicans","New York Knicks",
+  "Oklahoma City Thunder","Orlando Magic","Philadelphia 76ers","Phoenix Suns","Portland Trail Blazers",
+  "Sacramento Kings","San Antonio Spurs","Toronto Raptors","Utah Jazz","Washington Wizards",
+];
+
+const NFL_TEAMS = [
+  "Arizona Cardinals","Atlanta Falcons","Baltimore Ravens","Buffalo Bills","Carolina Panthers",
+  "Chicago Bears","Cincinnati Bengals","Cleveland Browns","Dallas Cowboys","Denver Broncos",
+  "Detroit Lions","Green Bay Packers","Houston Texans","Indianapolis Colts","Jacksonville Jaguars",
+  "Kansas City Chiefs","Las Vegas Raiders","Los Angeles Chargers","Los Angeles Rams","Miami Dolphins",
+  "Minnesota Vikings","New England Patriots","New Orleans Saints","New York Giants","New York Jets",
+  "Philadelphia Eagles","Pittsburgh Steelers","San Francisco 49ers","Seattle Seahawks",
+  "Tampa Bay Buccaneers","Tennessee Titans","Washington Commanders",
+];
+
+const MLB_TEAMS = [
+  "Arizona Diamondbacks","Atlanta Braves","Baltimore Orioles","Boston Red Sox","Chicago Cubs",
+  "Chicago White Sox","Cincinnati Reds","Cleveland Guardians","Colorado Rockies","Detroit Tigers",
+  "Houston Astros","Kansas City Royals","Los Angeles Angels","Los Angeles Dodgers","Miami Marlins",
+  "Milwaukee Brewers","Minnesota Twins","New York Mets","New York Yankees","Oakland Athletics",
+  "Philadelphia Phillies","Pittsburgh Pirates","San Diego Padres","San Francisco Giants",
+  "Seattle Mariners","St. Louis Cardinals","Tampa Bay Rays","Texas Rangers","Toronto Blue Jays",
+  "Washington Nationals",
+];
+
+const NHL_TEAMS = [
+  "Anaheim Ducks","Boston Bruins","Buffalo Sabres","Calgary Flames","Carolina Hurricanes",
+  "Chicago Blackhawks","Colorado Avalanche","Columbus Blue Jackets","Dallas Stars","Detroit Red Wings",
+  "Edmonton Oilers","Florida Panthers","Los Angeles Kings","Minnesota Wild","Montreal Canadiens",
+  "Nashville Predators","New Jersey Devils","New York Islanders","New York Rangers","Ottawa Senators",
+  "Philadelphia Flyers","Pittsburgh Penguins","San Jose Sharks","Seattle Kraken","St. Louis Blues",
+  "Tampa Bay Lightning","Toronto Maple Leafs","Utah Hockey Club","Vancouver Canucks",
+  "Vegas Golden Knights","Washington Capitals","Winnipeg Jets",
+];
+
+const SOCCER = [
+  {
+    id: "soccer-epl", name: "Premier League",
+    sub: flat(["Arsenal","Aston Villa","Chelsea","Liverpool","Manchester City","Manchester United","Newcastle United","Tottenham Hotspur"], "epl"),
+  },
+  {
+    id: "soccer-laliga", name: "La Liga",
+    sub: flat(["Real Madrid","Barcelona","Atlético Madrid","Athletic Bilbao"], "laliga"),
+  },
+  {
+    id: "soccer-seriea", name: "Serie A",
+    sub: flat(["Juventus","AC Milan","Inter Milan","Napoli"], "seriea"),
+  },
+  {
+    id: "soccer-bundesliga", name: "Bundesliga",
+    sub: flat(["Bayern Munich","Borussia Dortmund","Bayer Leverkusen"], "bundesliga"),
+  },
+  {
+    id: "soccer-ligue1", name: "Ligue 1",
+    sub: flat(["Paris Saint-Germain","Marseille","Monaco"], "ligue1"),
+  },
+  {
+    id: "soccer-mls", name: "MLS",
+    sub: flat(["Inter Miami CF","LA Galaxy","LAFC","Seattle Sounders FC"], "mls"),
+  },
+  {
+    id: "soccer-national", name: "National Teams",
+    sub: flat(["USA","Mexico","Brazil","Argentina","England","France","Spain","Germany"], "nt"),
+  },
+];
+
+const DATA = [
+  {
+    id: "news", name: "News", blurb: "Breaking stories and daily coverage",
+    sub: flat(["Politics","World","U.S.","Local","Climate","Elections"], "news"),
+  },
+  {
+    id: "sports", name: "Sports", blurb: "Scores, teams, and leagues",
+    sub: [
+      { id: "nba", name: "NBA", sub: flat(NBA_TEAMS, "nba") },
+      { id: "nfl", name: "NFL", sub: flat(NFL_TEAMS, "nfl") },
+      { id: "mlb", name: "MLB", sub: flat(MLB_TEAMS, "mlb") },
+      { id: "nhl", name: "NHL", sub: flat(NHL_TEAMS, "nhl") },
+      { id: "soccer", name: "Soccer", sub: SOCCER },
+      { id: "ncaaf", name: "College Football", sub: flat(["SEC","Big Ten","ACC","Big 12","American","Mountain West"], "ncaaf") },
+      { id: "ncaab", name: "College Basketball", sub: flat(["SEC","Big Ten","ACC","Big 12","Big East"], "ncaab") },
+      { id: "tennis", name: "Tennis", sub: flat(["ATP Tour","WTA Tour","Grand Slams"], "tennis") },
+      { id: "golf", name: "Golf", sub: flat(["PGA Tour","LIV Golf","LPGA","The Majors"], "golf") },
+      { id: "f1", name: "Formula 1", sub: flat(["Red Bull Racing","Ferrari","Mercedes","McLaren","Aston Martin","Williams","Alpine"], "f1") },
+      { id: "mma", name: "MMA / UFC" },
+      { id: "boxing", name: "Boxing" },
+      { id: "cricket", name: "Cricket", sub: flat(["IPL","Test Cricket","T20 World Cup"], "cricket") },
+      { id: "rugby", name: "Rugby", sub: flat(["Six Nations","Rugby Championship","Rugby World Cup"], "rugby") },
+      { id: "olympics", name: "Olympics", sub: flat(["Summer Games","Winter Games"], "olympics") },
+    ],
+  },
+  {
+    id: "politics", name: "Politics", blurb: "Policy, elections, and government",
+    sub: flat(["U.S. Politics","World Politics","Elections","Supreme Court","Congress"], "politics"),
+  },
+  {
+    id: "health", name: "Health & Wellness", blurb: "Medicine, fitness, and mental health",
+    sub: flat(["Mental Health","Nutrition","Fitness","Medicine","Public Health","Sleep"], "health"),
+  },
+  {
+    id: "business", name: "Business", blurb: "Money, work, and the economy",
+    sub: flat(["Markets","Startups","Personal Finance","Economy","Real Estate","Crypto"], "business"),
+  },
+  {
+    id: "technology", name: "Technology", blurb: "Products, startups, and science",
+    sub: flat(["AI","Gadgets","Startups","Cybersecurity","Space"], "technology"),
+  },
+  {
+    id: "entertainment", name: "Entertainment", blurb: "Movies, TV, and celebrity",
+    sub: flat(["Movies","TV","Celebrity","Streaming","Awards Shows"], "entertainment"),
+  },
+  {
+    id: "music", name: "Music", blurb: "New releases and live sessions",
+    sub: flat(["Pop","Hip-Hop","Rock","Latin","Electronic","Country"], "music"),
+  },
+  {
+    id: "food", name: "Food", blurb: "Recipes, restaurants, and chefs",
+    sub: flat(["Recipes","Restaurants","Chefs","Baking"], "food"),
+  },
+  { id: "travel", name: "Travel", blurb: "Places, guides, and getaways" },
+  { id: "culture", name: "Culture", blurb: "People, ideas, and community" },
+  { id: "science", name: "Science", blurb: "Discovery and research" },
+  {
+    id: "gaming", name: "Gaming", blurb: "Esports, releases, and reviews",
+    sub: flat(["Esports","PC","Console","Mobile"], "gaming"),
+  },
+  { id: "fashion", name: "Fashion", blurb: "Style, runway, and design" },
+];
+
+const LANGUAGES = [
+  { id: "en", name: "English", native: "English" },
+  { id: "es", name: "Spanish", native: "Español" },
+  { id: "fr", name: "French", native: "Français" },
+  { id: "ht", name: "Haitian Creole", native: "Kreyòl Ayisyen" },
+  { id: "pt", name: "Portuguese", native: "Português" },
+  { id: "ar", name: "Arabic", native: "العربية" },
+];
+
+/* ---------------------------------------------------------
+   HELPERS
+--------------------------------------------------------- */
+
+function matchesQuery(node, q) {
+  if (!q) return true;
+  if (node.name.toLowerCase().includes(q)) return true;
+  if (node.sub) return node.sub.some((c) => matchesQuery(c, q));
+  return false;
+}
+
+function countSelected(node, selected) {
+  let n = selected.has(node.id) ? 1 : 0;
+  if (node.sub) n += node.sub.reduce((a, c) => a + countSelected(c, selected), 0);
+  return n;
+}
+
+/* ---------------------------------------------------------
+   NODE ROW (recursive)
+--------------------------------------------------------- */
+
+function Node({ node, depth, selected, toggle, expanded, toggleExpand, query }) {
+  if (!matchesQuery(node, query)) return null;
+
+  const hasSub = node.sub && node.sub.length > 0;
+  const isSelected = selected.has(node.id);
+  const isOpen = expanded.has(node.id) || (query && hasSub);
+  const subCount = hasSub ? countSelected(node, selected) : 0;
+
+  return (
+    <div className={depth === 0 ? "" : ""}>
+      <div
+        className={[
+          "flex items-center gap-3 transition-colors",
+          depth === 0
+            ? "px-4 py-4 rounded-2xl border"
+            : "px-3 py-3 rounded-xl",
+          depth === 0
+            ? isSelected
+              ? "bg-[#1B1B1F] border-[#1B1B1F]"
+              : "bg-white border-[#E4E0D6]"
+            : isSelected
+            ? "bg-[#FBEAE7]"
+            : "hover:bg-[#F1EFE8]",
+        ].join(" ")}
+        style={depth > 0 ? { marginLeft: depth * 16 } : undefined}
+      >
+        <button
+          onClick={() => toggle(node.id)}
+          className="flex-1 flex items-center justify-between text-left gap-3 min-w-0"
+        >
+          <div className="min-w-0">
+            <div
+              className={[
+                depth === 0 ? "text-[15px] font-semibold" : "text-[14px] font-medium",
+                depth === 0 ? (isSelected ? "text-[#F7F5F0]" : "text-[#1B1B1F]") : "text-[#1B1B1F]",
+                "truncate",
+              ].join(" ")}
+            >
+              {node.name}
+            </div>
+            {node.blurb && (
+              <div className={depth === 0 ? "text-[13px] mt-0.5" : "text-xs mt-0.5"}
+                style={{ color: depth === 0 ? (isSelected ? "#C9C6BD" : "#8A867C") : "#8A867C" }}>
+                {node.blurb}
+              </div>
+            )}
+            {hasSub && subCount > 0 && (
+              <div className="text-xs mt-0.5" style={{ color: depth === 0 ? (isSelected ? "#E7A79C" : "#C23B2A") : "#C23B2A" }}>
+                {subCount} selected
+              </div>
+            )}
+          </div>
+
+          <span
+            className={[
+              "shrink-0 w-6 h-6 rounded-full flex items-center justify-center border-2 transition-colors",
+              isSelected
+                ? depth === 0
+                  ? "bg-[#D62828] border-[#D62828]"
+                  : "bg-[#D62828] border-[#D62828]"
+                : "border-[#D6D2C6] bg-transparent",
+            ].join(" ")}
+          >
+            {isSelected && <Check size={14} strokeWidth={3} color="#FFF" />}
+          </span>
+        </button>
+
+        {hasSub && (
+          <button
+            onClick={() => toggleExpand(node.id)}
+            className={[
+              "shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
+              depth === 0 ? (isSelected ? "text-[#F7F5F0]" : "text-[#1B1B1F]") : "text-[#1B1B1F]",
+            ].join(" ")}
+            aria-label="Expand"
+          >
+            <ChevronDown
+              size={18}
+              style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 160ms ease" }}
+            />
+          </button>
+        )}
+      </div>
+
+      {hasSub && isOpen && (
+        <div className="mt-1.5 mb-2 flex flex-col gap-1.5">
+          {node.sub.map((child) => (
+            <Node
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              selected={selected}
+              toggle={toggle}
+              expanded={expanded}
+              toggleExpand={toggleExpand}
+              query={query}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   MAIN SCREEN
+--------------------------------------------------------- */
+
+export default function InterestsScreen() {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(new Set(["nba-los-angeles-lakers", "technology", "news-politics"]));
+  const [expanded, setExpanded] = useState(new Set());
+  const [langs, setLangs] = useState(new Set(["en"]));
+
+  const toggle = (id) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleExpand = (id) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleLang = (id) =>
+    setLangs((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next.size ? next : prev; // keep at least one
+    });
+
+  const q = query.trim().toLowerCase();
+  const visible = useMemo(() => DATA.filter((n) => matchesQuery(n, q)), [q]);
+  const totalSelected = selected.size;
+
+  return (
+    <div
+      className="min-h-screen w-full flex flex-col"
+      style={{ background: "#F7F5F0", fontFamily: "-apple-system, 'Inter', system-ui, sans-serif" }}
+    >
+      {/* Header */}
+      <div className="sticky top-0 z-10" style={{ background: "#F7F5F0", borderBottom: "1px solid #E4E0D6" }}>
+        <div className="px-5 pt-6 pb-4">
+          <h1
+            style={{
+              fontFamily: "ui-serif, Georgia, 'Times New Roman', serif",
+              fontSize: 28,
+              fontWeight: 600,
+              color: "#1B1B1F",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Your interests
+          </h1>
+          <p className="text-[14px] mt-1" style={{ color: "#6B6B65" }}>
+            Choose topics and teams to shape what shows up in your feed.
+          </p>
+        </div>
+
+        {/* Search */}
+        <div className="px-5 pb-4">
+          <div className="flex items-center gap-2 rounded-full px-4 py-2.5" style={{ background: "#FFFFFF", border: "1px solid #E4E0D6" }}>
+            <Search size={16} color="#8A867C" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search topics, teams, leagues…"
+              className="flex-1 bg-transparent outline-none text-[14px]"
+              style={{ color: "#1B1B1F" }}
+            />
+            {query && (
+              <button onClick={() => setQuery("")} aria-label="Clear search">
+                <X size={15} color="#8A867C" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Language pills */}
+        <div className="px-5 pb-4 overflow-x-auto">
+          <div className="text-xs font-medium mb-2" style={{ color: "#8A867C" }}>
+            CONTENT LANGUAGES
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {LANGUAGES.map((l) => {
+              const active = langs.has(l.id);
+              return (
+                <button
+                  key={l.id}
+                  onClick={() => toggleLang(l.id)}
+                  className="px-3.5 py-2 rounded-full text-[13px] font-medium transition-colors whitespace-nowrap"
+                  style={{
+                    background: active ? "#1B1B1F" : "#FFFFFF",
+                    color: active ? "#F7F5F0" : "#1B1B1F",
+                    border: `1px solid ${active ? "#1B1B1F" : "#E4E0D6"}`,
+                  }}
+                >
+                  {l.native}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 px-5 py-4 flex flex-col gap-3 pb-28">
+        {visible.length === 0 && (
+          <div className="text-center py-16" style={{ color: "#8A867C" }}>
+            No topics match "{query}"
+          </div>
+        )}
+        {visible.map((node) => (
+          <Node
+            key={node.id}
+            node={node}
+            depth={0}
+            selected={selected}
+            toggle={toggle}
+            expanded={expanded}
+            toggleExpand={toggleExpand}
+            query={q}
+          />
+        ))}
+      </div>
+
+      {/* Sticky footer */}
+      <div
+        className="fixed bottom-0 left-0 right-0 px-5 py-4"
+        style={{ background: "#F7F5F0", borderTop: "1px solid #E4E0D6" }}
+      >
+        <button
+          className="w-full rounded-full py-3.5 text-[15px] font-semibold flex items-center justify-center gap-2"
+          style={{ background: "#D62828", color: "#FFFFFF" }}
+        >
+          Done — {totalSelected} selected
+        </button>
+      </div>
+    </div>
+  );
+}

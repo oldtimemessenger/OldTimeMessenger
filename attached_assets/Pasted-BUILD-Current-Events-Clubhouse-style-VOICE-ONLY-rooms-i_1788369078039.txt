@@ -1,0 +1,95 @@
+BUILD: Current Events — Clubhouse-style VOICE-ONLY rooms inside my existing Expo app.
+
+CONTEXT
+- This is NOT a new app. Add a feature to my current Expo project (the one with bottom tabs: Updates, Map, Chat, Calls, Settings).
+- Do NOT put this on the Updates feed.
+- Put it on the MAP tab.
+- Feature name is exactly: Current Events
+- Never brand it as C/E, CE, Clubhouse, or “Club”. No C/E badge. Wordmark is “Current Events”.
+- Voice only. No video, no camera, no FaceTime-style UI, no video tiles.
+- Match my existing visual language from screenshots:
+  App shell: white background, navy #1A2B5F, blue CTA #2563EB, light gray pills, bottom tab bar.
+  Rooms UI: cream #F7F3EA, white cards, Clubhouse-like room cards, floating blue “+ host a room”.
+  Economy: existing Coins (gold C coin) and Gold earnings. Reuse purchase coins + earnings screens. Gifts cost coins.
+
+NAVIGATION
+1. Bottom tabs stay: Updates | Map | Chat | Calls | Settings
+2. Map tab is the home of this feature.
+3. On Map screen header, add a navy pill button on the right:
+   icon (radio/mic) + label “Current Events” + red live dot + live room count.
+4. Tapping that button SWITCHES the Map screen into Current Events mode (replace map content, keep the Map tab selected).
+5. Current Events mode has a back/arrow that switches BACK to the map (does not leave the Map tab).
+6. Inside a live room: NO bottom tab bar. Full-screen room. Leave returns to Map (or Current Events list if they came from the list).
+7. Do not add a new bottom-tab item for Current Events.
+
+MAP MODE
+- Keep my existing map (location, pins, recenter).
+- Overlay live-room pins for rooms that have a geo/location (or mock nearby if we don’t have coords yet).
+- Pin tap → join that voice room.
+- Optional bottom CTA: “Host a Current Event”.
+- Copy: “Voice rooms only.”
+
+CURRENT EVENTS MODE (the switched view — Clubhouse home)
+Layout like Clubhouse hallway, cream background:
+- Header: back (to Map) · title “Current Events” · bell
+- Horizontal topic chips: for you, politics, markets, tech, culture, sports, world
+- Scrollable list of live room cards:
+  club name (small) · title (bold) · avatar stack · speaker count · listener count
+- Floating pill button, centered near bottom: “+ host a room” (blue #2563EB)
+- Tapping a card joins as LISTENER (muted).
+
+HOST A ROOM (bottom sheet, same pattern as my “purchase coins” sheet)
+Title: “Start a Current Event”
+- Text field: “What are you talking about?”
+- Topic chips (multi or single)
+- Toggle: “Open to everyone”
+- Primary button: “Start room”
+- Creating a room makes the user HOST, unmuted, voice only, and opens the live room immediately.
+
+LIVE ROOM (voice only)
+Match my existing room UI:
+- Header: chevron down (minimize back to list/map) · share · red “leave”
+- Club name + room title
+- Speakers grid (3 columns): circular avatars, name, role (host / moderator / speaker)
+  Green ring + mic icon when speaking. Muted badge when muted. NO camera.
+- Listeners section below: smaller avatars
+- Bottom bar (white):
+  Primary: “ask to speak” (hand). When raised, button becomes “hand raised” (amber).
+  Gift button · chat button · reaction button
+- Host/moderator can invite a raised hand onto stage (promote listener → speaker) and mute/remove.
+- Room chat is a sheet, not a full screen takeover. Text only.
+
+GIFTS / COINS
+Reuse my coin packs:
+25/$0.49, 125/$1.99, 350/$4.99, 910/$12.99, 1750/$24.99, 4200/$59.99, 9100/$129.99, 17500/$249.99, 35000/$499.99
+Horizontal gift bar in-room:
+Coffee 25 · Idea 100 · Heart 200 · Gem 500 · Studio 1000 · “more”
+Select a gift → Send. Deduct coins. Host receives Gold (about 80% after platform fee). If balance too low, open purchase coins sheet.
+Wire into existing earnings / confirmed gold / pending / next payout UI.
+
+AUDIO (must be real, not fake mute icons)
+- Voice-only live audio (Agora / LiveKit / Daily — pick one that fits Expo).
+- Roles: host, moderator, speaker (can publish audio), listener (subscribe only).
+- Ask-to-speak queue.
+- Presence: who’s in the room, speaker vs listener counts.
+- If audio SDK isn’t configured, still ship the full UI and stub the SDK behind a clear AudioService so we can plug keys later. Do not fake “you’re live” without a service interface.
+
+DATA
+- Rooms: id, clubName, title, topic, isOpen, hostId, createdAt, optional lat/lng
+- Participants: userId, role, muted, handRaised, joinedAt
+- Use my existing backend if present (Supabase/Firebase). Otherwise a simple rooms table + realtime presence.
+- Demo seed a few live rooms so the Map pins and list aren’t empty.
+
+DO NOT
+- Do not clone Clubhouse branding, logo, or name.
+- Do not put Current Events on Updates / For You / Stories.
+- Do not add video.
+- Do not add a 6th tab.
+- Do not name it C/E.
+
+ACCEPTANCE
+- Map tab → navy “Current Events” button switches to the cream hallway.
+- Back returns to map.
+- Map pins join rooms.
+- Host a room → you’re on stage, voice only.
+- Ask to speak, gifts spend coins, leave works, tabs hidden in-room.

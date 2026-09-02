@@ -22,6 +22,7 @@ export interface Story {
   media?: StoryMedia;
   /** @nullable */
   location?: StoryLocation;
+  taggedUsers?: SocialUser[];
   createdAt: number;
   expiresAt: number;
   author: SocialUser;

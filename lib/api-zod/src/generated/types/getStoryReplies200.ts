@@ -5,9 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { StoryReply } from './storyReply';
 
-export type StoryViewer = {
-  viewed: boolean;
-  isOwner: boolean;
-  reacted: boolean;
+export type GetStoryReplies200 = {
+  items: StoryReply[];
 };

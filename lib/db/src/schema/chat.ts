@@ -94,6 +94,23 @@ export const messagesTable = pgTable("chat_messages", {
   saved: boolean("saved").notNull().default(false),
 });
 
+export const chatNotesTable = pgTable(
+  "chat_notes",
+  {
+    id: serial("id").primaryKey(),
+    ownerId: integer("owner_id").notNull(),
+    content: text("content").notNull(),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: pgBigint("updated_at", { mode: "number" }).notNull(),
+    expiresAt: pgBigint("expires_at", { mode: "number" }).notNull(),
+    deleted: boolean("deleted").notNull().default(false),
+  },
+  (table) => ({
+    ownerUpdatedIndex: index("chat_notes_owner_updated_idx").on(table.ownerId, table.updatedAt),
+    expiryIndex: index("chat_notes_expiry_idx").on(table.expiresAt),
+  }),
+);
+
 export const authChallengesTable = pgTable(
   "chat_auth_challenges",
   {

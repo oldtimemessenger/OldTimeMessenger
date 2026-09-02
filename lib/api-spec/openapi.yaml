@@ -24,6 +24,8 @@ tags:
     description: Persisted Updates feed, relationships, conversations, and moderation
   - name: map
     description: Opt-in location pins and nearby discovery
+  - name: current-events
+    description: Voice-only live rooms for current events
 paths:
   /healthz:
     get:
@@ -487,14 +489,32 @@ paths:
     get:
       operationId: getSocialFeed
       tags: [social]
-      summary: Get a ranked or following-only Updates feed
+      summary: Get a ranked For You feed, a relationship-filtered Community feed, or a following-only feed
       parameters:
         - name: mode
           in: query
           schema:
             type: string
-            enum: [for-you, following]
+            enum: [for-you, following, community]
             default: for-you
+        - name: filter
+          in: query
+          description: Community-only filter. Community posts never enter the For You feed.
+          schema:
+            type: string
+            enum: [friends, following, interests]
+            default: friends
+        - name: interests
+          in: query
+          description: Comma-separated selected interest IDs used when filter is interests.
+          schema:
+            type: string
+        - name: mediaOnly
+          in: query
+          description: Return only photo and video posts for the creator Updates surface.
+          schema:
+            type: boolean
+            default: false
         - name: cursor
           in: query
           schema:
@@ -992,6 +1012,34 @@ paths:
       summary: Publish an expiring text or protected-media story
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StoryInput" } } } }
       responses: { "201": { description: Story, content: { application/json: { schema: { $ref: "#/components/schemas/Story" } } } } }
+  /social/notes:
+    get:
+      operationId: getNotes
+      tags: [social]
+      summary: List Notes visible in Messages and active in chats
+      parameters:
+        - { name: surface, in: query, required: false, schema: { type: string, enum: [messages, chat], default: messages } }
+      responses: { "200": { description: Notes, content: { application/json: { schema: { $ref: "#/components/schemas/NoteList" } } } } }
+    post:
+      operationId: createNote
+      tags: [social]
+      summary: Create or replace the current user's Note
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/NoteInput" } } } }
+      responses: { "201": { description: Note, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } } }
+  /social/notes/{noteId}:
+    patch:
+      operationId: updateNote
+      tags: [social]
+      summary: Update a Note owned by the caller
+      parameters: [{ name: noteId, in: path, required: true, schema: { type: number, minimum: 1 } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/NoteInput" } } } }
+      responses: { "200": { description: Note, content: { application/json: { schema: { $ref: "#/components/schemas/Note" } } } } }
+    delete:
+      operationId: deleteNote
+      tags: [social]
+      summary: Delete a Note owned by the caller
+      parameters: [{ name: noteId, in: path, required: true, schema: { type: number, minimum: 1 } }]
+      responses: { "200": { description: Deleted, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
   /social/stories/nearby:
     get:
       operationId: getNearbyStories
@@ -1044,6 +1092,12 @@ paths:
       parameters: [{ $ref: "#/components/parameters/StoryId" }]
       responses: { "200": { description: Removed, content: { application/json: { schema: { $ref: "#/components/schemas/ActiveActionResult" } } } } }
   /social/stories/{storyId}/replies:
+    get:
+      operationId: getStoryReplies
+      tags: [social]
+      summary: List replies on a visible story
+      parameters: [{ $ref: "#/components/parameters/StoryId" }]
+      responses: { "200": { description: Replies, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/StoryReply" } } }, required: [items] } } } } }
     post:
       operationId: replyToStory
       tags: [social]
@@ -1198,6 +1252,188 @@ paths:
       parameters: [{ $ref: "#/components/parameters/PinId" }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MapPinReportInput" } } } }
       responses: { "201": { description: Report accepted, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
+  /current-events/rooms:
+    get:
+      operationId: getCurrentEventRooms
+      tags: [current-events]
+      summary: List live Current Events rooms
+      parameters:
+        - { name: topic, in: query, required: false, schema: { $ref: "#/components/schemas/CurrentEventTopic" } }
+        - { name: latitude, in: query, required: false, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: longitude, in: query, required: false, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: radiusKm, in: query, required: false, schema: { type: number, minimum: 0.1, maximum: 50, default: 25 } }
+      responses:
+        "200":
+          description: Live rooms
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventRoomList"
+    post:
+      operationId: createCurrentEventRoom
+      tags: [current-events]
+      summary: Start a live Current Events room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CurrentEventRoomInput"
+      responses:
+        "201":
+          description: Created room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventRoom"
+  /current-events/rooms/{roomId}:
+    get:
+      operationId: getCurrentEventRoom
+      tags: [current-events]
+      summary: Get a live Current Events room
+      parameters:
+        - { name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }
+      responses:
+        "200":
+          description: Room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventRoom"
+  /current-events/rooms/{roomId}/join:
+    post:
+      operationId: joinCurrentEventRoom
+      tags: [current-events]
+      summary: Join a room as a listener
+      parameters:
+        - { name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }
+      responses:
+        "200":
+          description: Joined room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventRoom"
+  /current-events/rooms/{roomId}/leave:
+    post:
+      operationId: leaveCurrentEventRoom
+      tags: [current-events]
+      summary: Leave a live room
+      parameters:
+        - { name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }
+      responses:
+        "200":
+          description: Left room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
+  /current-events/rooms/{roomId}/hand:
+    post:
+      operationId: setCurrentEventHand
+      tags: [current-events]
+      summary: Raise or lower the caller's hand
+      parameters:
+        - { name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CurrentEventHandInput"
+      responses:
+        "200":
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventRoom"
+  /current-events/rooms/{roomId}/participants/{participantId}:
+    patch:
+      operationId: updateCurrentEventParticipant
+      tags: [current-events]
+      summary: Promote, demote, mute, or remove a participant
+      parameters:
+        - { name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }
+        - { name: participantId, in: path, required: true, schema: { type: number, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CurrentEventParticipantAction"
+      responses:
+        "200":
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventRoom"
+  /current-events/rooms/{roomId}/messages:
+    get:
+      operationId: getCurrentEventMessages
+      tags: [current-events]
+      summary: List text messages for a room
+      parameters:
+        - { name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }
+      responses:
+        "200":
+          description: Room messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventMessageList"
+    post:
+      operationId: createCurrentEventMessage
+      tags: [current-events]
+      summary: Send a text message in a room
+      parameters:
+        - { name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CurrentEventMessageInput"
+      responses:
+        "201":
+          description: Message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventMessage"
+  /current-events/rooms/{roomId}/gifts:
+    post:
+      operationId: sendCurrentEventGift
+      tags: [current-events]
+      summary: Send a coin gift to a room speaker
+      parameters:
+        - { name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CurrentEventGiftInput"
+      responses:
+        "200":
+          description: Gift result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventGiftResult"
+  /current-events/wallet:
+    get:
+      operationId: getCurrentEventWallet
+      tags: [current-events]
+      summary: Get the caller's Current Events coins and Gold
+      responses:
+        "200":
+          description: Wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventWallet"
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -1713,7 +1949,7 @@ components:
       properties:
         mode:
           type: string
-          enum: [for-you, following]
+          enum: [for-you, following, community]
         items:
           type: array
           items:
@@ -2008,12 +2244,34 @@ components:
             latitude: { type: number, minimum: -90, maximum: 90 }
             longitude: { type: number, minimum: -180, maximum: 180 }
           required: [latitude, longitude]
+        taggedUsers:
+          type: array
+          items: { $ref: "#/components/schemas/SocialUser" }
         createdAt: { type: number }
         expiresAt: { type: number }
         author: { $ref: "#/components/schemas/SocialUser" }
-        viewer: { type: object, properties: { viewed: { type: boolean }, isOwner: { type: boolean } }, required: [viewed, isOwner] }
+        viewer: { type: object, properties: { viewed: { type: boolean }, isOwner: { type: boolean }, reacted: { type: boolean } }, required: [viewed, isOwner, reacted] }
         counts: { type: object, properties: { views: { type: number }, reactions: { type: number } }, required: [views, reactions] }
       required: [id, kind, content, visibility, createdAt, expiresAt, author, viewer, counts]
+    Note:
+      type: object
+      properties:
+        id: { type: number }
+        content: { type: string }
+        createdAt: { type: number }
+        updatedAt: { type: number }
+        expiresAt: { type: number }
+        owner: { $ref: "#/components/schemas/SocialUser" }
+        viewer: { type: object, properties: { isOwner: { type: boolean } }, required: [isOwner] }
+      required: [id, content, createdAt, updatedAt, expiresAt, owner, viewer]
+    NoteList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/Note" } } }
+      required: [items]
+    NoteInput:
+      type: object
+      properties: { content: { type: string, minLength: 1, maxLength: 280 } }
+      required: [content]
     SocialUserList:
       type: object
       properties: { items: { type: array, items: { $ref: "#/components/schemas/SocialUser" } } }
@@ -2041,6 +2299,10 @@ components:
             longitude: { type: number, minimum: -180, maximum: 180 }
           required: [latitude, longitude]
         expiresAt: { type: number }
+        taggedUserIds:
+          type: array
+          maxItems: 20
+          items: { type: number, minimum: 1 }
     StoryReactionInput:
       type: object
       properties: { reaction: { type: string, minLength: 1, maxLength: 32 } }
@@ -2050,8 +2312,8 @@ components:
       required: [content]
     StoryReply:
       type: object
-      properties: { id: { type: number }, storyId: { type: number }, authorId: { type: number }, content: { type: string }, createdAt: { type: number } }
-      required: [id, storyId, authorId, content, createdAt]
+      properties: { id: { type: number }, storyId: { type: number }, authorId: { type: number }, content: { type: string }, createdAt: { type: number }, author: { $ref: "#/components/schemas/SocialUser" } }
+      required: [id, storyId, authorId, content, createdAt, author]
     StoryList:
       type: object
       properties: { items: { type: array, items: { $ref: "#/components/schemas/Story" } } }
@@ -2079,4 +2341,123 @@ components:
       type: object
       properties: { success: { type: boolean }, removed: { type: number } }
       required: [success, removed]
+    CurrentEventTopic:
+      type: string
+      enum: [for-you, politics, markets, tech, culture, sports, world]
+    CurrentEventRoomInput:
+      type: object
+      properties:
+        clubName: { type: string, minLength: 1, maxLength: 80, default: Current Events }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        topic: { $ref: "#/components/schemas/CurrentEventTopic" }
+        isOpen: { type: boolean, default: true }
+        latitude: { type: [number, "null"], minimum: -90, maximum: 90 }
+        longitude: { type: [number, "null"], minimum: -180, maximum: 180 }
+      required: [title, topic, isOpen]
+    CurrentEventUser:
+      type: object
+      properties:
+        id: { type: number }
+        name: { type: string }
+        username: { type: string }
+      required: [id, name, username]
+    CurrentEventParticipant:
+      type: object
+      properties:
+        id: { type: number }
+        user: { $ref: "#/components/schemas/CurrentEventUser" }
+        role: { type: string, enum: [host, moderator, speaker, listener] }
+        muted: { type: boolean }
+        handRaised: { type: boolean }
+        joinedAt: { type: number }
+      required: [id, user, role, muted, handRaised, joinedAt]
+    CurrentEventRoom:
+      type: object
+      properties:
+        id: { type: number }
+        clubName: { type: string }
+        title: { type: string }
+        topic: { $ref: "#/components/schemas/CurrentEventTopic" }
+        isOpen: { type: boolean }
+        isLive: { type: boolean }
+        hostId: { type: number }
+        latitude: { type: [number, "null"] }
+        longitude: { type: [number, "null"] }
+        createdAt: { type: number }
+        participants:
+          type: array
+          items: { $ref: "#/components/schemas/CurrentEventParticipant" }
+        counts:
+          type: object
+          properties:
+            speakers: { type: number }
+            listeners: { type: number }
+          required: [speakers, listeners]
+        viewer:
+          type: object
+          properties:
+            participantId: { type: [number, "null"] }
+            role: { type: [string, "null"], enum: [host, moderator, speaker, listener, null] }
+            muted: { type: boolean }
+            handRaised: { type: boolean }
+          required: [participantId, role, muted, handRaised]
+        audio:
+          type: object
+          properties:
+            provider: { type: string, enum: [unconfigured, livekit, agora, daily] }
+            configured: { type: boolean }
+          required: [provider, configured]
+      required: [id, clubName, title, topic, isOpen, isLive, hostId, latitude, longitude, createdAt, participants, counts, viewer, audio]
+    CurrentEventRoomList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/CurrentEventRoom" } } }
+      required: [items]
+    CurrentEventHandInput:
+      type: object
+      properties: { raised: { type: boolean } }
+      required: [raised]
+    CurrentEventParticipantAction:
+      type: object
+      properties:
+        action: { type: string, enum: [promote, demote, mute, unmute, remove] }
+      required: [action]
+    CurrentEventMessage:
+      type: object
+      properties:
+        id: { type: number }
+        roomId: { type: number }
+        sender: { $ref: "#/components/schemas/CurrentEventUser" }
+        content: { type: string }
+        createdAt: { type: number }
+      required: [id, roomId, sender, content, createdAt]
+    CurrentEventMessageList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/CurrentEventMessage" } } }
+      required: [items]
+    CurrentEventMessageInput:
+      type: object
+      properties: { content: { type: string, minLength: 1, maxLength: 1000 } }
+      required: [content]
+    CurrentEventGiftInput:
+      type: object
+      properties:
+        gift: { type: string, enum: [coffee, idea, heart, gem, studio] }
+        recipientId: { type: number, minimum: 1 }
+      required: [gift, recipientId]
+    CurrentEventGiftResult:
+      type: object
+      properties:
+        success: { type: boolean }
+        gift: { type: string }
+        coinsSpent: { type: number }
+        goldEarned: { type: number }
+        coinsRemaining: { type: number }
+      required: [success, gift, coinsSpent, goldEarned, coinsRemaining]
+    CurrentEventWallet:
+      type: object
+      properties:
+        coins: { type: number }
+        gold: { type: number }
+        pendingGold: { type: number }
+      required: [coins, gold, pendingGold]
 

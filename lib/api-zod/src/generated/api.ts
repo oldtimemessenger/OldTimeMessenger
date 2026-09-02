@@ -602,16 +602,21 @@ export const SaveMessageResponse = zod.object({
 
 
 /**
- * @summary Get a ranked or following-only Updates feed
+ * @summary Get a ranked For You feed, a relationship-filtered Community feed, or a following-only feed
  */
 export const getSocialFeedQueryModeDefault = `for-you`;
+export const getSocialFeedQueryFilterDefault = `friends`;
+export const getSocialFeedQueryMediaOnlyDefault = false;
 export const getSocialFeedQueryLimitDefault = 20;
 export const getSocialFeedQueryLimitMax = 30;
 
 
 
 export const GetSocialFeedQueryParams = zod.object({
-  "mode": zod.enum(['for-you', 'following']).default(getSocialFeedQueryModeDefault),
+  "mode": zod.enum(['for-you', 'following', 'community']).default(getSocialFeedQueryModeDefault),
+  "filter": zod.enum(['friends', 'following', 'interests']).default(getSocialFeedQueryFilterDefault).describe('Community-only filter. Community posts never enter the For You feed.'),
+  "interests": zod.coerce.string().optional().describe('Comma-separated selected interest IDs used when filter is interests.'),
+  "mediaOnly": zod.coerce.boolean().default(getSocialFeedQueryMediaOnlyDefault).describe('Return only photo and video posts for the creator Updates surface.'),
   "cursor": zod.coerce.number().optional(),
   "limit": zod.coerce.number().min(1).max(getSocialFeedQueryLimitMax).default(getSocialFeedQueryLimitDefault)
 })
@@ -620,7 +625,7 @@ export const getSocialFeedResponseItemsItemVisibilityDefault = `friends`;
 export const getSocialFeedResponseItemsItemAllowRepostsDefault = false;
 
 export const GetSocialFeedResponse = zod.object({
-  "mode": zod.enum(['for-you', 'following']),
+  "mode": zod.enum(['for-you', 'following', 'community']),
   "items": zod.array(zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
@@ -1494,6 +1499,12 @@ export const GetStoriesResponse = zod.object({
   "latitude": zod.number().min(getStoriesResponseItemsItemLocationLatitudeMin).max(getStoriesResponseItemsItemLocationLatitudeMax),
   "longitude": zod.number().min(getStoriesResponseItemsItemLocationLongitudeMin).max(getStoriesResponseItemsItemLocationLongitudeMax)
 }).nullish(),
+  "taggedUsers": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+})).optional(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
   "author": zod.object({
@@ -1504,7 +1515,8 @@ export const GetStoriesResponse = zod.object({
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "reacted": zod.boolean()
 }),
   "counts": zod.object({
   "views": zod.number(),
@@ -1527,6 +1539,9 @@ export const createStoryBodyLocationLongitudeMin = -180;
 export const createStoryBodyLocationLongitudeMax = 180;
 
 
+export const createStoryBodyTaggedUserIdsMax = 20;
+
+
 
 export const CreateStoryBody = zod.object({
   "content": zod.string().max(createStoryBodyContentMax).optional(),
@@ -1544,7 +1559,8 @@ export const CreateStoryBody = zod.object({
   "latitude": zod.number().min(createStoryBodyLocationLatitudeMin).max(createStoryBodyLocationLatitudeMax),
   "longitude": zod.number().min(createStoryBodyLocationLongitudeMin).max(createStoryBodyLocationLongitudeMax)
 }).nullish(),
-  "expiresAt": zod.number().optional()
+  "expiresAt": zod.number().optional(),
+  "taggedUserIds": zod.array(zod.number().min(1)).max(createStoryBodyTaggedUserIdsMax).optional()
 })
 
 export const createStoryResponseMediaFitDefault = `contain`;
@@ -1574,6 +1590,12 @@ export const CreateStoryResponse = zod.object({
   "latitude": zod.number().min(createStoryResponseLocationLatitudeMin).max(createStoryResponseLocationLatitudeMax),
   "longitude": zod.number().min(createStoryResponseLocationLongitudeMin).max(createStoryResponseLocationLongitudeMax)
 }).nullish(),
+  "taggedUsers": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+})).optional(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
   "author": zod.object({
@@ -1584,12 +1606,122 @@ export const CreateStoryResponse = zod.object({
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "reacted": zod.boolean()
 }),
   "counts": zod.object({
   "views": zod.number(),
   "reactions": zod.number()
 })
+})
+
+
+/**
+ * @summary List Notes visible in Messages and active in chats
+ */
+export const getNotesQuerySurfaceDefault = `messages`;
+
+export const GetNotesQueryParams = zod.object({
+  "surface": zod.enum(['messages', 'chat']).default(getNotesQuerySurfaceDefault)
+})
+
+export const GetNotesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "expiresAt": zod.number(),
+  "owner": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+}),
+  "viewer": zod.object({
+  "isOwner": zod.boolean()
+})
+}))
+})
+
+
+/**
+ * @summary Create or replace the current user's Note
+ */
+export const createNoteBodyContentMax = 280;
+
+
+
+export const CreateNoteBody = zod.object({
+  "content": zod.string().min(1).max(createNoteBodyContentMax)
+})
+
+export const CreateNoteResponse = zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "expiresAt": zod.number(),
+  "owner": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+}),
+  "viewer": zod.object({
+  "isOwner": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Update a Note owned by the caller
+ */
+
+
+
+export const UpdateNoteParams = zod.object({
+  "noteId": zod.coerce.number().min(1)
+})
+
+export const updateNoteBodyContentMax = 280;
+
+
+
+export const UpdateNoteBody = zod.object({
+  "content": zod.string().min(1).max(updateNoteBodyContentMax)
+})
+
+export const UpdateNoteResponse = zod.object({
+  "id": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number(),
+  "expiresAt": zod.number(),
+  "owner": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+}),
+  "viewer": zod.object({
+  "isOwner": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Delete a Note owned by the caller
+ */
+
+
+
+export const DeleteNoteParams = zod.object({
+  "noteId": zod.coerce.number().min(1)
+})
+
+export const DeleteNoteResponse = zod.object({
+  "success": zod.boolean()
 })
 
 
@@ -1646,6 +1778,12 @@ export const GetNearbyStoriesResponse = zod.object({
   "latitude": zod.number().min(getNearbyStoriesResponseItemsItemLocationLatitudeMin).max(getNearbyStoriesResponseItemsItemLocationLatitudeMax),
   "longitude": zod.number().min(getNearbyStoriesResponseItemsItemLocationLongitudeMin).max(getNearbyStoriesResponseItemsItemLocationLongitudeMax)
 }).nullish(),
+  "taggedUsers": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+})).optional(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
   "author": zod.object({
@@ -1656,7 +1794,8 @@ export const GetNearbyStoriesResponse = zod.object({
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "reacted": zod.boolean()
 }),
   "counts": zod.object({
   "views": zod.number(),
@@ -1712,6 +1851,12 @@ export const GetStoryResponse = zod.object({
   "latitude": zod.number().min(getStoryResponseLocationLatitudeMin).max(getStoryResponseLocationLatitudeMax),
   "longitude": zod.number().min(getStoryResponseLocationLongitudeMin).max(getStoryResponseLocationLongitudeMax)
 }).nullish(),
+  "taggedUsers": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+})).optional(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
   "author": zod.object({
@@ -1722,7 +1867,8 @@ export const GetStoryResponse = zod.object({
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "reacted": zod.boolean()
 }),
   "counts": zod.object({
   "views": zod.number(),
@@ -1804,6 +1950,33 @@ export const RemoveStoryReactionResponse = zod.object({
 
 
 /**
+ * @summary List replies on a visible story
+ */
+
+
+
+export const GetStoryRepliesParams = zod.object({
+  "storyId": zod.coerce.number().min(1)
+})
+
+export const GetStoryRepliesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "storyId": zod.number(),
+  "authorId": zod.number(),
+  "content": zod.string(),
+  "createdAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+})
+}))
+})
+
+
+/**
  * @summary Reply to a visible story
  */
 
@@ -1826,7 +1999,13 @@ export const ReplyToStoryResponse = zod.object({
   "storyId": zod.number(),
   "authorId": zod.number(),
   "content": zod.string(),
-  "createdAt": zod.number()
+  "createdAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string()
+})
 })
 
 
@@ -2282,6 +2461,454 @@ export const ReportMapPinBody = zod.object({
 
 export const ReportMapPinResponse = zod.object({
   "success": zod.boolean()
+})
+
+
+/**
+ * @summary List live Current Events rooms
+ */
+export const getCurrentEventRoomsQueryLatitudeMin = -90;
+export const getCurrentEventRoomsQueryLatitudeMax = 90;
+
+export const getCurrentEventRoomsQueryLongitudeMin = -180;
+export const getCurrentEventRoomsQueryLongitudeMax = 180;
+
+export const getCurrentEventRoomsQueryRadiusKmDefault = 25;
+export const getCurrentEventRoomsQueryRadiusKmMin = 0.1;
+export const getCurrentEventRoomsQueryRadiusKmMax = 50;
+
+
+
+export const GetCurrentEventRoomsQueryParams = zod.object({
+  "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']).optional(),
+  "latitude": zod.coerce.number().min(getCurrentEventRoomsQueryLatitudeMin).max(getCurrentEventRoomsQueryLatitudeMax).optional(),
+  "longitude": zod.coerce.number().min(getCurrentEventRoomsQueryLongitudeMin).max(getCurrentEventRoomsQueryLongitudeMax).optional(),
+  "radiusKm": zod.coerce.number().min(getCurrentEventRoomsQueryRadiusKmMin).max(getCurrentEventRoomsQueryRadiusKmMax).default(getCurrentEventRoomsQueryRadiusKmDefault)
+})
+
+export const GetCurrentEventRoomsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "clubName": zod.string(),
+  "title": zod.string(),
+  "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
+  "isOpen": zod.boolean(),
+  "isLive": zod.boolean(),
+  "hostId": zod.number(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable(),
+  "createdAt": zod.number(),
+  "participants": zod.array(zod.object({
+  "id": zod.number(),
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "role": zod.enum(['host', 'moderator', 'speaker', 'listener']),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean(),
+  "joinedAt": zod.number()
+})),
+  "counts": zod.object({
+  "speakers": zod.number(),
+  "listeners": zod.number()
+}),
+  "viewer": zod.object({
+  "participantId": zod.number().nullable(),
+  "role": zod.union([zod.literal('host'),zod.literal('moderator'),zod.literal('speaker'),zod.literal('listener'),zod.literal(null)]).nullable(),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean()
+}),
+  "audio": zod.object({
+  "provider": zod.enum(['unconfigured', 'livekit', 'agora', 'daily']),
+  "configured": zod.boolean()
+})
+}))
+})
+
+
+/**
+ * @summary Start a live Current Events room
+ */
+export const createCurrentEventRoomBodyClubNameDefault = `Current Events`;
+export const createCurrentEventRoomBodyClubNameMax = 80;
+
+export const createCurrentEventRoomBodyTitleMax = 120;
+
+export const createCurrentEventRoomBodyIsOpenDefault = true;
+export const createCurrentEventRoomBodyLatitudeMin = -90;
+export const createCurrentEventRoomBodyLatitudeMax = 90;
+
+export const createCurrentEventRoomBodyLongitudeMin = -180;
+export const createCurrentEventRoomBodyLongitudeMax = 180;
+
+
+
+export const CreateCurrentEventRoomBody = zod.object({
+  "clubName": zod.string().min(1).max(createCurrentEventRoomBodyClubNameMax).default(createCurrentEventRoomBodyClubNameDefault),
+  "title": zod.string().min(1).max(createCurrentEventRoomBodyTitleMax),
+  "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
+  "isOpen": zod.boolean().default(createCurrentEventRoomBodyIsOpenDefault),
+  "latitude": zod.number().min(createCurrentEventRoomBodyLatitudeMin).max(createCurrentEventRoomBodyLatitudeMax).nullish(),
+  "longitude": zod.number().min(createCurrentEventRoomBodyLongitudeMin).max(createCurrentEventRoomBodyLongitudeMax).nullish()
+})
+
+export const CreateCurrentEventRoomResponse = zod.object({
+  "id": zod.number(),
+  "clubName": zod.string(),
+  "title": zod.string(),
+  "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
+  "isOpen": zod.boolean(),
+  "isLive": zod.boolean(),
+  "hostId": zod.number(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable(),
+  "createdAt": zod.number(),
+  "participants": zod.array(zod.object({
+  "id": zod.number(),
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "role": zod.enum(['host', 'moderator', 'speaker', 'listener']),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean(),
+  "joinedAt": zod.number()
+})),
+  "counts": zod.object({
+  "speakers": zod.number(),
+  "listeners": zod.number()
+}),
+  "viewer": zod.object({
+  "participantId": zod.number().nullable(),
+  "role": zod.union([zod.literal('host'),zod.literal('moderator'),zod.literal('speaker'),zod.literal('listener'),zod.literal(null)]).nullable(),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean()
+}),
+  "audio": zod.object({
+  "provider": zod.enum(['unconfigured', 'livekit', 'agora', 'daily']),
+  "configured": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Get a live Current Events room
+ */
+
+
+
+export const GetCurrentEventRoomParams = zod.object({
+  "roomId": zod.coerce.number().min(1)
+})
+
+export const GetCurrentEventRoomResponse = zod.object({
+  "id": zod.number(),
+  "clubName": zod.string(),
+  "title": zod.string(),
+  "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
+  "isOpen": zod.boolean(),
+  "isLive": zod.boolean(),
+  "hostId": zod.number(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable(),
+  "createdAt": zod.number(),
+  "participants": zod.array(zod.object({
+  "id": zod.number(),
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "role": zod.enum(['host', 'moderator', 'speaker', 'listener']),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean(),
+  "joinedAt": zod.number()
+})),
+  "counts": zod.object({
+  "speakers": zod.number(),
+  "listeners": zod.number()
+}),
+  "viewer": zod.object({
+  "participantId": zod.number().nullable(),
+  "role": zod.union([zod.literal('host'),zod.literal('moderator'),zod.literal('speaker'),zod.literal('listener'),zod.literal(null)]).nullable(),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean()
+}),
+  "audio": zod.object({
+  "provider": zod.enum(['unconfigured', 'livekit', 'agora', 'daily']),
+  "configured": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Join a room as a listener
+ */
+
+
+
+export const JoinCurrentEventRoomParams = zod.object({
+  "roomId": zod.coerce.number().min(1)
+})
+
+export const JoinCurrentEventRoomResponse = zod.object({
+  "id": zod.number(),
+  "clubName": zod.string(),
+  "title": zod.string(),
+  "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
+  "isOpen": zod.boolean(),
+  "isLive": zod.boolean(),
+  "hostId": zod.number(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable(),
+  "createdAt": zod.number(),
+  "participants": zod.array(zod.object({
+  "id": zod.number(),
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "role": zod.enum(['host', 'moderator', 'speaker', 'listener']),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean(),
+  "joinedAt": zod.number()
+})),
+  "counts": zod.object({
+  "speakers": zod.number(),
+  "listeners": zod.number()
+}),
+  "viewer": zod.object({
+  "participantId": zod.number().nullable(),
+  "role": zod.union([zod.literal('host'),zod.literal('moderator'),zod.literal('speaker'),zod.literal('listener'),zod.literal(null)]).nullable(),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean()
+}),
+  "audio": zod.object({
+  "provider": zod.enum(['unconfigured', 'livekit', 'agora', 'daily']),
+  "configured": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Leave a live room
+ */
+
+
+
+export const LeaveCurrentEventRoomParams = zod.object({
+  "roomId": zod.coerce.number().min(1)
+})
+
+export const LeaveCurrentEventRoomResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Raise or lower the caller's hand
+ */
+
+
+
+export const SetCurrentEventHandParams = zod.object({
+  "roomId": zod.coerce.number().min(1)
+})
+
+export const SetCurrentEventHandBody = zod.object({
+  "raised": zod.boolean()
+})
+
+export const SetCurrentEventHandResponse = zod.object({
+  "id": zod.number(),
+  "clubName": zod.string(),
+  "title": zod.string(),
+  "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
+  "isOpen": zod.boolean(),
+  "isLive": zod.boolean(),
+  "hostId": zod.number(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable(),
+  "createdAt": zod.number(),
+  "participants": zod.array(zod.object({
+  "id": zod.number(),
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "role": zod.enum(['host', 'moderator', 'speaker', 'listener']),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean(),
+  "joinedAt": zod.number()
+})),
+  "counts": zod.object({
+  "speakers": zod.number(),
+  "listeners": zod.number()
+}),
+  "viewer": zod.object({
+  "participantId": zod.number().nullable(),
+  "role": zod.union([zod.literal('host'),zod.literal('moderator'),zod.literal('speaker'),zod.literal('listener'),zod.literal(null)]).nullable(),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean()
+}),
+  "audio": zod.object({
+  "provider": zod.enum(['unconfigured', 'livekit', 'agora', 'daily']),
+  "configured": zod.boolean()
+})
+})
+
+
+/**
+ * @summary Promote, demote, mute, or remove a participant
+ */
+
+
+
+
+export const UpdateCurrentEventParticipantParams = zod.object({
+  "roomId": zod.coerce.number().min(1),
+  "participantId": zod.coerce.number().min(1)
+})
+
+export const UpdateCurrentEventParticipantBody = zod.object({
+  "action": zod.enum(['promote', 'demote', 'mute', 'unmute', 'remove'])
+})
+
+export const UpdateCurrentEventParticipantResponse = zod.object({
+  "id": zod.number(),
+  "clubName": zod.string(),
+  "title": zod.string(),
+  "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
+  "isOpen": zod.boolean(),
+  "isLive": zod.boolean(),
+  "hostId": zod.number(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable(),
+  "createdAt": zod.number(),
+  "participants": zod.array(zod.object({
+  "id": zod.number(),
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "role": zod.enum(['host', 'moderator', 'speaker', 'listener']),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean(),
+  "joinedAt": zod.number()
+})),
+  "counts": zod.object({
+  "speakers": zod.number(),
+  "listeners": zod.number()
+}),
+  "viewer": zod.object({
+  "participantId": zod.number().nullable(),
+  "role": zod.union([zod.literal('host'),zod.literal('moderator'),zod.literal('speaker'),zod.literal('listener'),zod.literal(null)]).nullable(),
+  "muted": zod.boolean(),
+  "handRaised": zod.boolean()
+}),
+  "audio": zod.object({
+  "provider": zod.enum(['unconfigured', 'livekit', 'agora', 'daily']),
+  "configured": zod.boolean()
+})
+})
+
+
+/**
+ * @summary List text messages for a room
+ */
+
+
+
+export const GetCurrentEventMessagesParams = zod.object({
+  "roomId": zod.coerce.number().min(1)
+})
+
+export const GetCurrentEventMessagesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "roomId": zod.number(),
+  "sender": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "content": zod.string(),
+  "createdAt": zod.number()
+}))
+})
+
+
+/**
+ * @summary Send a text message in a room
+ */
+
+
+
+export const CreateCurrentEventMessageParams = zod.object({
+  "roomId": zod.coerce.number().min(1)
+})
+
+export const createCurrentEventMessageBodyContentMax = 1000;
+
+
+
+export const CreateCurrentEventMessageBody = zod.object({
+  "content": zod.string().min(1).max(createCurrentEventMessageBodyContentMax)
+})
+
+export const CreateCurrentEventMessageResponse = zod.object({
+  "id": zod.number(),
+  "roomId": zod.number(),
+  "sender": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "content": zod.string(),
+  "createdAt": zod.number()
+})
+
+
+/**
+ * @summary Send a coin gift to a room speaker
+ */
+
+
+
+export const SendCurrentEventGiftParams = zod.object({
+  "roomId": zod.coerce.number().min(1)
+})
+
+
+
+
+export const SendCurrentEventGiftBody = zod.object({
+  "gift": zod.enum(['coffee', 'idea', 'heart', 'gem', 'studio']),
+  "recipientId": zod.number().min(1)
+})
+
+export const SendCurrentEventGiftResponse = zod.object({
+  "success": zod.boolean(),
+  "gift": zod.string(),
+  "coinsSpent": zod.number(),
+  "goldEarned": zod.number(),
+  "coinsRemaining": zod.number()
+})
+
+
+/**
+ * @summary Get the caller's Current Events coins and Gold
+ */
+export const GetCurrentEventWalletResponse = zod.object({
+  "coins": zod.number(),
+  "gold": zod.number(),
+  "pendingGold": zod.number()
 })
 
 

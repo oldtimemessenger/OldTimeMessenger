@@ -18,4 +18,9 @@ export interface StoryInput {
   /** @nullable */
   location?: StoryInputLocation;
   expiresAt?: number;
+  /**
+     * @maxItems 20
+     * @items.minimum 1
+     */
+  taggedUserIds?: number[];
 }

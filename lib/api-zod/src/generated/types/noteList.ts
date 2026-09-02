@@ -5,9 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { Note } from './note';
 
-export type StoryViewer = {
-  viewed: boolean;
-  isOwner: boolean;
-  reacted: boolean;
-};
+export interface NoteList {
+  items: Note[];
+}

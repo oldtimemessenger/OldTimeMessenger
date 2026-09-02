@@ -1,0 +1,206 @@
+😂 I got you. Since you’re testing an already-built app, don’t give Replit 10 different prompts that could make it start rewriting everything. Use these one at a time, and test after each.
+
+1. First: make Replit inspect what you already have
+
+I am NOT asking you to rebuild my app.
+
+I am testing the existing app and want to improve the Map + Stories experience.
+
+First, inspect the existing repository and specifically find:
+
+* The current Map screen/component
+* The map provider/SDK currently being used
+* The Story components
+* The Story viewer
+* The backend/API/database code related to Stories
+* The current user-location implementation
+* Any existing map markers/clustering
+* Navigation between Map and Story viewer
+
+Do not change any code yet.
+
+Tell me exactly which files/components currently control the Map + Stories experience and briefly explain how they work together.
+
+Do not modify unrelated features.
+
+⸻
+
+2. Then: upgrade the map visually
+
+Now improve ONLY the existing Map screen.
+
+Do not rebuild the map and do not replace the existing map SDK unless absolutely necessary.
+
+I want the map to feel like a polished, modern real-world navigation/social map rather than a basic developer map.
+
+Improve:
+
+* Map styling
+* Roads and labels
+* Zoom behavior
+* Camera movement
+* User-location indicator
+* Map controls
+* Marker positioning
+* Spacing
+* Overall visual hierarchy
+* Safe areas around iPhone UI
+
+The map should remain highly interactive:
+
+* Pan
+* Pinch zoom
+* Double-tap zoom
+* Rotate
+* Recenter on current location
+
+Keep my existing navigation and backend.
+
+Do NOT change the Feed, Profile, Messages, authentication, or other unrelated screens.
+
+Before changing anything, inspect the current implementation and modify it rather than creating a second map implementation.
+
+⸻
+
+3. Now make the map feel like YOUR social map
+
+This is the important one.
+
+Now redesign the Map + Stories visual experience.
+
+The concept is:
+
+THE MAP IS THE MAIN CANVAS.
+
+Stories should feel like social activity happening ON the map, not like ordinary Google Maps pins.
+
+Use the existing map and Story system.
+
+Story markers should:
+
+* Use the creator’s profile photo/avatar.
+* Have a clean circular presentation.
+* Clearly distinguish unseen Stories from viewed Stories.
+* Have a subtle visual treatment that makes them feel like Stories.
+* Be small enough that the map remains visible.
+* Never create a cluttered wall of avatars.
+
+When several Stories are geographically close:
+
+* Cluster them intelligently.
+* Show a compact cluster indicator.
+* When the user zooms in, smoothly separate them into individual Story bubbles.
+
+The map should still look like a map first.
+
+Do not make the Story markers huge.
+
+Do not copy Snapchat’s exact UI.
+Use the concept of location-based Stories but create an original design matching my app.
+
+Do not modify unrelated screens.
+
+⸻
+
+4. Make tapping a Story feel GOOD
+
+Now improve the interaction between the Map and Story viewer.
+
+When a user taps a Story bubble on the map:
+
+1. Smoothly transition into the Story viewer.
+2. Open the selected Story immediately.
+3. Preserve the exact map camera position underneath.
+4. Allow normal Story navigation.
+5. Allow the user to close the Story.
+6. When closed, return them to the exact same map position and zoom level.
+
+Story viewer:
+
+* Tap right = next
+* Tap left = previous
+* Hold = pause
+* Swipe down = close
+* Show Story progress indicators
+* Show creator avatar and username
+* Show location context when available
+* Support image and video Stories
+* Automatically advance Stories
+* Handle expired Stories gracefully
+
+Make transitions smooth and intentional.
+
+Do not rebuild the Story system if these features already exist. Improve the existing implementation.
+
+⸻
+
+5. Make it look good when there are A LOT of Stories
+
+Now optimize the Map + Stories experience for scale.
+
+Assume there could eventually be thousands of active Stories across a city.
+
+Do NOT render every Story marker at once.
+
+Implement or improve:
+
+* Geographic clustering
+* Visible-region querying
+* Debounced map movement
+* Story caching
+* Marker virtualization where appropriate
+* Efficient image loading
+* Lazy loading
+* Avoid unnecessary re-renders
+* Avoid marker flickering
+* Avoid excessive API requests
+
+Only load/display Stories relevant to the current map region.
+
+As the user zooms or moves the map, update the Story markers intelligently.
+
+The UI should remain smooth on an iPhone even with a large number of Stories.
+
+Do not change unrelated app functionality.
+
+⸻
+
+6. Add the “what’s happening here?” feeling 🔥
+
+Once everything above works:
+
+Now add a lightweight location discovery interaction to the existing Map.
+
+When the user taps an area/location on the map, allow the app to surface relevant social content from that geographic area.
+
+The concept is:
+
+“What is happening here?”
+
+Depending on what exists in the backend, show:
+
+* Active Stories
+* Recent posts
+* Popular content
+* People posting from the area
+* Relevant events or location activity
+
+Do not create fake data for production.
+
+Use the existing backend/data structures wherever possible.
+
+The experience should feel like discovering what is happening around a location.
+
+Keep the map visible and make the discovery panel feel lightweight rather than taking over the entire screen.
+
+Do not modify unrelated screens.
+
+And THIS is the rule I’d give Replit
+
+At the end of every prompt, keep telling it:
+
+“Modify the existing implementation. Do not rebuild working functionality. Do not create duplicate components. Do not change unrelated screens.”
+
+That’s going to save you a LOT of headaches 😂.
+
+And honestly, based on what you’ve been building, I’d make the map the signature feature of the app rather than just another tab: TikTok/Twitter-style feed + Snapchat-style geographic Stories + your own discovery/search layer.
