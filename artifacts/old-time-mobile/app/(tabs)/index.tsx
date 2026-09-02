@@ -52,14 +52,11 @@ export default function ChatsScreen() {
 
   function signOut() {
     setShowProfile(false);
-    logout.mutate(undefined, {
-      onSettled: () => {
-        setSession(null);
-        resetLocalData();
-        queryClient.clear();
-        router.replace('/');
-      },
-    });
+    logout.mutate(undefined);
+    setSession(null);
+    resetLocalData();
+    queryClient.clear();
+    router.replace('/');
   }
 
   const profileName = session?.name ?? profile.name ?? 'Old Time User';
