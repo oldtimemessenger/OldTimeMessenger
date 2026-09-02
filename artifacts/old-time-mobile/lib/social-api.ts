@@ -81,6 +81,7 @@ export type SearchResults = {
 };
 export type Story = {
   id: number; kind: 'text' | 'image' | 'video'; content: string;
+  textPosition: { x: number; y: number } | null;
   visibility: 'public' | 'friends' | 'followers' | 'close_friends' | 'private';
   media: { type: 'image' | 'video'; objectPath: string; mimeType: string; width?: number; height?: number; duration?: number; fit?: 'contain' | 'cover' } | null;
   createdAt: number; expiresAt: number; location: { latitude: number; longitude: number } | null; author: SocialUser;
@@ -400,7 +401,7 @@ export function deleteNote(token: string, noteId: number) {
 export function getNearbyStories(token: string, latitude: number, longitude: number, radiusKm = 5, limit = 60) {
   return request<{ items: Story[] }>(token, `/api/social/stories/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=${encodeURIComponent(radiusKm)}&limit=${encodeURIComponent(limit)}`);
 }
-export function createStory(token: string, input: { content: string; visibility: Story['visibility']; media?: Story['media']; location?: { latitude: number; longitude: number } | null; taggedUserIds?: number[] }) {
+export function createStory(token: string, input: { content: string; textPosition?: Story['textPosition']; visibility: Story['visibility']; media?: Story['media']; location?: { latitude: number; longitude: number } | null; taggedUserIds?: number[] }) {
   return request<Story>(token, '/api/social/stories', { method: 'POST', body: JSON.stringify(input) });
 }
 export function viewStory(token: string, storyId: number) { return request<{ success: boolean }>(token, `/api/social/stories/${storyId}/view`, { method: 'PUT' }); }

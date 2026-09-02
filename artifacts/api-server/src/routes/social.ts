@@ -94,8 +94,13 @@ const commentInput = z.object({
 });
 
 const storyVisibility = z.enum(["public", "friends", "followers", "close_friends", "private"]);
+const storyTextPosition = z.object({
+  x: z.number().finite().gte(-0.3).lte(0.3),
+  y: z.number().finite().gte(-0.26).lte(0.26),
+});
 const storyInput = z.object({
   content: z.string().trim().max(2_000).default(""),
+  textPosition: storyTextPosition.nullable().optional(),
   visibility: storyVisibility.default("friends"),
   taggedUserIds: z.array(z.number().int().positive()).max(20).default([]),
   media: z.object({
@@ -1483,7 +1488,7 @@ async function serializeStories(stories: Story[], viewerId: number) {
   return stories.map((story) => {
     const author = authorById.get(story.authorId);
     return {
-      id: story.id, kind: story.kind, content: story.content, visibility: story.visibility, media: story.media,
+      id: story.id, kind: story.kind, content: story.content, textPosition: story.textPosition ?? null, visibility: story.visibility, media: story.media,
       createdAt: story.createdAt, expiresAt: story.expiresAt,
       location: story.latitude !== null && story.longitude !== null ? { latitude: story.latitude, longitude: story.longitude } : null,
       author: author ? publicUser(author) : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}`, bio: "" },
@@ -1724,6 +1729,7 @@ router.post("/social/stories", async (req, res): Promise<void> => {
     [created] = await db.transaction(async (tx) => {
       const inserted = await tx.insert(socialStoriesTable).values({
         authorId: viewerId, kind: input.media?.type ?? "text", content: input.content,
+          textPosition: input.textPosition ?? null,
           visibility: input.visibility, taggedUserIds: validTaggedUserIds, media: input.media ?? null,
          latitude: input.location?.latitude ?? null, longitude: input.location?.longitude ?? null,
          createdAt: now, expiresAt,

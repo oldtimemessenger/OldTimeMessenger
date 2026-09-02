@@ -593,6 +593,22 @@ export const StoryKind = {
   video: 'video',
 } as const;
 
+/**
+ * @nullable
+ */
+export type StoryTextPosition = {
+  /**
+     * @minimum -0.3
+     * @maximum 0.3
+     */
+  x: number;
+  /**
+     * @minimum -0.26
+     * @maximum 0.26
+     */
+  y: number;
+} | null;
+
 export type StoryVisibility = typeof StoryVisibility[keyof typeof StoryVisibility];
 
 
@@ -664,6 +680,8 @@ export interface Story {
   id: number;
   kind: StoryKind;
   content: string;
+  /** @nullable */
+  textPosition: StoryTextPosition;
   visibility: StoryVisibility;
   /** @nullable */
   media?: StoryMedia;
@@ -706,6 +724,22 @@ export interface NoteInput {
 export interface SocialUserList {
   items: SocialUser[];
 }
+
+/**
+ * @nullable
+ */
+export type StoryInputTextPosition = {
+  /**
+     * @minimum -0.3
+     * @maximum 0.3
+     */
+  x: number;
+  /**
+     * @minimum -0.26
+     * @maximum 0.26
+     */
+  y: number;
+} | null;
 
 export type StoryInputVisibility = typeof StoryInputVisibility[keyof typeof StoryInputVisibility];
 
@@ -766,6 +800,8 @@ export type StoryInputLocation = {
 export interface StoryInput {
   /** @maxLength 2000 */
   content?: string;
+  /** @nullable */
+  textPosition?: StoryInputTextPosition;
   visibility?: StoryInputVisibility;
   /** @nullable */
   media?: StoryInputMedia;

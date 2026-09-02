@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, FlatList, KeyboardAvoidingView, PanResponder, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Animated, Dimensions, FlatList, KeyboardAvoidingView, PanResponder, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/ui';
 import { SponsoredStory, type StoryViewerItem } from '@/components/story-viewer-content';
@@ -18,6 +18,7 @@ type Props = {
 };
 
 const STORY_DURATION_MS = 6500;
+const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
 const STORY_BACKGROUNDS = [
   ['#F58529', '#DD2A7B', '#8134AF'],
   ['#833AB4', '#FD1D1D', '#FCAF45'],
@@ -224,7 +225,19 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
 
       {item.type === 'SPONSORED_STORY' ? <SponsoredStory {...item} /> : null}
       {story?.content ? (
-        <View pointerEvents="none" style={[styles.content, story.media ? styles.contentBottom : styles.contentCenter]}>
+        <View
+          pointerEvents="none"
+          style={[
+            styles.content,
+            story.media && !story.textPosition ? styles.contentBottom : styles.contentCenter,
+            story.textPosition ? {
+              transform: [
+                { translateX: story.textPosition.x * WINDOW_WIDTH },
+                { translateY: story.textPosition.y * WINDOW_HEIGHT },
+              ],
+            } : null,
+          ]}
+        >
           <Text style={[styles.storyText, story.media ? styles.mediaCaption : null]}>{story.content}</Text>
           {story.taggedUsers?.length ? <Text style={styles.taggedPeople}>Tagged: {story.taggedUsers.map((user) => `@${user.username}`).join(', ')}</Text> : null}
         </View>

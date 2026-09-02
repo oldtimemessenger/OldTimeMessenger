@@ -201,6 +201,7 @@ export const socialStoriesTable = pgTable(
     authorId: integer("author_id").notNull(),
     kind: text("kind").notNull().default("text"),
     content: text("content").notNull().default(""),
+    textPosition: jsonb("text_position").$type<{ x: number; y: number } | null>(),
     visibility: text("visibility").notNull().default("friends"),
     taggedUserIds: jsonb("tagged_user_ids").$type<number[]>().notNull().default([]),
     media: jsonb("media").$type<{

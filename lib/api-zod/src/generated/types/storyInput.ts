@@ -7,11 +7,14 @@
  */
 import type { StoryInputLocation } from './storyInputLocation';
 import type { StoryInputMedia } from './storyInputMedia';
+import type { StoryInputTextPosition } from './storyInputTextPosition';
 import type { StoryInputVisibility } from './storyInputVisibility';
 
 export interface StoryInput {
   /** @maxLength 2000 */
   content?: string;
+  /** @nullable */
+  textPosition?: StoryInputTextPosition;
   visibility?: StoryInputVisibility;
   /** @nullable */
   media?: StoryInputMedia;

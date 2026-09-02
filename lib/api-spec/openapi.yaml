@@ -2226,6 +2226,12 @@ components:
         id: { type: number }
         kind: { type: string, enum: [text, image, video] }
         content: { type: string }
+        textPosition:
+          type: [object, "null"]
+          properties:
+            x: { type: number, minimum: -0.3, maximum: 0.3 }
+            y: { type: number, minimum: -0.26, maximum: 0.26 }
+          required: [x, y]
         visibility: { type: string, enum: [public, friends, followers, close_friends, private] }
         media:
           type: [object, "null"]
@@ -2252,7 +2258,7 @@ components:
         author: { $ref: "#/components/schemas/SocialUser" }
         viewer: { type: object, properties: { viewed: { type: boolean }, isOwner: { type: boolean }, reacted: { type: boolean } }, required: [viewed, isOwner, reacted] }
         counts: { type: object, properties: { views: { type: number }, reactions: { type: number } }, required: [views, reactions] }
-      required: [id, kind, content, visibility, createdAt, expiresAt, author, viewer, counts]
+      required: [id, kind, content, textPosition, visibility, createdAt, expiresAt, author, viewer, counts]
     Note:
       type: object
       properties:
@@ -2280,6 +2286,12 @@ components:
       type: object
       properties:
         content: { type: string, maxLength: 2000 }
+        textPosition:
+          type: [object, "null"]
+          properties:
+            x: { type: number, minimum: -0.3, maximum: 0.3 }
+            y: { type: number, minimum: -0.26, maximum: 0.26 }
+          required: [x, y]
         visibility: { type: string, enum: [public, friends, followers, close_friends, private] }
         media:
           type: [object, "null"]

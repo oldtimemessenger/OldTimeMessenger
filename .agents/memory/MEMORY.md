@@ -7,3 +7,4 @@
 - [Generated client regeneration](generated-client-regeneration.md) — restart live Metro/Vite workflows after clean API codegen to avoid transient missing-module errors.
 - [Updates and Community separation](updates-feed-separation.md) — Updates is media-only; text and mixed social posts belong in Community and profiles.
 - [Private navigation boundaries](private-navigation-boundaries.md) — Story viewing stays modal/standalone; Updates Map actions use the visible Map tab, never hidden tab routes.
+- [Story text positioning](story-text-positioning.md) — persist Story text placement as a normalized canvas offset so it scales across devices.

@@ -10,6 +10,7 @@ import type { StoryCounts } from './storyCounts';
 import type { StoryKind } from './storyKind';
 import type { StoryLocation } from './storyLocation';
 import type { StoryMedia } from './storyMedia';
+import type { StoryTextPosition } from './storyTextPosition';
 import type { StoryViewer } from './storyViewer';
 import type { StoryVisibility } from './storyVisibility';
 
@@ -17,6 +18,8 @@ export interface Story {
   id: number;
   kind: StoryKind;
   content: string;
+  /** @nullable */
+  textPosition: StoryTextPosition;
   visibility: StoryVisibility;
   /** @nullable */
   media?: StoryMedia;

@@ -1471,6 +1471,12 @@ export const GetSavedSocialPostsResponse = zod.object({
 /**
  * @summary List active stories visible to the caller
  */
+export const getStoriesResponseItemsItemTextPositionXMin = -0.3;
+export const getStoriesResponseItemsItemTextPositionXMax = 0.3;
+
+export const getStoriesResponseItemsItemTextPositionYMin = -0.26;
+export const getStoriesResponseItemsItemTextPositionYMax = 0.26;
+
 export const getStoriesResponseItemsItemMediaFitDefault = `contain`;
 export const getStoriesResponseItemsItemLocationLatitudeMin = -90;
 export const getStoriesResponseItemsItemLocationLatitudeMax = 90;
@@ -1485,6 +1491,10 @@ export const GetStoriesResponse = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
+  "textPosition": zod.object({
+  "x": zod.number().min(getStoriesResponseItemsItemTextPositionXMin).max(getStoriesResponseItemsItemTextPositionXMax),
+  "y": zod.number().min(getStoriesResponseItemsItemTextPositionYMin).max(getStoriesResponseItemsItemTextPositionYMax)
+}).nullable(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
   "media": zod.object({
   "type": zod.enum(['image', 'video']),
@@ -1531,6 +1541,12 @@ export const GetStoriesResponse = zod.object({
  */
 export const createStoryBodyContentMax = 2000;
 
+export const createStoryBodyTextPositionXMin = -0.3;
+export const createStoryBodyTextPositionXMax = 0.3;
+
+export const createStoryBodyTextPositionYMin = -0.26;
+export const createStoryBodyTextPositionYMax = 0.26;
+
 export const createStoryBodyMediaFitDefault = `contain`;
 export const createStoryBodyLocationLatitudeMin = -90;
 export const createStoryBodyLocationLatitudeMax = 90;
@@ -1545,6 +1561,10 @@ export const createStoryBodyTaggedUserIdsMax = 20;
 
 export const CreateStoryBody = zod.object({
   "content": zod.string().max(createStoryBodyContentMax).optional(),
+  "textPosition": zod.object({
+  "x": zod.number().min(createStoryBodyTextPositionXMin).max(createStoryBodyTextPositionXMax),
+  "y": zod.number().min(createStoryBodyTextPositionYMin).max(createStoryBodyTextPositionYMax)
+}).nullish(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']).optional(),
   "media": zod.object({
   "type": zod.enum(['image', 'video']),
@@ -1563,6 +1583,12 @@ export const CreateStoryBody = zod.object({
   "taggedUserIds": zod.array(zod.number().min(1)).max(createStoryBodyTaggedUserIdsMax).optional()
 })
 
+export const createStoryResponseTextPositionXMin = -0.3;
+export const createStoryResponseTextPositionXMax = 0.3;
+
+export const createStoryResponseTextPositionYMin = -0.26;
+export const createStoryResponseTextPositionYMax = 0.26;
+
 export const createStoryResponseMediaFitDefault = `contain`;
 export const createStoryResponseLocationLatitudeMin = -90;
 export const createStoryResponseLocationLatitudeMax = 90;
@@ -1576,6 +1602,10 @@ export const CreateStoryResponse = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
+  "textPosition": zod.object({
+  "x": zod.number().min(createStoryResponseTextPositionXMin).max(createStoryResponseTextPositionXMax),
+  "y": zod.number().min(createStoryResponseTextPositionYMin).max(createStoryResponseTextPositionYMax)
+}).nullable(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
   "media": zod.object({
   "type": zod.enum(['image', 'video']),
@@ -1750,6 +1780,12 @@ export const GetNearbyStoriesQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(getNearbyStoriesQueryLimitMax).default(getNearbyStoriesQueryLimitDefault)
 })
 
+export const getNearbyStoriesResponseItemsItemTextPositionXMin = -0.3;
+export const getNearbyStoriesResponseItemsItemTextPositionXMax = 0.3;
+
+export const getNearbyStoriesResponseItemsItemTextPositionYMin = -0.26;
+export const getNearbyStoriesResponseItemsItemTextPositionYMax = 0.26;
+
 export const getNearbyStoriesResponseItemsItemMediaFitDefault = `contain`;
 export const getNearbyStoriesResponseItemsItemLocationLatitudeMin = -90;
 export const getNearbyStoriesResponseItemsItemLocationLatitudeMax = 90;
@@ -1764,6 +1800,10 @@ export const GetNearbyStoriesResponse = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
+  "textPosition": zod.object({
+  "x": zod.number().min(getNearbyStoriesResponseItemsItemTextPositionXMin).max(getNearbyStoriesResponseItemsItemTextPositionXMax),
+  "y": zod.number().min(getNearbyStoriesResponseItemsItemTextPositionYMin).max(getNearbyStoriesResponseItemsItemTextPositionYMax)
+}).nullable(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
   "media": zod.object({
   "type": zod.enum(['image', 'video']),
@@ -1824,6 +1864,12 @@ export const GetStoryParams = zod.object({
   "storyId": zod.coerce.number().min(1)
 })
 
+export const getStoryResponseTextPositionXMin = -0.3;
+export const getStoryResponseTextPositionXMax = 0.3;
+
+export const getStoryResponseTextPositionYMin = -0.26;
+export const getStoryResponseTextPositionYMax = 0.26;
+
 export const getStoryResponseMediaFitDefault = `contain`;
 export const getStoryResponseLocationLatitudeMin = -90;
 export const getStoryResponseLocationLatitudeMax = 90;
@@ -1837,6 +1883,10 @@ export const GetStoryResponse = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
+  "textPosition": zod.object({
+  "x": zod.number().min(getStoryResponseTextPositionXMin).max(getStoryResponseTextPositionXMax),
+  "y": zod.number().min(getStoryResponseTextPositionYMin).max(getStoryResponseTextPositionYMax)
+}).nullable(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
   "media": zod.object({
   "type": zod.enum(['image', 'video']),

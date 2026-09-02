@@ -587,7 +587,7 @@ export default function UpdatesScreen() {
                     const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
                     storyLocation = { latitude: current.coords.latitude, longitude: current.coords.longitude };
                   }
-                  const story = await createStory(session.authToken, { content: data.caption, visibility: data.audience, media, location: storyLocation, taggedUserIds: data.taggedUserIds });
+                  const story = await createStory(session.authToken, { content: data.caption, textPosition: data.textPosition, visibility: data.audience, media, location: storyLocation, taggedUserIds: data.taggedUserIds });
                   setSocialStories((items) => [story, ...items]);
                 } else {
                   const post = await createSocialPost(session.authToken, {
@@ -1295,7 +1295,20 @@ function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, 
      setPublishing(true);
      try {
        if (type === 'status') {
-           await onPublish({ caption: draft.trim(), color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, shareLocation, fit: mediaFit, taggedUserIds: taggedUsers.map((user) => user.id) });
+            await onPublish({
+              caption: draft.trim(),
+              textPosition: {
+                x: Number((storyTextOffset.x / WINDOW_WIDTH).toFixed(4)),
+                y: Number((storyTextOffset.y / WINDOW_HEIGHT).toFixed(4)),
+              },
+              color: selectedColor,
+              type: mediaUri ? selectedMediaType : 'text',
+              uri: mediaUri,
+              audience,
+              shareLocation,
+              fit: mediaFit,
+              taggedUserIds: taggedUsers.map((user) => user.id),
+            });
        } else {
            await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, fit: mediaFit, allowReposts });
        }
