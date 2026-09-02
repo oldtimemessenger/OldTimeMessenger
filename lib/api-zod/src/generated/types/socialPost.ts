@@ -18,6 +18,7 @@ export interface SocialPost {
   kind: SocialPostKind;
   content: string;
   visibility: SocialPostVisibility;
+  allowReposts: boolean;
   media: SocialMedia[];
   /** @nullable */
   linkUrl: string | null;
