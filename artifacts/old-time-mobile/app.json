@@ -13,7 +13,7 @@
     "splash": {
       "image": "./assets/images/old-time-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F2F2F7"
+      "backgroundColor": "#FF7A00"
     },
     "ios": {
       "supportsTablet": false,
@@ -22,6 +22,7 @@
         "NSMicrophoneUsageDescription": "Old Time uses your microphone for voice notes and calls.",
         "NSCameraUsageDescription": "Old Time uses your camera to share photos, video, and your status.",
         "NSPhotoLibraryUsageDescription": "Old Time uses your photo library to share images in chats.",
+        "NSContactsUsageDescription": "Old Time uses your contacts to help you find friends who already use the app.",
         "NSLocationWhenInUseUsageDescription": "Old Time uses your location to share live location in a chat."
       }
     },
@@ -52,6 +53,7 @@
           "photosPermission": "Allow Old Time to access your photos to share them with your friends."
         }
       ],
+      "expo-contacts",
       "expo-video"
     ],
     "experiments": {

@@ -10,7 +10,6 @@ export const INTEREST_OPTIONS = [
   { id: 'travel', label: 'Travel', description: 'Places, guides, and getaways' },
   { id: 'business', label: 'Business', description: 'Money, work, and the economy' },
   { id: 'culture', label: 'Culture', description: 'People, ideas, and community' },
-  { id: 'kreyol', label: 'Kreyòl', description: 'Kreyòl-language stories and creators' },
 ] as const;
 
 export type InterestId = typeof INTEREST_OPTIONS[number]['id'];

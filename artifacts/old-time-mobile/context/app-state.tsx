@@ -63,6 +63,7 @@ export type AppSettings = {
   enterToSend: boolean;
   autoplay: boolean;
   language: string;
+  feedLanguages: string[];
   lowPower: boolean;
   statusAudience: 'public' | 'friends' | 'followers' | 'close_friends' | 'private';
   locationAudience: 'public' | 'friends' | 'followers' | 'private';
@@ -90,6 +91,7 @@ type AppState = {
   togglePostSaved: (id: string) => void;
   addPostComment: (id: string, comment: string) => void;
   recordPostInteraction: (id: string, kind: InteractionKind) => void;
+  recordInterestFeedback: (topic: string, interested: boolean) => void;
   toggleInterest: (interest: string) => void;
   toggleFollow: (handle: string) => void;
   hidePost: (id: string) => void;
@@ -121,6 +123,7 @@ const defaultSettings: AppSettings = {
   enterToSend: true,
   autoplay: true,
   language: 'English',
+  feedLanguages: ['English'],
   lowPower: false,
   statusAudience: 'friends',
   locationAudience: 'friends',
@@ -232,6 +235,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const multiplier = kind === 'hide' ? -2 : kind === 'open' ? 1 : 3;
       setInterestWeights((current) => ({ ...current, [post.tag]: (current[post.tag] ?? 0) + multiplier }));
     },
+    recordInterestFeedback: (topic, interested) => setInterestWeights((current) => ({ ...current, [topic]: (current[topic] ?? 0) + (interested ? 8 : -8) })),
     toggleInterest: (interest) => setInterests((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]),
     toggleFollow: (handle) => setFollowedCreators((current) => current.includes(handle) ? current.filter((item) => item !== handle) : [...current, handle]),
     hidePost: (id) => setHiddenPostIds((current) => current.includes(id) ? current : [...current, id]),

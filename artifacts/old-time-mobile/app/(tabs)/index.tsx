@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as Contacts from 'expo-contacts';
 import { Image } from 'expo-image';
 import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, useListUsers, useLogout, type InboxItem, type User } from '@workspace/api-client-react';
 import { Avatar, EmptyState, IconButton, LoadingState, Screen, StoryAvatar } from '@/components/ui';
@@ -30,14 +31,22 @@ export default function ChatsScreen() {
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [newMessageSearch, setNewMessageSearch] = useState('');
+  const [contactMatches, setContactMatches] = useState<User[]>([]);
+  const [unmatchedContacts, setUnmatchedContacts] = useState<string[]>([]);
+  const [contactDiscoveryState, setContactDiscoveryState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [pendingMedia, setPendingMedia] = useState<{ uri: string; type: 'image' | 'video'; fit?: 'contain' | 'cover' } | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [contactsPermission, setContactsPermission] = useState<{ granted: boolean; status: string; canAskAgain: boolean } | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session), refetchInterval: 6000, queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
   const users = useListUsers({ viewerId: session?.id ?? 0 }, { query: { enabled: Boolean(session), staleTime: 15000, queryKey: getListUsersQueryKey({ viewerId: session?.id ?? 0 }) } });
   const createChat = useCreateChat();
   const logout = useLogout();
   const items = useMemo(() => (inbox.data ?? []).filter((item) => `${item.contact.name} ${item.lastMessage?.content ?? ''}`.toLowerCase().includes(search.toLowerCase())), [inbox.data, search]);
+  const directoryUsers = useMemo(() => (users.data ?? [])
+    .filter((user) => user.id !== session?.id)
+    .filter((user) => `${user.name} ${user.phone}`.toLowerCase().includes(newMessageSearch.trim().toLowerCase())), [newMessageSearch, session?.id, users.data]);
 
   useEffect(() => {
     if (!session?.authToken) {
@@ -62,6 +71,12 @@ export default function ChatsScreen() {
 
   function startChat(user: User) {
     if (!session) return;
+    const existing = inbox.data?.find((item) => item.contact.id === user.id);
+    if (existing) {
+      setShowNew(false);
+      router.push(`/chat/${existing.chat.id}`);
+      return;
+    }
     createChat.mutate({ data: { userIds: [session.id, user.id] } }, {
       onSuccess: (chat) => {
         setShowNew(false);
@@ -75,6 +90,52 @@ export default function ChatsScreen() {
         Alert.alert('Chat unavailable', error instanceof Error ? error.message : `You cannot start a chat with ${user.name} yet.`);
       },
     });
+  }
+
+  function normalizePhone(value?: string) {
+    const digits = (value ?? '').replace(/\D/g, '');
+    return digits.length > 10 && digits.startsWith('1') ? digits.slice(1) : digits;
+  }
+
+  async function discoverContacts() {
+    if (Platform.OS === 'web') {
+      Alert.alert('Contact discovery is mobile-only', 'Use the Old Time app on iPhone or Android to match your phone contacts privately.');
+      return;
+    }
+    let permission = contactsPermission ?? await Contacts.getPermissionsAsync();
+    if (!permission?.granted) {
+      permission = await Contacts.requestPermissionsAsync();
+      setContactsPermission(permission);
+    }
+    if (!permission.granted) {
+      Alert.alert(
+        permission.canAskAgain ? 'Allow contact access?' : 'Contacts permission is off',
+        permission.canAskAgain
+          ? 'Allow Contacts so Old Time can show which of your phone contacts already use the app. Your address book stays on this device.'
+          : 'Enable Contacts in device settings to find friends who already use Old Time.',
+        permission.canAskAgain
+          ? [{ text: 'Not now', style: 'cancel' }, { text: 'Try again', onPress: () => { void discoverContacts(); } }]
+          : [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => { void Linking.openSettings(); } }],
+      );
+      return;
+    }
+    setContactDiscoveryState('loading');
+    try {
+      const result = await Contacts.getContactsAsync({ fields: [Contacts.Fields.PhoneNumbers] });
+      const devicePhones = new Set(result.data.flatMap((contact) => (contact.phoneNumbers ?? []).map((phone) => normalizePhone(phone.number))).filter(Boolean));
+      const matched = (users.data ?? []).filter((user) => user.id !== session?.id && devicePhones.has(normalizePhone(user.phone)));
+      const matchedPhones = new Set(matched.map((user) => normalizePhone(user.phone)));
+      const notOnApp = result.data
+        .filter((contact) => contact.name && (contact.phoneNumbers ?? []).some((phone) => !matchedPhones.has(normalizePhone(phone.number))))
+        .map((contact) => contact.name as string)
+        .filter((name, index, names) => names.indexOf(name) === index)
+        .slice(0, 8);
+      setContactMatches(matched);
+      setUnmatchedContacts(notOnApp);
+      setContactDiscoveryState('ready');
+    } catch {
+      setContactDiscoveryState('error');
+    }
   }
 
   function signOut() {
@@ -106,7 +167,7 @@ export default function ChatsScreen() {
     </Pressable>
   );
 
-  return <Screen title="Chats" left={<IconButton name="albums-outline" label="Open stories" onPress={() => router.push('/(tabs)/updates-screen')} />} right={<View style={styles.headerActions}><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="add" label="Create story or send media" onPress={() => setShowCreate(true)} /></View>}>
+  return <Screen title="Chats" left={<IconButton name="albums-outline" label="Open stories" onPress={() => router.push('/(tabs)/updates-screen')} />} right={<View style={styles.headerActions}><IconButton name="person-add-outline" label="Start a new message" onPress={() => setShowNew(true)} /><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="add" label="Create story or send media" onPress={() => setShowCreate(true)} /></View>}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.storyDrawer, { borderBottomColor: colors.border, backgroundColor: colors.card }]} contentContainerStyle={styles.storyDrawerContent}>
       <Pressable onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel="Add your story">
         <StoryAvatar name={profileName} color={colors.muted} uri={profile.avatarUri} add />
@@ -129,20 +190,53 @@ export default function ChatsScreen() {
     <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
       <View style={styles.modalShade}>
         <View style={[styles.sheet, { backgroundColor: colors.card }]}>
-          <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>{pendingMedia ? 'Send to someone' : 'New message'}</Text><IconButton name="close" onPress={() => { setShowNew(false); setPendingMedia(null); }} /></View>
+          <View style={styles.sheetHeader}><View><Text style={[styles.sheetTitle, { color: colors.foreground }]}>{pendingMedia ? 'Send to someone' : 'New message'}</Text><Text style={[styles.createHint, { color: colors.mutedForeground }]}>Choose someone who already has Old Time.</Text></View><IconButton name="close" onPress={() => { setShowNew(false); setPendingMedia(null); setNewMessageSearch(''); }} /></View>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {pendingMedia ? (
             <View style={[styles.mediaDraft, { backgroundColor: colors.muted, borderColor: colors.border }]}>
               {pendingMedia.type === 'image' ? <Image source={{ uri: pendingMedia.uri }} style={styles.mediaDraftImage} contentFit={pendingMedia.fit ?? 'contain'} /> : <View style={styles.mediaDraftVideo}><Ionicons name="videocam" size={26} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '600' }}>Video ready to send</Text></View>}
               <Text style={[styles.mediaDraftLabel, { color: colors.mutedForeground }]}>Choose who should receive it</Text>
             </View>
           ) : null}
-           {users.isLoading ? <LoadingState /> : (users.data ?? []).filter((user) => user.id !== session?.id).map((user) => (
-            <Pressable key={user.id} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
-               <Avatar name={user.name} size={42} />
-               <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: user.online ? colors.primary : colors.mutedForeground }]}>{presenceLabel(user)}</Text></View>
-              <Ionicons name="arrow-forward-circle-outline" size={22} color={colors.primary} />
-            </Pressable>
-          ))}
+          {!pendingMedia ? <View style={[styles.directorySearch, { backgroundColor: colors.muted }]}>
+            <Ionicons name="search-outline" size={17} color={colors.mutedForeground} />
+            <TextInput value={newMessageSearch} onChangeText={setNewMessageSearch} placeholder="Search people on Old Time" placeholderTextColor={colors.mutedForeground} style={[styles.directorySearchInput, { color: colors.foreground }]} />
+          </View> : null}
+          <Pressable onPress={() => void discoverContacts()} disabled={contactDiscoveryState === 'loading'} style={[styles.contactDiscovery, { backgroundColor: colors.secondary, borderColor: colors.border, opacity: contactDiscoveryState === 'loading' ? 0.6 : 1 }]} accessibilityRole="button">
+            <View style={[styles.contactDiscoveryIcon, { backgroundColor: colors.primary }]}><Ionicons name="people-outline" size={18} color="#fff" /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.contactDiscoveryTitle, { color: colors.foreground }]}>{contactDiscoveryState === 'loading' ? 'Checking your contacts…' : contactDiscoveryState === 'ready' ? 'Refresh phone contacts' : 'Find friends from contacts'}</Text>
+              <Text style={[styles.contactDiscoveryHint, { color: colors.mutedForeground }]}>Only used on this device to find people who have the app.</Text>
+            </View>
+            <Ionicons name={contactDiscoveryState === 'ready' ? 'refresh-outline' : 'chevron-forward'} size={18} color={colors.primary} />
+          </Pressable>
+          {contactDiscoveryState === 'error' ? <Text style={[styles.directoryError, { color: colors.destructive }]}>We couldn’t read your contacts. Tap the button to try again.</Text> : null}
+          {users.isLoading ? <LoadingState /> : users.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load people" description="Check your connection and try again." action={<Pressable onPress={() => void users.refetch()}><Text style={{ color: colors.primary, fontWeight: '600' }}>Try again</Text></Pressable>} /> : (
+            <>
+              {contactMatches.length > 0 ? <Text style={[styles.directoryLabel, { color: colors.mutedForeground }]}>FROM YOUR CONTACTS</Text> : null}
+              {contactMatches.map((user) => (
+                <Pressable key={`contact-${user.id}`} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
+                  <Avatar name={user.name} size={42} />
+                  <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: colors.primary }]}>On Old Time · {presenceLabel(user)}</Text></View>
+                  <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.primary} />
+                </Pressable>
+              ))}
+              <Text style={[styles.directoryLabel, { color: colors.mutedForeground }]}>ON OLD TIME</Text>
+              {directoryUsers.length ? directoryUsers.map((user) => (
+                <Pressable key={user.id} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
+                  <Avatar name={user.name} size={42} />
+                  <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: user.online ? colors.primary : colors.mutedForeground }]}>{presenceLabel(user)}</Text></View>
+                  <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.primary} />
+                </Pressable>
+              )) : <Text style={[styles.directoryEmpty, { color: colors.mutedForeground }]}>No people match that search.</Text>}
+              {unmatchedContacts.length > 0 ? <>
+                <Text style={[styles.directoryLabel, { color: colors.mutedForeground }]}>NOT ON OLD TIME YET</Text>
+                <Text style={[styles.directoryEmpty, { color: colors.mutedForeground }]}>These contacts are only listed locally. Old Time never uploads your address book.</Text>
+                {unmatchedContacts.map((name) => <View key={name} style={[styles.unmatchedPerson, { borderBottomColor: colors.border }]}><Ionicons name="person-outline" size={19} color={colors.mutedForeground} /><Text style={[styles.personName, { color: colors.mutedForeground }]}>{name}</Text></View>)}
+              </> : null}
+            </>
+          )}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -236,6 +330,16 @@ const styles = StyleSheet.create({
   mediaDraftImage: { width: '100%', height: 120, borderRadius: 10 },
   mediaDraftVideo: { height: 82, alignItems: 'center', justifyContent: 'center', gap: 5 },
   mediaDraftLabel: { fontSize: 11, textAlign: 'center', marginTop: 7 },
+  directorySearch: { minHeight: 42, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, marginBottom: 10 },
+  directorySearchInput: { flex: 1, fontSize: 15, paddingVertical: 9 },
+  contactDiscovery: { minHeight: 66, borderWidth: 1, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, marginBottom: 12 },
+  contactDiscoveryIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  contactDiscoveryTitle: { fontSize: 14, fontWeight: '700' },
+  contactDiscoveryHint: { fontSize: 11, lineHeight: 15, marginTop: 2 },
+  directoryError: { fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  directoryLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.1, marginTop: 7, marginBottom: 2 },
+  directoryEmpty: { fontSize: 13, lineHeight: 18, paddingVertical: 12 },
+  unmatchedPerson: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
   person: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   personName: { ...typography.username },
   personPhone: { ...typography.secondary, marginTop: 2 },

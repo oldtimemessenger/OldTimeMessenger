@@ -66,6 +66,14 @@ const storyGradients = [
 ] as const;
 const creatorTags = ['comedy', 'music', 'food', 'fitness', 'travel', 'technology', 'art', 'sports'];
 type FeedTab = 'for-you' | 'following' | 'interests';
+const FEED_LANGUAGE_OPTIONS = [
+  { id: 'English', label: 'English', nativeLabel: 'English' },
+  { id: 'French', label: 'French', nativeLabel: 'Français' },
+  { id: 'Haitian Creole', label: 'Haitian Creole', nativeLabel: 'Kreyòl Ayisyen' },
+  { id: 'Spanish', label: 'Spanish', nativeLabel: 'Español' },
+  { id: 'Portuguese', label: 'Portuguese', nativeLabel: 'Português' },
+  { id: 'Arabic', label: 'Arabic', nativeLabel: 'العربية' },
+] as const;
 
 function timeAgo(createdAt: number) {
   const hours = Math.floor((Date.now() - createdAt) / 3600000);
@@ -88,7 +96,7 @@ export default function UpdatesScreen() {
     mediaFit?: 'contain' | 'cover';
     composeType?: 'status' | 'post';
   }>();
-  const { statuses, posts, interests, interestWeights, followedCreators, hiddenPostIds, markStatusViewed, togglePostLike, togglePostSaved, addPostComment, recordPostInteraction, toggleInterest, toggleFollow, hidePost: persistHiddenPost, session, settings, updateSettings } = useApp();
+  const { statuses, posts, interests, interestWeights, followedCreators, hiddenPostIds, markStatusViewed, togglePostLike, togglePostSaved, addPostComment, recordPostInteraction, recordInterestFeedback, toggleInterest, toggleFollow, hidePost: persistHiddenPost, session, settings, updateSettings } = useApp();
   const requestUploadUrl = useRequestUploadUrl();
 
   const [viewMode, setViewMode] = useState<'landing' | 'feed' | 'status'>('landing');
@@ -121,6 +129,8 @@ export default function UpdatesScreen() {
   const [peopleResults, setPeopleResults] = useState<SocialUser[]>([]);
   const [peopleSearchLoading, setPeopleSearchLoading] = useState(false);
   const [peopleSearchError, setPeopleSearchError] = useState<string | null>(null);
+  const [interestPrompt, setInterestPrompt] = useState<{ topic: string; title: string } | null>(null);
+  const promptedContent = useRef(new Set<string>());
 
   const loadSocial = useCallback(async (mode: 'for-you' | 'following' = 'for-you') => {
     if (!session?.authToken) return;
@@ -149,6 +159,15 @@ export default function UpdatesScreen() {
   useEffect(() => {
     void loadSocial();
   }, [loadSocial]);
+
+  useEffect(() => {
+    const firstPost = socialPosts[0];
+    if (socialLoading || !firstPost) return;
+    const key = `social-${firstPost.id}`;
+    if (promptedContent.current.has(key) || Math.random() > 0.32) return;
+    promptedContent.current.add(key);
+    setInterestPrompt({ topic: inferSocialTopic(firstPost), title: firstPost.author.name });
+  }, [socialLoading, socialPosts]);
 
   useEffect(() => {
     if (!showPeopleSearch || !session?.authToken) return;
@@ -273,6 +292,17 @@ export default function UpdatesScreen() {
     if (nextTab !== 'interests') void loadSocial(nextTab);
   }
 
+  function maybeAskInterest(post: UpdatePost) {
+    if (promptedContent.current.has(post.id) || Math.random() > 0.28) return;
+    promptedContent.current.add(post.id);
+    setInterestPrompt({ topic: post.tag.toLowerCase(), title: post.tag });
+  }
+
+  function chooseFeedLanguage(language: string) {
+    const current = settings.feedLanguages;
+    updateSettings({ feedLanguages: current.includes(language) ? current.filter((item) => item !== language) : [...current, language] });
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
       <Screen title="Updates" left={<IconButton name="albums-outline" label="Open stories" onPress={openStatusShortcut} />} right={
@@ -282,6 +312,9 @@ export default function UpdatesScreen() {
             {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
           </View>
           <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
+          <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
+            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} />
+          </Pressable>
           <IconButton name="add" label="Create post or story" onPress={() => setCompose('post')} />
         </View>
       }>
@@ -308,6 +341,14 @@ export default function UpdatesScreen() {
                  onOpenStory={(story) => setServerStoryOpen(story)}
                   onCreatePost={() => setCompose('post')}
                   onCreateStory={() => setCompose('status')}
+                interestPrompt={interestPrompt}
+                onDismissInterestPrompt={() => setInterestPrompt(null)}
+                onInterestFeedback={(interested) => {
+                  if (!interestPrompt) return;
+                  recordInterestFeedback(interestPrompt.topic, interested);
+                  if (interested && !interests.includes(interestPrompt.topic)) toggleInterest(interestPrompt.topic);
+                  setInterestPrompt(null);
+                }}
                   onComment={setSocialCommentPost}
                   onShare={(post) => {
                     if (post.visibility !== 'public' || !post.allowReposts) {
@@ -327,7 +368,7 @@ export default function UpdatesScreen() {
                 ))}
               </View>
 
-              {tab === 'interests' && <InterestPanel interests={interests} onToggle={toggleInterest} onBack={() => setTab('for-you')} colors={colors} />}
+              {tab === 'interests' && <InterestPanel interests={interests} onToggle={toggleInterest} languages={settings.feedLanguages} onToggleLanguage={chooseFeedLanguage} onBack={() => setTab('for-you')} colors={colors} />}
 
               {tab !== 'interests' && socialPosts.length === 0 && visiblePosts.length === 0 && (
                 <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '600' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
@@ -350,6 +391,7 @@ export default function UpdatesScreen() {
 
       <Modal visible={viewMode === 'feed'} transparent animationType="slide" onRequestClose={() => setViewMode('landing')}>
         {viewMode === 'feed' ? (
+          <>
          <FeedPager
             posts={visiblePosts}
             initialIndex={feedIndex}
@@ -368,8 +410,10 @@ export default function UpdatesScreen() {
             onFollow={(handle: string) => toggleFollow(handle)}
             followedCreators={followedCreators}
             onHide={(post: UpdatePost) => hidePost(post)}
-            onOpen={(id: string) => recordPostInteraction(id, 'open')}
+            onOpen={(id: string, post: UpdatePost) => { recordPostInteraction(id, 'open'); maybeAskInterest(post); }}
          />
+         {interestPrompt ? <InterestPrompt topic={interestPrompt.topic} title={interestPrompt.title} colors={colors} onDismiss={() => setInterestPrompt(null)} onFeedback={(interested) => { recordInterestFeedback(interestPrompt.topic, interested); if (interested && !interests.includes(interestPrompt.topic)) toggleInterest(interestPrompt.topic); setInterestPrompt(null); }} /> : null}
+          </>
         ) : null}
       </Modal>
 
@@ -604,7 +648,7 @@ function FeedPager({ posts, initialIndex, onClose, colors, onLike, onSave, onCom
     const firstVisible = viewableItems.find((entry: any) => entry?.item?.id);
     if (firstVisible) {
       setCurrentIndex(firstVisible.index ?? 0);
-      onOpen(firstVisible.item.id);
+      onOpen(firstVisible.item.id, firstVisible.item);
     }
   }).current;
 
@@ -1084,6 +1128,9 @@ function SocialHubPanel({
   onOpenStory,
   onCreatePost,
   onCreateStory,
+  interestPrompt,
+  onDismissInterestPrompt,
+  onInterestFeedback,
   onComment,
   onShare,
   onChanged,
@@ -1100,6 +1147,9 @@ function SocialHubPanel({
   onOpenStory: (story: Story) => void;
   onCreatePost: () => void;
   onCreateStory: () => void;
+  interestPrompt: { topic: string; title: string } | null;
+  onDismissInterestPrompt: () => void;
+  onInterestFeedback: (interested: boolean) => void;
   onComment: (post: SocialPost) => void;
   onShare: (post: SocialPost) => void;
   onChanged: (post: SocialPost) => void;
@@ -1143,8 +1193,11 @@ function SocialHubPanel({
         </Pressable>
       ) : posts.length > 0 ? (
         <View style={styles.socialPostList}>
-          {posts.slice(0, 3).map((post) => (
-           <SocialPostCard key={post.id} post={post} colors={colors} token={token} onOpenProfile={() => onOpenProfile(post.author.id)} onShare={() => onShare(post)} onComment={() => onComment(post)} onChanged={onChanged} />
+          {posts.slice(0, 3).map((post, index) => (
+            <React.Fragment key={post.id}>
+              <SocialPostCard post={post} colors={colors} token={token} onOpenProfile={() => onOpenProfile(post.author.id)} onShare={() => onShare(post)} onComment={() => onComment(post)} onChanged={onChanged} />
+              {index === 0 && interestPrompt ? <InterestPrompt topic={interestPrompt.topic} title={interestPrompt.title} colors={colors} onDismiss={onDismissInterestPrompt} onFeedback={onInterestFeedback} /> : null}
+            </React.Fragment>
           ))}
         </View>
       ) : (
@@ -1563,7 +1616,40 @@ function notificationCopy(type: string) {
   return 'interacted with your update';
 }
 
-function InterestPanel({ interests, onToggle, onBack, colors }: any) {
+function inferSocialTopic(post: SocialPost) {
+  const content = `${post.content} ${post.linkTitle ?? ''}`.toLowerCase();
+  const match = INTEREST_OPTIONS.find((interest) => content.includes(interest.id) || content.includes(interest.label.toLowerCase()));
+  return match?.id ?? 'culture';
+}
+
+function InterestPrompt({ topic, title, colors, onDismiss, onFeedback }: { topic: string; title: string; colors: any; onDismiss: () => void; onFeedback: (interested: boolean) => void }) {
+  return (
+    <View style={[styles.interestPrompt, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.interestPromptIcon, { backgroundColor: colors.secondary }]}>
+        <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.interestPromptTitle, { color: colors.foreground }]}>Interested in this?</Text>
+        <Text style={[styles.interestPromptText, { color: colors.mutedForeground }]} numberOfLines={2}>Tell us whether content from {title} belongs in your For You feed.</Text>
+      </View>
+      <Pressable onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss interest question" hitSlop={8}>
+        <Ionicons name="close" size={18} color={colors.mutedForeground} />
+      </Pressable>
+      <View style={styles.interestPromptActions}>
+        <Pressable onPress={() => onFeedback(false)} style={[styles.interestPromptButton, { borderColor: colors.border }]} accessibilityRole="button">
+          <Ionicons name="thumbs-down-outline" size={16} color={colors.mutedForeground} />
+          <Text style={[styles.interestPromptButtonText, { color: colors.mutedForeground }]}>Not for me</Text>
+        </Pressable>
+        <Pressable onPress={() => onFeedback(true)} style={[styles.interestPromptButton, { backgroundColor: colors.primary, borderColor: colors.primary }]} accessibilityRole="button">
+          <Ionicons name="thumbs-up-outline" size={16} color="#fff" />
+          <Text style={[styles.interestPromptButtonText, { color: '#fff' }]}>Show more</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function InterestPanel({ interests, onToggle, languages, onToggleLanguage, onBack, colors }: any) {
   const [locationEnabled, setLocationEnabled] = useState(false);
   useEffect(() => {
     Location.getForegroundPermissionsAsync().then((permission) => setLocationEnabled(permission.granted)).catch(() => setLocationEnabled(false));
@@ -1592,6 +1678,21 @@ function InterestPanel({ interests, onToggle, onBack, colors }: any) {
         </View>
         <Ionicons name="options-outline" size={25} color={colors.primary} />
       </View>
+      <View style={[styles.languageSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.languageSectionTitle, { color: colors.foreground }]}>Content languages</Text>
+        <Text style={[styles.languageSectionHint, { color: colors.mutedForeground }]}>Choose the languages you want prioritized in Updates.</Text>
+        <View style={styles.languageGrid}>
+          {FEED_LANGUAGE_OPTIONS.map((language) => {
+            const selected = languages.includes(language.id);
+            return (
+              <Pressable key={language.id} onPress={() => onToggleLanguage(language.id)} style={[styles.languageChip, { backgroundColor: selected ? colors.primary : colors.muted, borderColor: selected ? colors.primary : colors.border }]} accessibilityRole="button" accessibilityState={{ selected }}>
+                <Text style={[styles.languageChipText, { color: selected ? '#fff' : colors.foreground }]}>{language.nativeLabel}</Text>
+                <Text style={[styles.languageChipSubtext, { color: selected ? 'rgba(255,255,255,0.78)' : colors.mutedForeground }]}>{language.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
       <View style={styles.interestGrid}>{INTEREST_OPTIONS.map((interest) => {
         const selected = interests.includes(interest.id);
         const description = interest.id === 'nearby' && !locationEnabled ? 'Enable location for nearby stories when permission is not granted' : interest.description;
@@ -1615,6 +1716,7 @@ function InterestPanel({ interests, onToggle, onBack, colors }: any) {
 
 const styles = StyleSheet.create({
   socialHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 1 },
+  headerProfileButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginHorizontal: 1 },
   mapStoryToggle: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'center', paddingHorizontal: 12 },
   mapStoryIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   mapStoryLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
@@ -1731,6 +1833,20 @@ const styles = StyleSheet.create({
   check: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   interestLabel: { fontSize: 14, fontWeight: '600' },
   interestDescription: { fontSize: 11, marginTop: 3 },
+  languageSection: { borderWidth: 1, borderRadius: 16, padding: 13, marginBottom: 14 },
+  languageSectionTitle: { fontSize: 15, fontWeight: '700' },
+  languageSectionHint: { fontSize: 12, lineHeight: 17, marginTop: 3, marginBottom: 10 },
+  languageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  languageChip: { borderWidth: 1, borderRadius: 12, minWidth: '30%', flexGrow: 1, paddingHorizontal: 10, paddingVertical: 9 },
+  languageChipText: { fontSize: 13, fontWeight: '700' },
+  languageChipSubtext: { fontSize: 10, marginTop: 2 },
+  interestPrompt: { borderWidth: 1, borderRadius: 17, padding: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 9, marginTop: 2 },
+  interestPromptIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  interestPromptTitle: { fontSize: 14, fontWeight: '800' },
+  interestPromptText: { fontSize: 11, lineHeight: 15, marginTop: 3 },
+  interestPromptActions: { width: '100%', flexDirection: 'row', gap: 8, marginTop: 2 },
+  interestPromptButton: { flex: 1, minHeight: 38, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  interestPromptButtonText: { fontSize: 12, fontWeight: '700' },
   pipelineCard: { borderWidth: 1, borderRadius: 11, padding: 14, marginTop: 12 },
   pipelineTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   pipelineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
