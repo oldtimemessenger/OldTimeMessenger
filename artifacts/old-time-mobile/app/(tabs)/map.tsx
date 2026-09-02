@@ -1,12 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, RefreshControl, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Avatar, EmptyState, Screen } from '@/components/ui';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Avatar, Screen } from '@/components/ui';
+import SocialMap from '@/components/social-map';
+import type { SocialMapRegion } from '@/components/social-map.types';
+import { ServerStoryViewer } from '@/components/server-story-viewer';
+import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { createMapPin, createMapPinComment, deleteMapPin, getMapPinComments, getNearbyPins, reportMapPin, setMapPinRelation, type MapComment, type MapPin, type MapVisibility } from '@/lib/map-api';
-import { setUserBlocked } from '@/lib/social-api';
+import { getNearbyStories, setUserBlocked, type Story } from '@/lib/social-api';
 
 type Coordinate = { latitude: number; longitude: number };
 
@@ -15,7 +19,9 @@ export default function MapScreen() {
   const { session, settings } = useApp();
   const [permission, requestPermission] = Location.useForegroundPermissions();
   const [location, setLocation] = useState<Coordinate | null>(null);
+  const [region, setRegion] = useState<SocialMapRegion | null>(null);
   const [pins, setPins] = useState<MapPin[]>([]);
+  const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -24,24 +30,70 @@ export default function MapScreen() {
   const [expiry, setExpiry] = useState<'day' | 'week' | 'never'>('day');
   const [commentPin, setCommentPin] = useState<MapPin | null>(null);
   const [selectedPin, setSelectedPin] = useState<MapPin | null>(null);
+  const [discoveryCoordinate, setDiscoveryCoordinate] = useState<Coordinate | null>(null);
+  const [discoveryPins, setDiscoveryPins] = useState<MapPin[] | null>(null);
+  const [discoveryStories, setDiscoveryStories] = useState<Story[] | null>(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [storyOpenId, setStoryOpenId] = useState<number | null>(null);
+  const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[] }>());
 
   useEffect(() => {
     setVisibility(settings.locationAudience === 'public' ? 'friends' : settings.locationAudience);
   }, [settings.locationAudience]);
 
-  const loadNearby = useCallback(async (coordinate: Coordinate) => {
+  const loadRegion = useCallback(async (nextRegion: SocialMapRegion, force = false) => {
     if (!session?.authToken) return;
+    const radiusKm = radiusForRegion(nextRegion);
+    const cacheKey = `${nextRegion.latitude.toFixed(2)}:${nextRegion.longitude.toFixed(2)}:${Math.round(radiusKm)}`;
+    const cached = regionCache.current.get(cacheKey);
+    if (!force && cached && Date.now() - cached.loadedAt < 60_000) {
+      setPins(cached.pins);
+      setStories(cached.stories);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const page = await getNearbyPins(session.authToken, coordinate.latitude, coordinate.longitude);
-      setPins(page.items);
+      const [pinPage, storyPage] = await Promise.all([
+        getNearbyPins(session.authToken, nextRegion.latitude, nextRegion.longitude, radiusKm),
+        getNearbyStories(session.authToken, nextRegion.latitude, nextRegion.longitude, radiusKm, 30),
+      ]);
+      setPins(pinPage.items);
+      setStories(storyPage.items);
+      regionCache.current.set(cacheKey, { loadedAt: Date.now(), pins: pinPage.items, stories: storyPage.items });
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not load nearby pins.');
+      setError(requestError instanceof Error ? requestError.message : 'Could not load this area.');
     } finally {
       setLoading(false);
     }
   }, [session?.authToken]);
+
+  const discoverArea = useCallback(async (coordinate: Coordinate) => {
+    if (!session?.authToken) return;
+    setDiscoveryCoordinate(coordinate);
+    setDiscoveryLoading(true);
+    try {
+      const [pinPage, storyPage] = await Promise.all([
+        getNearbyPins(session.authToken, coordinate.latitude, coordinate.longitude, 5),
+        getNearbyStories(session.authToken, coordinate.latitude, coordinate.longitude, 5, 20),
+      ]);
+      setDiscoveryPins(pinPage.items);
+      setDiscoveryStories(storyPage.items);
+    } catch {
+      setDiscoveryPins([]);
+      setDiscoveryStories([]);
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  }, [session?.authToken]);
+
+  function selectPin(pin: MapPin) {
+    setSelectedPin(pin);
+    setDiscoveryCoordinate(null);
+    setDiscoveryPins(null);
+    setDiscoveryStories(null);
+  }
 
   async function refreshLocation() {
     setLoading(true);
@@ -57,14 +109,30 @@ export default function MapScreen() {
       }
       const result = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const coordinate = { latitude: result.coords.latitude, longitude: result.coords.longitude };
+      const nextRegion = { ...coordinate, latitudeDelta: 0.055, longitudeDelta: 0.07 };
       setLocation(coordinate);
-      await loadNearby(coordinate);
+      setRegion(nextRegion);
+      setSelectedPin(null);
+      setDiscoveryCoordinate(null);
+      setDiscoveryPins(null);
+      setDiscoveryStories(null);
+      await loadRegion(nextRegion, true);
     } catch {
       Alert.alert('Location unavailable', 'Old Time could not read your current location. Try again outdoors or check device location services.');
     } finally {
       setLoading(false);
     }
   }
+
+  const changeRegion = useCallback((nextRegion: SocialMapRegion) => {
+    setRegion(nextRegion);
+    if (regionTimer.current) clearTimeout(regionTimer.current);
+    regionTimer.current = setTimeout(() => void loadRegion(nextRegion), 420);
+  }, [loadRegion]);
+
+  useEffect(() => () => {
+    if (regionTimer.current) clearTimeout(regionTimer.current);
+  }, []);
 
   async function openInMaps(pin: Coordinate) {
     const url = `https://maps.google.com/?q=${pin.latitude},${pin.longitude}`;
@@ -77,6 +145,7 @@ export default function MapScreen() {
       const expiresAt = expiry === 'never' ? null : Date.now() + (expiry === 'day' ? 86_400_000 : 604_800_000);
       const created = await createMapPin(session.authToken, { ...location, caption: caption.trim() || undefined, visibility, expiresAt });
       setPins((items) => [created, ...items]);
+      regionCache.current.clear();
       setCaption('');
       setComposerOpen(false);
     } catch (requestError) {
@@ -86,54 +155,94 @@ export default function MapScreen() {
 
   return (
     <Screen title="Map">
-      <FlatList
-        data={pins}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={() => location && void loadNearby(location)} tintColor={colors.primary} />}
-        ListHeaderComponent={<>
-          <MapScene pins={pins} selected={selectedPin} colors={colors} loading={loading} hasLocation={Boolean(location)} onLocate={() => void refreshLocation()} onSelect={setSelectedPin} onCreate={() => setComposerOpen(true)} onOpenMaps={(pin: MapPin) => void openInMaps(pin)} />
-          <View style={[styles.privacy, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
-            <Text style={[styles.privacyText, { color: colors.foreground }]}>Private by default. Your location stays on this device until you tap Post pin.</Text>
-          </View>
-          {error ? <Pressable onPress={() => location && void loadNearby(location)} style={[styles.error, { backgroundColor: colors.muted }]}><Text style={{ color: colors.foreground }}>{error}  <Text style={{ color: colors.primary, fontWeight: '700' }}>Retry</Text></Text></Pressable> : null}
-        </>}
-        renderItem={({ item }) => <PinCard pin={item} own={item.authorId === session?.id} colors={colors} onOpen={() => void openInMaps(item)} onComment={() => setCommentPin(item)} onChanged={(pin) => setPins((all) => all.map((current) => current.id === pin.id ? pin : current))} onDelete={() => setPins((all) => all.filter((pin) => pin.id !== item.id))} token={session?.authToken ?? ''} />}
-        ListEmptyComponent={!loading && location ? <EmptyState icon="location-outline" title="No nearby pins yet" description="Be the first to share a place with the audience you choose." /> : null}
-        ListFooterComponent={<View style={{ height: 96 }} />}
-      />
+      <View style={styles.mapCanvas}>
+        <SocialMap
+          center={location}
+          region={region}
+          pins={pins}
+          stories={stories}
+          selectedPinId={selectedPin?.id ?? null}
+          loading={loading}
+          colors={colors}
+          onLocate={() => void refreshLocation()}
+          onCreate={() => setComposerOpen(true)}
+          onSelectPin={selectPin}
+          onSelectStory={(story) => setStoryOpenId(story.id)}
+          onAreaPress={(coordinate) => {
+            setSelectedPin(null);
+            void discoverArea(coordinate);
+          }}
+          onRegionChange={changeRegion}
+        />
+        {loading && region ? <View style={[styles.loadingPill, { backgroundColor: colors.card }]}><ActivityIndicator size="small" color={colors.primary} /></View> : null}
+        {error ? <Pressable onPress={() => region && void loadRegion(region, true)} style={[styles.errorPill, { backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name="cloud-offline-outline" size={17} color={colors.destructive} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Retry area</Text></Pressable> : null}
+        {discoveryCoordinate ? (
+          <DiscoveryPanel
+            pins={discoveryPins ?? []}
+            stories={discoveryStories ?? []}
+            loading={discoveryLoading}
+            colors={colors}
+            onClose={() => {
+              setDiscoveryCoordinate(null);
+              setDiscoveryPins(null);
+              setDiscoveryStories(null);
+            }}
+            onSelectPin={selectPin}
+            onSelectStory={(story) => setStoryOpenId(story.id)}
+          />
+        ) : null}
+        {selectedPin ? <View style={styles.selectedPinPanel}><PinCard pin={selectedPin} own={selectedPin.authorId === session?.id} colors={colors} onOpen={() => void openInMaps(selectedPin)} onComment={() => setCommentPin(selectedPin)} onChanged={(pin) => { setSelectedPin(pin); setPins((all) => all.map((current) => current.id === pin.id ? pin : current)); }} onDelete={() => { setPins((all) => all.filter((pin) => pin.id !== selectedPin.id)); setSelectedPin(null); }} token={session?.authToken ?? ''} /></View> : null}
+      </View>
       <PinComposer visible={composerOpen} colors={colors} caption={caption} setCaption={setCaption} visibility={visibility} setVisibility={setVisibility} expiry={expiry} setExpiry={setExpiry} onClose={() => setComposerOpen(false)} onSave={() => void publishPin()} />
       <CommentsSheet pin={commentPin} token={session?.authToken ?? ''} colors={colors} onClose={() => setCommentPin(null)} />
+      <Modal visible={storyOpenId !== null} transparent animationType="fade" onRequestClose={() => setStoryOpenId(null)}>
+        {storyOpenId !== null ? <ServerStoryViewer items={stories.map(userStoryViewerItem)} initialItemId={userStoryViewerItemId(storyOpenId)} token={session?.authToken ?? ''} onClose={() => setStoryOpenId(null)} /> : null}
+      </Modal>
     </Screen>
   );
 }
 
-function MapScene({ pins, selected, colors, loading, hasLocation, onLocate, onSelect, onCreate, onOpenMaps }: any) {
-  const visible = pins.slice(0, 6);
-  return <View style={[styles.mapScene, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-    <View style={styles.mapRoadA} /><View style={styles.mapRoadB} /><View style={styles.mapRoadC} />
-    <View style={[styles.mapPark, { backgroundColor: `${colors.primary}18` }]} />
-    <View style={styles.storyRail}>
-      {visible.slice(0, 4).map((pin: MapPin) => <Pressable key={pin.id} onPress={() => onSelect(pin)} style={[styles.storyBubble, { borderColor: selected?.id === pin.id ? colors.primary : 'rgba(255,255,255,.88)' }]}>
-        <Avatar name={pin.author.name} size={42} color={colors.primary} />
+function radiusForRegion(region: SocialMapRegion) {
+  return Math.min(25, Math.max(1, region.latitudeDelta * 111 * 0.75));
+}
+
+function timeAgo(timestamp: number) {
+  const minutes = Math.max(1, Math.floor((Date.now() - timestamp) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function DiscoveryPanel({ pins, stories, loading, colors, onClose, onSelectPin, onSelectStory }: { pins: MapPin[]; stories: Story[]; loading: boolean; colors: any; onClose: () => void; onSelectPin: (pin: MapPin) => void; onSelectStory: (story: Story) => void }) {
+  const recentPins = [...pins].sort((left, right) => right.createdAt - left.createdAt);
+  const popularPins = [...pins].filter((pin) => pin.counts.reactions + pin.counts.comments + pin.counts.saves > 0).sort((left, right) => (right.counts.reactions + right.counts.comments + right.counts.saves) - (left.counts.reactions + left.counts.comments + left.counts.saves));
+  const people = new Set([...pins.map((pin) => pin.author.id), ...stories.map((story) => story.author.id)]).size;
+  return (
+    <View style={[styles.discoveryPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.discoveryHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.discoveryTitle, { color: colors.foreground }]}>What’s happening here?</Text>
+          <Text style={[styles.discoveryMeta, { color: colors.mutedForeground }]}>{loading ? 'Looking nearby' : `${stories.length} Stories · ${recentPins.length} locations · ${people} people`}</Text>
+        </View>
+        {loading ? <ActivityIndicator color={colors.primary} /> : <Pressable accessibilityLabel="Close location discovery" onPress={onClose} hitSlop={10}><Ionicons name="close" size={20} color={colors.mutedForeground} /></Pressable>}
+      </View>
+      {!loading && stories.length === 0 && recentPins.length === 0 ? <Text style={[styles.discoveryEmpty, { color: colors.mutedForeground }]}>Nothing posted here yet.</Text> : null}
+      {!loading && stories.slice(0, 2).map((story) => <Pressable key={`story-${story.id}`} onPress={() => onSelectStory(story)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
+        <Avatar name={story.author.name} size={28} color={colors.primary} />
+        <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{story.author.name}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{story.content || 'Active Story'} · {timeAgo(story.createdAt)}</Text></View>
+        <Ionicons name="play" size={15} color={colors.primary} />
       </Pressable>)}
+      {!loading && stories.length === 0 && (popularPins[0] ?? recentPins[0]) ? (() => {
+        const pin = popularPins[0] ?? recentPins[0];
+        return <Pressable onPress={() => onSelectPin(pin)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
+          <Avatar name={pin.author.name} size={28} color={colors.primary} />
+          <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{pin.author.name}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{pin.caption || 'Shared a location'} · {timeAgo(pin.createdAt)}</Text></View>
+          <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+        </Pressable>;
+      })() : null}
     </View>
-    {visible.map((pin: MapPin, index: number) => {
-      const positions = [{ left: 48, top: 190 }, { right: 80, top: 140 }, { left: 142, top: 255 }, { right: 45, top: 290 }, { left: 75, top: 315 }, { left: 165, top: 158 }];
-      return <Pressable key={pin.id} onPress={() => onSelect(pin)} style={[styles.mapMarker, positions[index], { backgroundColor: selected?.id === pin.id ? colors.primary : colors.card, borderColor: selected?.id === pin.id ? '#fff' : colors.border }]}>
-        <Text style={{ color: selected?.id === pin.id ? '#fff' : colors.foreground, fontWeight: '900' }}>{pin.author.name.slice(0, 1).toUpperCase()}</Text>
-      </Pressable>;
-    })}
-    <View style={styles.mapControls}>
-      <Pressable onPress={onLocate} style={[styles.mapControl, { backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name={loading ? 'hourglass-outline' : 'locate'} size={21} color={colors.primary} /></Pressable>
-      {hasLocation ? <Pressable onPress={onCreate} style={[styles.mapCreate, { backgroundColor: colors.primary }]}><Ionicons name="add" size={20} color="#fff" /><Text style={styles.mapCreateText}>Pin</Text></Pressable> : null}
-    </View>
-    {!hasLocation ? <View style={[styles.mapPrompt, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.mapPromptTitle, { color: colors.foreground }]}>See what’s nearby</Text><Text style={[styles.mapPromptText, { color: colors.mutedForeground }]}>Location is only read after you tap below.</Text><Pressable onPress={onLocate} style={[styles.locate, { backgroundColor: colors.primary }]}><Text style={styles.primaryText}>Use my location</Text></Pressable></View> : null}
-    {selected ? <View style={[styles.selectedPin, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Avatar name={selected.author.name} size={38} color={colors.primary} /><View style={{ flex: 1 }}><Text style={[styles.author, { color: colors.foreground }]}>{selected.author.name}</Text><Text numberOfLines={1} style={[styles.meta, { color: colors.mutedForeground }]}>{selected.caption || `${selected.distanceKm.toFixed(1)} km away`}</Text></View><Pressable onPress={() => onOpenMaps(selected)} style={[styles.navigate, { backgroundColor: colors.primary }]}><Ionicons name="navigate" size={18} color="#fff" /></Pressable>
-    </View> : null}
-  </View>;
+  );
 }
 
 function PinCard({ pin, own, colors, token, onOpen, onComment, onChanged, onDelete }: { pin: MapPin; own: boolean; colors: any; token: string; onOpen: () => void; onComment: () => void; onChanged: (pin: MapPin) => void; onDelete: () => void }) {
@@ -181,6 +290,10 @@ function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; to
 }
 
 const styles = StyleSheet.create({
+  mapCanvas: { flex: 1, position: 'relative', overflow: 'hidden' },
+  loadingPill: { position: 'absolute', top: 14, alignSelf: 'center', width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
+  errorPill: { position: 'absolute', top: 14, left: 14, minHeight: 38, borderRadius: 19, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  selectedPinPanel: { position: 'absolute', left: 10, right: 10, bottom: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 6 },
   list: { padding: 16, gap: 12 },
   mapScene: { height: 455, borderRadius: 30, borderWidth: 1, overflow: 'hidden', position: 'relative', marginBottom: 12 },
   mapRoadA: { position: 'absolute', width: 620, height: 34, backgroundColor: 'rgba(255,255,255,.48)', transform: [{ rotate: '-22deg' }], top: 190, left: -120 },
@@ -196,7 +309,15 @@ const styles = StyleSheet.create({
   mapCreateText: { color: '#fff', fontWeight: '900' },
   mapPrompt: { position: 'absolute', left: 18, right: 18, bottom: 18, borderRadius: 24, borderWidth: 1, padding: 16 },
   mapPromptTitle: { fontSize: 18, fontWeight: '900' }, mapPromptText: { fontSize: 12, marginVertical: 5 },
-  selectedPin: { position: 'absolute', left: 14, right: 14, bottom: 14, minHeight: 68, borderRadius: 24, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+   selectedPin: { position: 'absolute', left: 14, right: 14, bottom: 14, minHeight: 68, borderRadius: 24, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+   discoveryPanel: { position: 'absolute', left: 12, right: 12, bottom: 12, borderRadius: 22, borderWidth: 1, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, shadowColor: '#000', shadowOpacity: .12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+   discoveryHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+   discoveryTitle: { fontSize: 15, fontWeight: '900' },
+   discoveryMeta: { fontSize: 11, marginTop: 3 },
+   discoveryEmpty: { fontSize: 12, paddingVertical: 12 },
+   discoveryItem: { minHeight: 42, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 7 },
+   discoveryItemTitle: { fontSize: 12, fontWeight: '800' },
+   discoveryItemText: { fontSize: 11, marginTop: 2 },
   navigate: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   privacy: { borderRadius: 22, borderWidth: 1, padding: 12, flexDirection: 'row', gap: 9, marginBottom: 12 },
   privacyText: { flex: 1, fontSize: 13, lineHeight: 18 },

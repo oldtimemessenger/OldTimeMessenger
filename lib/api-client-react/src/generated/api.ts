@@ -31,6 +31,7 @@ import type {
   ErrorResponse,
   FollowActionResult,
   GetNearbyMapPinsParams,
+  GetNearbyStoriesParams,
   GetSocialFeedParams,
   HealthStatus,
   Highlight,
@@ -3282,6 +3283,90 @@ export const useCreateStory = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getCreateStoryMutationOptions(options));
     }
+
+export const getGetNearbyStoriesUrl = (params: GetNearbyStoriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/social/stories/nearby?${stringifiedParams}` : `/api/social/stories/nearby`
+}
+
+/**
+ * @summary List active visible Stories in a geographic radius
+ */
+export const getNearbyStories = async (params: GetNearbyStoriesParams, options?: Parameters<typeof customFetch>[1]): Promise<StoryList> => {
+
+  return customFetch<StoryList>(getGetNearbyStoriesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNearbyStoriesQueryKey = (params?: GetNearbyStoriesParams,) => {
+    return [
+    `/api/social/stories/nearby`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetNearbyStoriesQueryOptions = <TData = Awaited<ReturnType<typeof getNearbyStories>>, TError = ErrorType<unknown>>(params: GetNearbyStoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNearbyStories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNearbyStoriesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNearbyStories>>> = ({ signal }) => getNearbyStories(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNearbyStories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNearbyStoriesQueryResult = NonNullable<Awaited<ReturnType<typeof getNearbyStories>>>
+export type GetNearbyStoriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List active visible Stories in a geographic radius
+ */
+
+export function useGetNearbyStories<TData = Awaited<ReturnType<typeof getNearbyStories>>, TError = ErrorType<unknown>>(
+ params: GetNearbyStoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNearbyStories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNearbyStoriesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getCleanupExpiredStoriesUrl = () => {
 

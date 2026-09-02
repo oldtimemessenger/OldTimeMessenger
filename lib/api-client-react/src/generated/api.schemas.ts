@@ -547,6 +547,22 @@ export const StoryVisibility = {
  */
 export type StoryMedia = { [key: string]: unknown } | null;
 
+/**
+ * @nullable
+ */
+export type StoryLocation = {
+  /**
+     * @minimum -90
+     * @maximum 90
+     */
+  latitude: number;
+  /**
+     * @minimum -180
+     * @maximum 180
+     */
+  longitude: number;
+} | null;
+
 export type StoryViewer = {
   viewed: boolean;
   isOwner: boolean;
@@ -564,6 +580,8 @@ export interface Story {
   visibility: StoryVisibility;
   /** @nullable */
   media?: StoryMedia;
+  /** @nullable */
+  location?: StoryLocation;
   createdAt: number;
   expiresAt: number;
   author: SocialUser;
@@ -591,12 +609,30 @@ export const StoryInputVisibility = {
  */
 export type StoryInputMedia = { [key: string]: unknown } | null;
 
+/**
+ * @nullable
+ */
+export type StoryInputLocation = {
+  /**
+     * @minimum -90
+     * @maximum 90
+     */
+  latitude: number;
+  /**
+     * @minimum -180
+     * @maximum 180
+     */
+  longitude: number;
+} | null;
+
 export interface StoryInput {
   /** @maxLength 2000 */
   content?: string;
   visibility?: StoryInputVisibility;
   /** @nullable */
   media?: StoryInputMedia;
+  /** @nullable */
+  location?: StoryInputLocation;
   expiresAt?: number;
 }
 
@@ -701,6 +737,29 @@ export type SearchSocialParams = {
  * @maxLength 80
  */
 q: string;
+};
+
+export type GetNearbyStoriesParams = {
+/**
+ * @minimum -90
+ * @maximum 90
+ */
+latitude: number;
+/**
+ * @minimum -180
+ * @maximum 180
+ */
+longitude: number;
+/**
+ * @minimum 0.25
+ * @maximum 25
+ */
+radiusKm?: number;
+/**
+ * @minimum 1
+ * @maximum 30
+ */
+limit?: number;
 };
 
 export type GetNearbyMapPinsParams = {

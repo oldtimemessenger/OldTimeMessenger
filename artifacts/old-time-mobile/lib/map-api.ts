@@ -48,10 +48,10 @@ async function request<T>(token: string, path: string, init?: RequestInit): Prom
   return data as T;
 }
 
-export function getNearbyPins(token: string, latitude: number, longitude: number) {
+export function getNearbyPins(token: string, latitude: number, longitude: number, radiusKm = 25) {
   return request<{ items: MapPin[] }>(
     token,
-    `/api/map/pins/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=25`,
+    `/api/map/pins/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=${encodeURIComponent(radiusKm)}`,
   );
 }
 

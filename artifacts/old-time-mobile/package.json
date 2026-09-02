@@ -4,7 +4,7 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "dev": "expo start",
+    "dev": "expo start --port $PORT",
     "build": "node scripts/build.js",
     "serve": "node server/serve.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -63,6 +63,7 @@
     "expo-dev-client": "~6.0.21",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.24",
-    "expo-video": "~3.0.16"
+    "expo-video": "~3.0.16",
+    "react-native-maps": "1.18.0"
   }
 }

@@ -1,6 +1,13 @@
 import { createHmac } from "node:crypto";
 
 const TWILIO_VERIFY_BASE = "https://verify.twilio.com/v2/Services";
+const TEST_BYPASS_PHONE = "+11234567890";
+const TEST_BYPASS_CODE_PATTERN = /^\d{6}$/;
+
+function isTestOtpBypassPhone(phone: string): boolean {
+  // TEMPORARY TESTFLIGHT BYPASS: remove after production login testing.
+  return phone === TEST_BYPASS_PHONE;
+}
 
 function requiredSessionSecret(): string {
   const secret = process.env.SESSION_SECRET;
@@ -56,6 +63,9 @@ async function twilioRequest(
 }
 
 export async function sendPhoneVerification(phone: string): Promise<string | null> {
+  if (isTestOtpBypassPhone(phone)) {
+    return "123456";
+  }
   if (twilioConfiguration()) {
     await twilioRequest("Verifications", { To: phone, Channel: "sms" });
     return null;
@@ -69,6 +79,9 @@ export async function checkPhoneVerification(
   code: string,
   developmentCodeHash: string | null,
 ): Promise<boolean> {
+  if (isTestOtpBypassPhone(phone)) {
+    return TEST_BYPASS_CODE_PATTERN.test(code);
+  }
   if (twilioConfiguration()) {
     const result = await twilioRequest("VerificationCheck", { To: phone, Code: code });
     return result.status === "approved";

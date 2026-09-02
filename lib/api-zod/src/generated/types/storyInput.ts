@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { StoryInputLocation } from './storyInputLocation';
 import type { StoryInputMedia } from './storyInputMedia';
 import type { StoryInputVisibility } from './storyInputVisibility';
 
@@ -14,5 +15,7 @@ export interface StoryInput {
   visibility?: StoryInputVisibility;
   /** @nullable */
   media?: StoryInputMedia;
+  /** @nullable */
+  location?: StoryInputLocation;
   expiresAt?: number;
 }

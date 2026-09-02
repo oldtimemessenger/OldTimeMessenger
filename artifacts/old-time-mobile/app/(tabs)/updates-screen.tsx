@@ -16,6 +16,8 @@ import { useApp, type StatusItem, type UpdatePost } from '@/context/app-state';
 import { INTEREST_OPTIONS, rankForYou } from '@/lib/for-you';
 import { useColors } from '@/hooks/useColors';
 import { VideoSurface } from '@/components/video-surface';
+import { ServerStoryViewer } from '@/components/server-story-viewer';
+import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
 import { useCreateChat, useRequestUploadUrl } from '@workspace/api-client-react';
 import {
   createStory,
@@ -316,7 +318,14 @@ export default function UpdatesScreen() {
                   media = { type: data.type === 'video' ? 'video' : 'image', objectPath: upload.objectPath, mimeType };
                 }
                 if (compose === 'status') {
-                  const story = await createStory(session.authToken, { content: data.caption, visibility: data.audience, media });
+                  let storyLocation: { latitude: number; longitude: number } | null = null;
+                  if (data.shareLocation) {
+                    const permission = await Location.requestForegroundPermissionsAsync();
+                    if (!permission.granted) throw new Error('Location permission is needed to add this Story to the map.');
+                    const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                    storyLocation = { latitude: current.coords.latitude, longitude: current.coords.longitude };
+                  }
+                  const story = await createStory(session.authToken, { content: data.caption, visibility: data.audience, media, location: storyLocation });
                   setSocialStories((items) => [story, ...items]);
                 } else {
                   const post = await createSocialPost(session.authToken, {
@@ -396,7 +405,7 @@ export default function UpdatesScreen() {
       </Modal>
 
       <Modal visible={serverStoryOpen !== null} transparent animationType="fade" onRequestClose={() => setServerStoryOpen(null)}>
-        {serverStoryOpen ? <ServerStoryViewer story={serverStoryOpen} token={session?.authToken ?? ''} colors={colors} onClose={() => setServerStoryOpen(null)} /> : null}
+        {serverStoryOpen ? <ServerStoryViewer items={socialStories.map(userStoryViewerItem)} initialItemId={userStoryViewerItemId(serverStoryOpen.id)} token={session?.authToken ?? ''} onClose={() => setServerStoryOpen(null)} /> : null}
       </Modal>
 
     </View>
@@ -677,6 +686,7 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
     initialMediaType === 'video' ? 'video' : 'photo',
   );
    const [publishing, setPublishing] = useState(false);
+   const [shareLocation, setShareLocation] = useState(false);
 
   async function pickMedia() {
     const ImagePicker = await import('expo-image-picker');
@@ -696,7 +706,7 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
      setPublishing(true);
      try {
        if (type === 'status') {
-          await onPublish({ caption: draft.trim(), color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience });
+          await onPublish({ caption: draft.trim(), color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, shareLocation });
        } else {
           await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience });
        }
@@ -760,6 +770,18 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
              ))}
            </ScrollView>
          )}
+
+          {type === 'status' ? (
+            <Pressable onPress={() => setShareLocation((value) => !value)} style={styles.mapStoryToggle} accessibilityRole="switch" accessibilityState={{ checked: shareLocation }}>
+              <View style={[styles.mapStoryIcon, { backgroundColor: shareLocation ? '#FFFFFF' : 'rgba(255,255,255,0.2)' }]}>
+                <Ionicons name="location" size={17} color={shareLocation ? selectedColor : '#FFFFFF'} />
+              </View>
+              <Text style={styles.mapStoryLabel}>Add to Map</Text>
+              <View style={[styles.mapStorySwitch, { backgroundColor: shareLocation ? '#FFFFFF' : 'rgba(255,255,255,0.25)' }]}>
+                <View style={[styles.mapStoryThumb, { backgroundColor: shareLocation ? selectedColor : '#FFFFFF', transform: [{ translateX: shareLocation ? 16 : 0 }] }]} />
+              </View>
+            </Pressable>
+          ) : null}
 
          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
              <Pressable onPress={() => { onClose(); router.push({ pathname: '/camera', params: { returnTo: 'status' } }); }} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' }}>
@@ -1043,27 +1065,6 @@ function notificationCopy(type: string) {
   return 'interacted with your update';
 }
 
-function ServerStoryViewer({ story, token, colors, onClose }: { story: Story; token: string; colors: any; onClose: () => void }) {
-  useEffect(() => {
-    if (!story.viewer.viewed) void viewStory(token, story.id);
-  }, [story.id, story.viewer.viewed, token]);
-  return (
-    <View style={[styles.serverStoryViewer, { backgroundColor: colors.primary }]}>
-      {story.media?.type === 'image' ? <Image source={{ uri: socialMediaUrl(story.media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
-      {story.media?.type === 'video' ? <VideoSurface source={{ uri: socialMediaUrl(story.media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={StyleSheet.absoluteFill} /> : null}
-      <View style={styles.serverStoryShade} />
-      <View style={styles.serverStoryTop}>
-        <Avatar name={story.author.name} size={38} color="rgba(255,255,255,0.28)" />
-        <View style={{ flex: 1 }}><Text style={styles.serverStoryAuthor}>{story.author.name}</Text><Text style={styles.serverStoryMeta}>{audienceLabel(story.visibility)} · {relativeSocialTime(story.createdAt)}</Text></View>
-        <IconButton name="close" color="#fff" onPress={onClose} />
-      </View>
-      <View style={styles.serverStoryContent}>
-        <Text style={styles.serverStoryText}>{story.content}</Text>
-      </View>
-    </View>
-  );
-}
-
 function InterestPanel({ interests, interestWeights, onToggle, onBack, colors }: any) {
   const [locationEnabled, setLocationEnabled] = useState(false);
   useEffect(() => {
@@ -1135,6 +1136,11 @@ function InterestPanel({ interests, interestWeights, onToggle, onBack, colors }:
 
 const styles = StyleSheet.create({
   socialHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 1 },
+  mapStoryToggle: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'center', paddingHorizontal: 12 },
+  mapStoryIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  mapStoryLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  mapStorySwitch: { width: 42, height: 24, borderRadius: 12, padding: 3 },
+  mapStoryThumb: { width: 18, height: 18, borderRadius: 9 },
   headerAvatarButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   headerUnreadDot: { position: 'absolute', top: 3, right: 3, width: 9, height: 9, borderRadius: 5, borderWidth: 2, borderColor: '#fff' },
   createPill: { minHeight: 36, borderRadius: 20, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },

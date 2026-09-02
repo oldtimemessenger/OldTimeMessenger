@@ -8,6 +8,7 @@
 import type { SocialUser } from './socialUser';
 import type { StoryCounts } from './storyCounts';
 import type { StoryKind } from './storyKind';
+import type { StoryLocation } from './storyLocation';
 import type { StoryMedia } from './storyMedia';
 import type { StoryViewer } from './storyViewer';
 import type { StoryVisibility } from './storyVisibility';
@@ -19,6 +20,8 @@ export interface Story {
   visibility: StoryVisibility;
   /** @nullable */
   media?: StoryMedia;
+  /** @nullable */
+  location?: StoryLocation;
   createdAt: number;
   expiresAt: number;
   author: SocialUser;

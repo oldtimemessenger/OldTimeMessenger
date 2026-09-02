@@ -764,6 +764,17 @@ paths:
       summary: Publish an expiring text or protected-media story
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StoryInput" } } } }
       responses: { "201": { description: Story, content: { application/json: { schema: { $ref: "#/components/schemas/Story" } } } } }
+  /social/stories/nearby:
+    get:
+      operationId: getNearbyStories
+      tags: [social]
+      summary: List active visible Stories in a geographic radius
+      parameters:
+        - { name: latitude, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: longitude, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: radiusKm, in: query, required: false, schema: { type: number, minimum: 0.25, maximum: 25, default: 5 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 30, default: 20 } }
+      responses: { "200": { description: Nearby Stories, content: { application/json: { schema: { $ref: "#/components/schemas/StoryList" } } } } }
   /social/stories/cleanup:
     post:
       operationId: cleanupExpiredStories
@@ -1679,6 +1690,12 @@ components:
         content: { type: string }
         visibility: { type: string, enum: [public, friends, followers, close_friends, private] }
         media: { type: [object, "null"], additionalProperties: true }
+        location:
+          type: [object, "null"]
+          properties:
+            latitude: { type: number, minimum: -90, maximum: 90 }
+            longitude: { type: number, minimum: -180, maximum: 180 }
+          required: [latitude, longitude]
         createdAt: { type: number }
         expiresAt: { type: number }
         author: { $ref: "#/components/schemas/SocialUser" }
@@ -1695,6 +1712,12 @@ components:
         content: { type: string, maxLength: 2000 }
         visibility: { type: string, enum: [public, friends, followers, close_friends, private] }
         media: { type: [object, "null"], additionalProperties: true }
+        location:
+          type: [object, "null"]
+          properties:
+            latitude: { type: number, minimum: -90, maximum: 90 }
+            longitude: { type: number, minimum: -180, maximum: 180 }
+          required: [latitude, longitude]
         expiresAt: { type: number }
     StoryReactionInput:
       type: object

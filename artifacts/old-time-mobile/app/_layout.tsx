@@ -62,17 +62,17 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <KeyboardProvider>
-              <AppProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppProvider>
+          <ErrorBoundary>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <KeyboardProvider>
                 <RootLayoutNav />
-              </AppProvider>
-            </KeyboardProvider>
-          </GestureHandlerRootView>
-        </QueryClientProvider>
-      </ErrorBoundary>
+              </KeyboardProvider>
+            </GestureHandlerRootView>
+          </ErrorBoundary>
+        </AppProvider>
+      </QueryClientProvider>
     </SafeAreaProvider>
   );
 }

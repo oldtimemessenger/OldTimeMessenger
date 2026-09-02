@@ -96,6 +96,10 @@ const storyInput = z.object({
     height: z.number().int().positive().optional(),
     duration: z.number().nonnegative().optional(),
   }).nullable().optional(),
+  location: z.object({
+    latitude: z.number().finite().gte(-90).lte(90),
+    longitude: z.number().finite().gte(-180).lte(180),
+  }).nullable().optional(),
   expiresAt: z.number().int().positive().optional(),
 });
 const storyReplyInput = z.object({ content: z.string().trim().min(1).max(1_000) });
@@ -111,6 +115,20 @@ function parseId(value: unknown): number | null {
 function parseLimit(value: unknown): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) ? Math.min(30, Math.max(1, parsed)) : 20;
+}
+
+function parseGeoQuery(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function distanceKm(from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }) {
+  const earthRadiusKm = 6371;
+  const latitudeDelta = (to.latitude - from.latitude) * Math.PI / 180;
+  const longitudeDelta = (to.longitude - from.longitude) * Math.PI / 180;
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(from.latitude * Math.PI / 180) * Math.cos(to.latitude * Math.PI / 180) * Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function handleForUser(user: { id: number; name: string }): string {
@@ -1112,8 +1130,9 @@ router.get("/social/saved", async (req, res): Promise<void> => {
 type Story = typeof socialStoriesTable.$inferSelect;
 
 async function canSeeStory(viewerId: number, story: Story): Promise<boolean> {
+  if (story.deleted || story.expiresAt <= Date.now()) return false;
   if (story.authorId === viewerId) return true;
-  if (story.deleted || story.expiresAt <= Date.now() || await isBlocked(viewerId, story.authorId)) return false;
+  if (await isBlocked(viewerId, story.authorId)) return false;
   if (await isExcludedFromSharing(story.authorId, viewerId)) return false;
   if (story.visibility === "public") return true;
   if (story.visibility === "private") return false;
@@ -1154,6 +1173,7 @@ async function serializeStories(stories: Story[], viewerId: number) {
     return {
       id: story.id, kind: story.kind, content: story.content, visibility: story.visibility, media: story.media,
       createdAt: story.createdAt, expiresAt: story.expiresAt,
+      location: story.latitude !== null && story.longitude !== null ? { latitude: story.latitude, longitude: story.longitude } : null,
       author: author ? { id: author.id, name: author.name, username: handleForUser(author) } : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}` },
       viewer: { viewed: viewed.has(story.id), isOwner: story.authorId === viewerId },
       counts: { views: viewsById.get(story.id) ?? 0, reactions: reactionsById.get(story.id) ?? 0 },
@@ -1186,6 +1206,35 @@ router.get("/social/stories", async (req, res): Promise<void> => {
   const visible: Story[] = [];
   for (const story of candidates) if (await canSeeStory(viewerId, story)) visible.push(story);
   res.json({ items: await serializeStories(visible, viewerId) });
+});
+
+router.get("/social/stories/nearby", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const latitude = parseGeoQuery(req.query.latitude);
+  const longitude = parseGeoQuery(req.query.longitude);
+  const radiusKm = Math.min(25, Math.max(0.25, parseGeoQuery(req.query.radiusKm) ?? 5));
+  const limit = parseLimit(req.query.limit);
+  if (latitude === null || latitude < -90 || latitude > 90 || longitude === null || longitude < -180 || longitude > 180) {
+    res.status(400).json({ error: "A valid latitude and longitude are required." });
+    return;
+  }
+  const latitudeDelta = radiusKm / 111;
+  const longitudeDelta = radiusKm / (111 * Math.max(0.2, Math.cos(latitude * Math.PI / 180)));
+  const candidates = await db.select().from(socialStoriesTable).where(and(
+    eq(socialStoriesTable.deleted, false),
+    gt(socialStoriesTable.expiresAt, Date.now()),
+    gt(socialStoriesTable.latitude, latitude - latitudeDelta),
+    lt(socialStoriesTable.latitude, latitude + latitudeDelta),
+    gt(socialStoriesTable.longitude, longitude - longitudeDelta),
+    lt(socialStoriesTable.longitude, longitude + longitudeDelta),
+  )).orderBy(desc(socialStoriesTable.createdAt)).limit(200);
+  const visible: Story[] = [];
+  for (const story of candidates) {
+    if (story.latitude === null || story.longitude === null || distanceKm({ latitude, longitude }, { latitude: story.latitude, longitude: story.longitude }) > radiusKm) continue;
+    if (await canSeeStory(viewerId, story)) visible.push(story);
+  }
+  res.json({ items: (await serializeStories(visible, viewerId)).slice(0, limit) });
 });
 
 router.post("/social/stories", async (req, res): Promise<void> => {
@@ -1235,7 +1284,9 @@ router.post("/social/stories", async (req, res): Promise<void> => {
     [created] = await db.transaction(async (tx) => {
       const inserted = await tx.insert(socialStoriesTable).values({
         authorId: viewerId, kind: input.media?.type ?? "text", content: input.content,
-        visibility: input.visibility, media: input.media ?? null, createdAt: now, expiresAt,
+         visibility: input.visibility, media: input.media ?? null,
+         latitude: input.location?.latitude ?? null, longitude: input.location?.longitude ?? null,
+         createdAt: now, expiresAt,
       }).returning();
       if (claimedUploadId) {
         const committed = await tx.update(uploadSlotsTable)

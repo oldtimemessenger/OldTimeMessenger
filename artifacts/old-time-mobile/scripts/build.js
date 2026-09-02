@@ -231,7 +231,8 @@ async function downloadBundle(platform, timestamp) {
     'expo-router',
     'entry',
   );
-  const bundlePath = path.relative(workspaceRoot, entryPath);
+  // Metro serves routes relative to the Expo project root, not the monorepo root.
+  const bundlePath = path.relative(projectRoot, entryPath);
   const url = new URL(`${metroBaseUrl}/${bundlePath}.bundle`);
   url.searchParams.set('platform', platform);
   url.searchParams.set('dev', 'false');

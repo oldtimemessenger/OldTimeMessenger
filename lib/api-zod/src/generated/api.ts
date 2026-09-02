@@ -1154,6 +1154,14 @@ export const GetSavedSocialPostsResponse = zod.object({
 /**
  * @summary List active stories visible to the caller
  */
+export const getStoriesResponseItemsItemLocationLatitudeMin = -90;
+export const getStoriesResponseItemsItemLocationLatitudeMax = 90;
+
+export const getStoriesResponseItemsItemLocationLongitudeMin = -180;
+export const getStoriesResponseItemsItemLocationLongitudeMax = 180;
+
+
+
 export const GetStoriesResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.number(),
@@ -1161,6 +1169,10 @@ export const GetStoriesResponse = zod.object({
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
   "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "location": zod.object({
+  "latitude": zod.number().min(getStoriesResponseItemsItemLocationLatitudeMin).max(getStoriesResponseItemsItemLocationLatitudeMax),
+  "longitude": zod.number().min(getStoriesResponseItemsItemLocationLongitudeMin).max(getStoriesResponseItemsItemLocationLongitudeMax)
+}).nullish(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
   "author": zod.object({
@@ -1185,14 +1197,32 @@ export const GetStoriesResponse = zod.object({
  */
 export const createStoryBodyContentMax = 2000;
 
+export const createStoryBodyLocationLatitudeMin = -90;
+export const createStoryBodyLocationLatitudeMax = 90;
+
+export const createStoryBodyLocationLongitudeMin = -180;
+export const createStoryBodyLocationLongitudeMax = 180;
+
 
 
 export const CreateStoryBody = zod.object({
   "content": zod.string().max(createStoryBodyContentMax).optional(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']).optional(),
   "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "location": zod.object({
+  "latitude": zod.number().min(createStoryBodyLocationLatitudeMin).max(createStoryBodyLocationLatitudeMax),
+  "longitude": zod.number().min(createStoryBodyLocationLongitudeMin).max(createStoryBodyLocationLongitudeMax)
+}).nullish(),
   "expiresAt": zod.number().optional()
 })
+
+export const createStoryResponseLocationLatitudeMin = -90;
+export const createStoryResponseLocationLatitudeMax = 90;
+
+export const createStoryResponseLocationLongitudeMin = -180;
+export const createStoryResponseLocationLongitudeMax = 180;
+
+
 
 export const CreateStoryResponse = zod.object({
   "id": zod.number(),
@@ -1200,6 +1230,10 @@ export const CreateStoryResponse = zod.object({
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
   "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "location": zod.object({
+  "latitude": zod.number().min(createStoryResponseLocationLatitudeMin).max(createStoryResponseLocationLatitudeMax),
+  "longitude": zod.number().min(createStoryResponseLocationLongitudeMin).max(createStoryResponseLocationLongitudeMax)
+}).nullish(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
   "author": zod.object({
@@ -1215,6 +1249,69 @@ export const CreateStoryResponse = zod.object({
   "views": zod.number(),
   "reactions": zod.number()
 })
+})
+
+
+/**
+ * @summary List active visible Stories in a geographic radius
+ */
+export const getNearbyStoriesQueryLatitudeMin = -90;
+export const getNearbyStoriesQueryLatitudeMax = 90;
+
+export const getNearbyStoriesQueryLongitudeMin = -180;
+export const getNearbyStoriesQueryLongitudeMax = 180;
+
+export const getNearbyStoriesQueryRadiusKmDefault = 5;
+export const getNearbyStoriesQueryRadiusKmMin = 0.25;
+export const getNearbyStoriesQueryRadiusKmMax = 25;
+
+export const getNearbyStoriesQueryLimitDefault = 20;
+export const getNearbyStoriesQueryLimitMax = 30;
+
+
+
+export const GetNearbyStoriesQueryParams = zod.object({
+  "latitude": zod.coerce.number().min(getNearbyStoriesQueryLatitudeMin).max(getNearbyStoriesQueryLatitudeMax),
+  "longitude": zod.coerce.number().min(getNearbyStoriesQueryLongitudeMin).max(getNearbyStoriesQueryLongitudeMax),
+  "radiusKm": zod.coerce.number().min(getNearbyStoriesQueryRadiusKmMin).max(getNearbyStoriesQueryRadiusKmMax).default(getNearbyStoriesQueryRadiusKmDefault),
+  "limit": zod.coerce.number().int().min(1).max(getNearbyStoriesQueryLimitMax).default(getNearbyStoriesQueryLimitDefault)
+})
+
+export const getNearbyStoriesResponseItemsItemLocationLatitudeMin = -90;
+export const getNearbyStoriesResponseItemsItemLocationLatitudeMax = 90;
+
+export const getNearbyStoriesResponseItemsItemLocationLongitudeMin = -180;
+export const getNearbyStoriesResponseItemsItemLocationLongitudeMax = 180;
+
+
+
+export const GetNearbyStoriesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['text', 'image', 'video']),
+  "content": zod.string(),
+  "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
+  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "location": zod.object({
+  "latitude": zod.number().min(getNearbyStoriesResponseItemsItemLocationLatitudeMin).max(getNearbyStoriesResponseItemsItemLocationLatitudeMax),
+  "longitude": zod.number().min(getNearbyStoriesResponseItemsItemLocationLongitudeMin).max(getNearbyStoriesResponseItemsItemLocationLongitudeMax)
+}).nullish(),
+  "createdAt": zod.number(),
+  "expiresAt": zod.number(),
+  "author": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "username": zod.string()
+}),
+  "viewer": zod.object({
+  "viewed": zod.boolean(),
+  "isOwner": zod.boolean()
+}),
+  "counts": zod.object({
+  "views": zod.number(),
+  "reactions": zod.number()
+})
+}))
 })
 
 
@@ -1237,12 +1334,24 @@ export const GetStoryParams = zod.object({
   "storyId": zod.coerce.number().min(1)
 })
 
+export const getStoryResponseLocationLatitudeMin = -90;
+export const getStoryResponseLocationLatitudeMax = 90;
+
+export const getStoryResponseLocationLongitudeMin = -180;
+export const getStoryResponseLocationLongitudeMax = 180;
+
+
+
 export const GetStoryResponse = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
   "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "location": zod.object({
+  "latitude": zod.number().min(getStoryResponseLocationLatitudeMin).max(getStoryResponseLocationLatitudeMax),
+  "longitude": zod.number().min(getStoryResponseLocationLongitudeMin).max(getStoryResponseLocationLongitudeMax)
+}).nullish(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
   "author": zod.object({

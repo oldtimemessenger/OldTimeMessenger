@@ -1,0 +1,16 @@
+{
+  "cli": {
+    "version": ">= 5.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {}
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6787469528"
+      }
+    }
+  }
+}

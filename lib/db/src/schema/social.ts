@@ -1,6 +1,7 @@
 import {
   bigint as pgBigint,
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -208,6 +209,8 @@ export const socialStoriesTable = pgTable(
       height?: number;
       duration?: number;
     } | null>(),
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
     expiresAt: pgBigint("expires_at", { mode: "number" }).notNull(),
     deleted: boolean("deleted").notNull().default(false),
@@ -221,6 +224,11 @@ export const socialStoriesTable = pgTable(
     authorCreatedIndex: index("social_stories_author_created_idx").on(
       table.authorId,
       table.createdAt,
+    ),
+    locationIndex: index("social_stories_location_idx").on(
+      table.latitude,
+      table.longitude,
+      table.expiresAt,
     ),
   }),
 );
