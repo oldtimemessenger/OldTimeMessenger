@@ -82,13 +82,15 @@ function now(): number {
   return Date.now();
 }
 
-function parseUser(user: ChatUser) {
+function parseUser(user: ChatUser, viewerId = user.id) {
+  const revealPresence = viewerId === user.id || user.lastSeenVisible;
   return {
     id: user.id,
     phone: user.phone,
     name: user.name,
-    online: user.online,
-    lastSeen: user.lastSeen,
+    online: revealPresence && user.online,
+    lastSeen: revealPresence ? user.lastSeen : 0,
+    lastSeenVisible: user.lastSeenVisible,
   };
 }
 
@@ -511,7 +513,46 @@ router.get("/users", async (req, res): Promise<void> => {
     .from(usersTable)
     .where(ne(usersTable.id, parsed.data.viewerId))
     .orderBy(usersTable.name);
-  res.json(ListUsersResponse.parse(users.map(parseUser)));
+  res.json(ListUsersResponse.parse(users.map((user) => parseUser(user, viewer.id))));
+});
+
+router.put("/users/:userId/presence-privacy", async (req, res): Promise<void> => {
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(userId) || userId <= 0 || typeof req.body?.lastSeenVisible !== "boolean") {
+    res.status(400).json({ error: "A valid userId and lastSeenVisible value are required." });
+    return;
+  }
+  if (!(await callerMatches(req, res, userId))) return;
+  const [updated] = await db
+    .update(usersTable)
+    .set({ lastSeenVisible: req.body.lastSeenVisible })
+    .where(eq(usersTable.id, userId))
+    .returning({ lastSeenVisible: usersTable.lastSeenVisible });
+  if (!updated) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  res.json({ success: true, lastSeenVisible: updated.lastSeenVisible });
+});
+
+router.put("/users/:userId/presence", async (req, res): Promise<void> => {
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(userId) || userId <= 0 || typeof req.body?.online !== "boolean") {
+    res.status(400).json({ error: "A valid userId and online value are required." });
+    return;
+  }
+  if (!(await callerMatches(req, res, userId))) return;
+  const timestamp = now();
+  const [updated] = await db
+    .update(usersTable)
+    .set({ online: req.body.online, lastSeen: timestamp })
+    .where(eq(usersTable.id, userId))
+    .returning({ online: usersTable.online, lastSeen: usersTable.lastSeen });
+  if (!updated) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  res.json({ success: true, ...updated });
 });
 
 router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
@@ -570,7 +611,7 @@ router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
       );
     items.push({
       chat: parseChat(chat, participants),
-      contact: parseUser(contact),
+      contact: parseUser(contact, viewer.id),
       lastMessage: lastMessage ? parseMessage(lastMessage) : null,
       unreadCount: Number(count),
     });
