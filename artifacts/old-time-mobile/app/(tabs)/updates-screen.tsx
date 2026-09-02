@@ -580,9 +580,10 @@ export default function UpdatesScreen() {
           token={session?.authToken ?? ''}
           onClose={() => setShowNotifications(false)}
           onRead={(notification) => {
-            if (notification.readAt || !session?.authToken) return;
-            void markSocialNotificationRead(session.authToken, notification.id);
-            setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, readAt: Date.now() } : item));
+            if (!notification.readAt && session?.authToken) {
+              void markSocialNotificationRead(session.authToken, notification.id);
+              setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, readAt: Date.now() } : item));
+            }
             if (notification.storyId) {
               const story = socialStories.find((item) => item.id === notification.storyId);
               if (story) {

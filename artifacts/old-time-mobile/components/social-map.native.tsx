@@ -71,11 +71,6 @@ export default function SocialMap({
     onLocate();
   }
 
-  React.useEffect(() => {
-    if (!region) return;
-    mapRef.current?.animateToRegion(region as Region, 450);
-  }, [region]);
-
   function zoomCluster(cluster: StoryCluster) {
     if (!region) return;
     mapRef.current?.animateToRegion({
