@@ -22,6 +22,7 @@ export const socialPostsTable = pgTable(
     kind: text("kind").notNull().default("text"),
     content: text("content").notNull().default(""),
     visibility: text("visibility").notNull().default("friends"),
+    allowReposts: boolean("allow_reposts").notNull().default(false),
     media: jsonb("media").$type<Array<{
       type: "image" | "video";
       objectPath: string;
