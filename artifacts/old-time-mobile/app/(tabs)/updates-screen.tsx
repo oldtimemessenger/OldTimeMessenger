@@ -855,9 +855,9 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
    const [publishing, setPublishing] = useState(false);
    const [shareLocation, setShareLocation] = useState(false);
    const [allowReposts, setAllowReposts] = useState(false);
-   const gradient = type === 'status' && selectedColor === colors.brandBlue
+   const gradient: [string, string, string] = type === 'status' && selectedColor === colors.brandBlue
      ? [colors.brandBlue, colors.brandBlue, colors.brandBlue]
-     : storyGradients[Math.abs(selectedColor.charCodeAt(1) || 0) % storyGradients.length];
+     : [...storyGradients[Math.abs(selectedColor.charCodeAt(1) || 0) % storyGradients.length]];
 
   async function pickMedia() {
     const ImagePicker = await import('expo-image-picker');
