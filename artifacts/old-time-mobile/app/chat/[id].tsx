@@ -41,6 +41,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoSurface } from '@/components/video-surface';
 import { presenceLabel } from '@/lib/presence';
 import { emojiPickerGroups } from '@/constants/emoji';
+import { apiBaseUrl } from '@/lib/api-base-url';
 
 type PendingAsset = {
   uri: string;
@@ -54,8 +55,7 @@ type PendingAsset = {
 };
 
 function storageUrl(objectPath: string) {
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  return domain ? `https://${domain}/api/storage${objectPath}` : `/api/storage${objectPath}`;
+  return `${apiBaseUrl()}/api/storage${objectPath}`;
 }
 
 function remainingSeconds(expiresAt: number | null, clock: number) {
@@ -78,6 +78,7 @@ export default function ChatDetailScreen() {
   const [text, setText] = useState('');
   const [attachmentMenu, setAttachmentMenu] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [contactProfileOpen, setContactProfileOpen] = useState(false);
   const [uploadLabel, setUploadLabel] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
   const inputRef = useRef<TextInput>(null);
@@ -194,7 +195,7 @@ export default function ChatDetailScreen() {
       });
       setUploadLabel('Uploading…');
       const uploadUrl = upload.uploadURL.startsWith('/')
-        ? `https://${process.env.EXPO_PUBLIC_DOMAIN}${upload.uploadURL}`
+        ? `${apiBaseUrl()}${upload.uploadURL}`
         : upload.uploadURL;
       const result = await expoFetch(uploadUrl, {
         method: 'PUT',
@@ -297,15 +298,17 @@ export default function ChatDetailScreen() {
         ]}
       >
         <IconButton name="chevron-back" onPress={() => router.back()} />
-        <Avatar name={contact?.name ?? 'Old Time contact'} size={40} />
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerName, { color: colors.foreground }]}>
-            {contact?.name ?? 'Conversation'}
-          </Text>
-          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-             {contact ? presenceLabel(contact) : 'offline'}
-          </Text>
-        </View>
+        <Pressable onPress={() => contact && setContactProfileOpen(true)} disabled={!contact} style={styles.contactHeader} accessibilityRole="button" accessibilityLabel={contact ? `Open ${contact.name}'s profile` : 'Conversation contact'}>
+          <Avatar name={contact?.name ?? 'Old Time contact'} size={40} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>
+              {contact?.name ?? 'Conversation'}
+            </Text>
+            <Text style={[styles.headerSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+               {contact ? presenceLabel(contact) : 'offline'}
+            </Text>
+          </View>
+        </Pressable>
         {contact?.phone ? <IconButton name="call-outline" label={`Call ${contact.name}`} onPress={() => void callContact()} /> : null}
       </View>
 
@@ -505,6 +508,28 @@ export default function ChatDetailScreen() {
           inputRef.current?.focus();
         }}
       />
+      <Modal visible={contactProfileOpen} transparent animationType="slide" onRequestClose={() => setContactProfileOpen(false)}>
+        <View style={styles.profileOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setContactProfileOpen(false)} />
+          <View style={[styles.contactProfileSheet, { backgroundColor: colors.card }]}>
+            <View style={styles.profileGrabber} />
+            <View style={styles.contactProfileHero}>
+              <Avatar name={contact?.name ?? 'Contact'} size={78} color={colors.primary} />
+              <Text style={[styles.contactProfileName, { color: colors.foreground }]}>{contact?.name ?? 'Contact'}</Text>
+              {contact?.username ? <Text style={[styles.contactProfileUsername, { color: colors.mutedForeground }]}>@{contact.username}</Text> : null}
+              {contact?.bio ? <Text style={[styles.contactProfileBio, { color: colors.foreground }]}>{contact.bio}</Text> : null}
+            </View>
+            <View style={[styles.contactProfileStatus, { backgroundColor: colors.secondary }]}>
+              <Ionicons name="ellipse" size={10} color={colors.primary} />
+              <Text style={[styles.contactProfileStatusText, { color: colors.foreground }]}>{contact ? presenceLabel(contact) : 'offline'}</Text>
+            </View>
+            {contact?.phone ? <Pressable onPress={() => { setContactProfileOpen(false); void callContact(); }} style={[styles.contactProfileAction, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel={`Call ${contact.name}`}>
+              <Ionicons name="call-outline" size={18} color="#fff" />
+              <Text style={styles.contactProfileActionText}>Call</Text>
+            </Pressable> : null}
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -586,6 +611,7 @@ const styles = StyleSheet.create({
   },
   headerName: { fontSize: 16, fontWeight: '700' },
   headerSub: { fontSize: 12, marginTop: 2 },
+  contactHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 8, marginRight: 8 },
   messageList: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12 },
   messageLine: { flexDirection: 'row', marginBottom: 7 },
   bubble: {
@@ -654,6 +680,17 @@ const styles = StyleSheet.create({
     marginBottom: 1,
   },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  profileOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.38)' },
+  contactProfileSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 22, paddingTop: 12, paddingBottom: 28 },
+  profileGrabber: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: '#B8B8B8', marginBottom: 20 },
+  contactProfileHero: { alignItems: 'center' },
+  contactProfileName: { fontSize: 21, fontWeight: '700', marginTop: 12 },
+  contactProfileUsername: { fontSize: 14, marginTop: 4 },
+  contactProfileBio: { fontSize: 15, lineHeight: 21, textAlign: 'center', marginTop: 12 },
+  contactProfileStatus: { minHeight: 40, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 20 },
+  contactProfileStatusText: { fontSize: 14, fontWeight: '600' },
+  contactProfileAction: { minHeight: 44, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 },
+  contactProfileActionText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   attachmentSheet: {
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,

@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, KeyboardAvoidingView, PanResponder, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/ui';
 import { SponsoredStory, type StoryViewerItem } from '@/components/story-viewer-content';
 import { VideoSurface } from '@/components/video-surface';
-import { socialMediaUrl, viewStory, type Story } from '@/lib/social-api';
+import { getStoryViewers, reactToStory, replyToStory, socialMediaUrl, viewStory, type Story } from '@/lib/social-api';
 import { typography } from '@/constants/typography';
 
 type Props = {
@@ -17,6 +18,13 @@ type Props = {
 };
 
 const STORY_DURATION_MS = 6500;
+const STORY_BACKGROUNDS = [
+  ['#F58529', '#DD2A7B', '#8134AF'],
+  ['#833AB4', '#FD1D1D', '#FCAF45'],
+  ['#4F5BD5', '#962FBF', '#D62976'],
+  ['#FF6B6B', '#C44569', '#574B90'],
+  ['#00C6FF', '#0072FF', '#6A11CB'],
+] as const;
 
 export function ServerStoryViewer({ items, initialItemId, token, onClose }: Props) {
   const insets = useSafeAreaInsets();
@@ -29,6 +37,9 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [reactionSent, setReactionSent] = useState(false);
+  const [reply, setReply] = useState('');
+  const [replying, setReplying] = useState(false);
   const translateY = useRef(new Animated.Value(0)).current;
   const item = activeItems[index];
   const story: Story | null = item?.type === 'USER_STORY' ? item.story : null;
@@ -46,6 +57,41 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
       close();
     }
   }, [activeItems.length, close, index]);
+
+  async function sendReaction() {
+    if (!story || reactionSent) return;
+    try {
+      await reactToStory(token, story.id, 'like');
+      setReactionSent(true);
+    } catch (error) {
+      Alert.alert('Reaction not sent', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
+
+  async function sendReply() {
+    const content = reply.trim();
+    if (!story || !content || replying) return;
+    setReplying(true);
+    try {
+      await replyToStory(token, story.id, content);
+      setReply('');
+      Alert.alert('Reply sent', 'Your reply was sent to the Story author.');
+    } catch (error) {
+      Alert.alert('Reply not sent', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setReplying(false);
+    }
+  }
+
+  async function showViewers() {
+    if (!story) return;
+    try {
+      const result = await getStoryViewers(token, story.id);
+      Alert.alert('Story viewers', result.items.length ? result.items.map((viewer) => viewer.name).join('\n') : 'No viewers yet.');
+    } catch (error) {
+      Alert.alert('Viewers unavailable', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
 
   const previous = useCallback(() => {
     if (index > 0) setIndex((current) => current - 1);
@@ -108,6 +154,12 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
       style={[styles.viewer, { transform: [{ translateY }] }]}
       {...panResponder.panHandlers}
     >
+      <LinearGradient
+        colors={STORY_BACKGROUNDS[(story?.id ?? index) % STORY_BACKGROUNDS.length]}
+        start={{ x: 0, y: 1 }}
+        end={{ x: 1, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
       {media?.type === 'image' ? (
         <Image source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={StyleSheet.absoluteFill} contentFit={media.fit ?? 'contain'} />
       ) : null}
@@ -146,7 +198,36 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
           <Text style={[styles.storyText, story.media ? styles.mediaCaption : null]}>{story.content}</Text>
         </View>
       ) : null}
-      <View pointerEvents="none" style={[styles.swipeHint, { bottom: Math.max(14, insets.bottom + 6) }]}>
+      {story ? (
+        <KeyboardAvoidingView behavior="padding" style={[styles.actions, { bottom: Math.max(12, insets.bottom + 10) }]}>
+          <Pressable onPress={() => void sendReaction()} style={styles.actionButton} accessibilityRole="button" accessibilityLabel={reactionSent ? 'Story reaction sent' : 'React to story'}>
+            <Ionicons name={reactionSent ? 'heart' : 'heart-outline'} size={21} color={reactionSent ? '#FF6B81' : '#FFFFFF'} />
+          </Pressable>
+          <TextInput
+            value={reply}
+            onChangeText={setReply}
+            onSubmitEditing={() => void sendReply()}
+            placeholder="Reply to Story…"
+            placeholderTextColor="rgba(255,255,255,0.72)"
+            returnKeyType="send"
+            maxLength={500}
+            style={styles.replyInput}
+            accessibilityLabel="Reply to story"
+          />
+          <Pressable onPress={() => void sendReply()} disabled={!reply.trim() || replying} style={[styles.actionButton, { opacity: !reply.trim() || replying ? 0.45 : 1 }]} accessibilityRole="button" accessibilityLabel="Send story reply">
+            <Ionicons name="send" size={20} color="#FFFFFF" />
+          </Pressable>
+          <Pressable onPress={() => void Share.share({ message: `${story.author.name} shared a Story on Old Time.` })} style={styles.actionButton} accessibilityRole="button" accessibilityLabel="Share story">
+            <Ionicons name="share-outline" size={21} color="#FFFFFF" />
+          </Pressable>
+          {story.viewer.isOwner ? (
+            <Pressable onPress={() => void showViewers()} style={styles.actionButton} accessibilityRole="button" accessibilityLabel="View story viewers">
+              <Ionicons name="people-outline" size={21} color="#FFFFFF" />
+            </Pressable>
+          ) : null}
+        </KeyboardAvoidingView>
+      ) : null}
+      <View pointerEvents="none" style={[styles.swipeHint, { bottom: story ? Math.max(72, insets.bottom + 64) : Math.max(14, insets.bottom + 6) }]}>
         <View style={styles.swipeHandle} />
       </View>
     </Animated.View>
@@ -176,6 +257,9 @@ const styles = StyleSheet.create({
   iconButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   leftTap: { position: 'absolute', left: 0, top: 92, bottom: 65, width: '32%', zIndex: 10 },
   rightTap: { position: 'absolute', right: 0, top: 92, bottom: 65, width: '68%', zIndex: 10 },
+  actions: { position: 'absolute', left: 14, right: 14, flexDirection: 'row', alignItems: 'center', gap: 8, zIndex: 30 },
+  actionButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  replyInput: { flex: 1, height: 40, borderWidth: 1, borderColor: 'rgba(255,255,255,0.62)', borderRadius: 20, paddingHorizontal: 14, color: '#FFFFFF', fontSize: 14, backgroundColor: 'rgba(0,0,0,0.18)' },
   content: { ...StyleSheet.absoluteFillObject, paddingHorizontal: 28 },
   contentCenter: { alignItems: 'center', justifyContent: 'center' },
   contentBottom: { justifyContent: 'flex-end', paddingBottom: 88 },

@@ -69,14 +69,12 @@ export default function SocialMap({
 
   function recenter() {
     onLocate();
-    if (center) {
-      mapRef.current?.animateToRegion({
-        ...center,
-        latitudeDelta: region?.latitudeDelta ?? 0.055,
-        longitudeDelta: region?.longitudeDelta ?? 0.07,
-      }, 450);
-    }
   }
+
+  React.useEffect(() => {
+    if (!region) return;
+    mapRef.current?.animateToRegion(region as Region, 450);
+  }, [region]);
 
   function zoomCluster(cluster: StoryCluster) {
     if (!region) return;
@@ -110,7 +108,7 @@ export default function SocialMap({
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
-        initialRegion={region as Region}
+        region={region as Region}
         customMapStyle={mapStyle}
         showsUserLocation
         showsMyLocationButton={false}

@@ -34,7 +34,7 @@ export default function MapScreen() {
   const [discoveryPins, setDiscoveryPins] = useState<MapPin[] | null>(null);
   const [discoveryStories, setDiscoveryStories] = useState<Story[] | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
-  const [storyOpenId, setStoryOpenId] = useState<number | null>(null);
+  const [storyOpen, setStoryOpen] = useState<Story | null>(null);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[] }>());
 
@@ -140,7 +140,14 @@ export default function MapScreen() {
   }
 
   async function publishPin() {
-    if (!location || !session?.authToken) return;
+    if (!location) {
+      Alert.alert('Location required', 'Turn on location access before posting a pin so Old Time knows where to place it.');
+      return;
+    }
+    if (!session?.authToken) {
+      Alert.alert('Sign in required', 'Sign in again before posting a location pin.');
+      return;
+    }
     try {
       const expiresAt = expiry === 'never' ? null : Date.now() + (expiry === 'day' ? 86_400_000 : 604_800_000);
       const created = await createMapPin(session.authToken, { ...location, caption: caption.trim() || undefined, visibility, expiresAt });
@@ -165,9 +172,18 @@ export default function MapScreen() {
           loading={loading}
           colors={colors}
           onLocate={() => void refreshLocation()}
-          onCreate={() => setComposerOpen(true)}
+          onCreate={() => {
+            if (location) {
+              setComposerOpen(true);
+            } else {
+              Alert.alert('Location required', 'Allow location access before posting a pin.', [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'Enable location', onPress: () => void refreshLocation() },
+              ]);
+            }
+          }}
           onSelectPin={selectPin}
-          onSelectStory={(story) => setStoryOpenId(story.id)}
+          onSelectStory={(story) => setStoryOpen(story)}
           onAreaPress={(coordinate) => {
             setSelectedPin(null);
             void discoverArea(coordinate);
@@ -188,15 +204,22 @@ export default function MapScreen() {
               setDiscoveryStories(null);
             }}
             onSelectPin={selectPin}
-            onSelectStory={(story) => setStoryOpenId(story.id)}
+            onSelectStory={(story) => setStoryOpen(story)}
           />
         ) : null}
         {selectedPin ? <View style={styles.selectedPinPanel}><PinCard pin={selectedPin} own={selectedPin.authorId === session?.id} colors={colors} onOpen={() => void openInMaps(selectedPin)} onComment={() => setCommentPin(selectedPin)} onChanged={(pin) => { setSelectedPin(pin); setPins((all) => all.map((current) => current.id === pin.id ? pin : current)); }} onDelete={() => { setPins((all) => all.filter((pin) => pin.id !== selectedPin.id)); setSelectedPin(null); }} token={session?.authToken ?? ''} /></View> : null}
       </View>
       <PinComposer visible={composerOpen} colors={colors} caption={caption} setCaption={setCaption} visibility={visibility} setVisibility={setVisibility} expiry={expiry} setExpiry={setExpiry} onClose={() => setComposerOpen(false)} onSave={() => void publishPin()} />
       <CommentsSheet pin={commentPin} token={session?.authToken ?? ''} colors={colors} onClose={() => setCommentPin(null)} />
-      <Modal visible={storyOpenId !== null} transparent animationType="fade" onRequestClose={() => setStoryOpenId(null)}>
-        {storyOpenId !== null ? <ServerStoryViewer items={stories.map(userStoryViewerItem)} initialItemId={userStoryViewerItemId(storyOpenId)} token={session?.authToken ?? ''} onClose={() => setStoryOpenId(null)} /> : null}
+      <Modal visible={storyOpen !== null} transparent animationType="fade" onRequestClose={() => setStoryOpen(null)}>
+        {storyOpen ? (
+          <ServerStoryViewer
+            items={[...stories.filter((item) => item.id !== storyOpen.id), storyOpen].map(userStoryViewerItem)}
+            initialItemId={userStoryViewerItemId(storyOpen.id)}
+            token={session?.authToken ?? ''}
+            onClose={() => setStoryOpen(null)}
+          />
+        ) : null}
       </Modal>
     </Screen>
   );

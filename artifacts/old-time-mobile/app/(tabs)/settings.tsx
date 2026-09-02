@@ -15,6 +15,16 @@ import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib
 
 type Panel = 'profile' | 'notifications' | 'socialPrivacy' | 'storage' | 'appearance' | 'power' | 'language' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
 
+const SUPPORTED_LANGUAGES = [
+  'English', 'Haitian Creole', 'French', 'Afrikaans', 'Arabic', 'Bengali',
+  'Chinese (Simplified)', 'Croatian', 'Czech', 'Danish', 'Dutch', 'Finnish',
+  'German', 'Greek', 'Gujarati', 'Hebrew', 'Hindi', 'Hungarian', 'Indonesian',
+  'Italian', 'Japanese', 'Kannada', 'Korean', 'Malay', 'Marathi', 'Norwegian',
+  'Polish', 'Portuguese', 'Punjabi', 'Romanian', 'Russian', 'Serbian',
+  'Slovak', 'Spanish', 'Swedish', 'Tamil', 'Telugu', 'Thai', 'Turkish',
+  'Ukrainian', 'Urdu', 'Vietnamese',
+] as const;
+
 export default function SettingsScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -34,7 +44,7 @@ export default function SettingsScreen() {
   const faqs = [
     { q: 'What is Old Time?', a: 'A private messenger with chats, status updates, device location sharing, and phone calls to your contacts.' },
     { q: 'How are chats protected?', a: 'Old Time requires an active signed-in session before chat data can be requested.' },
-    { q: 'How long do status updates last?', a: 'Status updates remain available on this device for 24 hours after they are created.' }
+    { q: 'How long do status updates last?', a: 'Stories are stored on Old Time and expire automatically 24 hours after they are created.' }
   ];
   const [faqOpen, setFaqOpen] = useState(-1);
 
@@ -441,7 +451,7 @@ export default function SettingsScreen() {
         return (
           <DetailShell title="Language" onBack={() => setPanel(null)}>
             <PanelSection>
-              {['English'].map((language) => (
+              {SUPPORTED_LANGUAGES.map((language) => (
                 <AudienceRow key={language} label={language} value={settings.language === language} onPress={() => updateSettings({ language })} isLast />
               ))}
             </PanelSection>
@@ -513,8 +523,8 @@ function SettingRow({ item, isLast, colors }: any) {
        <View style={[styles.settingIcon, { backgroundColor: item.danger ? `${colors.destructive}16` : item.bg }]}>
           <Ionicons name={item.icon as any} size={17} color={item.danger ? colors.destructive : colors.foreground} />
        </View>
-       <Text style={[styles.settingLabel, { color: item.danger ? colors.destructive : colors.foreground }]}>{item.label}</Text>
-       {item.value ? <Text style={[styles.settingValue, { color: colors.mutedForeground }]}>{item.value}</Text> : null}
+       <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.settingLabel, { color: item.danger ? colors.destructive : colors.foreground }]}>{item.label}</Text>
+       {item.value ? <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.settingValue, { color: colors.mutedForeground }]}>{item.value}</Text> : null}
        {!item.danger && <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />}
     </Pressable>
   )
@@ -591,10 +601,10 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, paddingHorizontal: 10, fontSize: 16, height: '100%' },
   sectionTitle: { textTransform: 'uppercase', fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginLeft: 4, marginBottom: 6, marginTop: 4 },
   group: { borderRadius: 18, overflow: 'hidden', borderWidth: 1 },
-  settingRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, minHeight: 62, borderBottomWidth: StyleSheet.hairlineWidth },
-  settingIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  settingLabel: { flex: 1, fontSize: 16.5, marginLeft: 14 },
-  settingValue: { fontSize: 15, marginRight: 8 },
+  settingRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth },
+  settingIcon: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  settingLabel: { flex: 1, minWidth: 0, fontSize: 15, marginLeft: 12 },
+  settingValue: { flexShrink: 1, maxWidth: '38%', fontSize: 12, marginLeft: 8, marginRight: 6 },
   settingsProfileHeader: { minHeight: 82, borderRadius: 20, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
   settingsProfileName: { fontSize: 18, fontWeight: '700' },
   settingsProfileHandle: { fontSize: 13, marginTop: 4 },

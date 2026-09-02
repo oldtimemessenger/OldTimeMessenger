@@ -34,6 +34,9 @@ import {
   getStories,
   getUserCard,
   getUserPosts,
+  getPostComments,
+  createPostComment,
+  reportSocialContent,
   markSocialNotificationRead,
   searchSocial,
   setFollowing,
@@ -43,6 +46,7 @@ import {
   socialMediaUrl,
   viewStory,
   type SocialNotification,
+  type SocialComment,
   type MessageRequest,
   type SocialPost,
   type SocialUser,
@@ -93,6 +97,7 @@ export default function UpdatesScreen() {
   const [storyGroupOpen, setStoryGroupOpen] = useState<StatusUserGroup | null>(null);
   const [compose, setCompose] = useState<'status' | 'post' | null>(null);
   const [commentPost, setCommentPost] = useState<UpdatePost | null>(null);
+  const [socialCommentPost, setSocialCommentPost] = useState<SocialPost | null>(null);
   const [profileOpen, setProfileOpen] = useState<string | null>(null);
   const [capturedStatusMedia, setCapturedStatusMedia] = useState<{
     uri: string;
@@ -118,13 +123,13 @@ export default function UpdatesScreen() {
   const [peopleSearchLoading, setPeopleSearchLoading] = useState(false);
   const [peopleSearchError, setPeopleSearchError] = useState<string | null>(null);
 
-  const loadSocial = useCallback(async () => {
+  const loadSocial = useCallback(async (mode: 'for-you' | 'following' = 'for-you') => {
     if (!session?.authToken) return;
     setSocialLoading(true);
     setSocialError(null);
     try {
       const [feed, storyPage, card, notificationPage, exclusions] = await Promise.all([
-        getSocialFeed(session.authToken, 'for-you'),
+        getSocialFeed(session.authToken, mode),
         getStories(session.authToken),
         getUserCard(session.authToken, session.id),
         getSocialNotifications(session.authToken),
@@ -264,6 +269,11 @@ export default function UpdatesScreen() {
     recordPostInteraction(post.id, 'hide');
   }
 
+  function selectFeedTab(nextTab: FeedTab) {
+    setTab(nextTab);
+    if (nextTab !== 'interests') void loadSocial(nextTab);
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
       <Screen title="Updates" left={<IconButton name="albums-outline" label="Open stories" onPress={openStatusShortcut} />} right={
@@ -273,10 +283,6 @@ export default function UpdatesScreen() {
             {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
           </View>
           <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
-          <Pressable onPress={() => session && setProfileUserId(session.id)} style={styles.headerAvatarButton} accessibilityRole="button" accessibilityLabel="Open profile">
-            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={34} color={colors.primary} />
-            {unreadNotifications > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
-          </Pressable>
           <IconButton name="add" label="Create post or story" onPress={() => setCompose('post')} />
         </View>
       }>
@@ -300,12 +306,10 @@ export default function UpdatesScreen() {
                  token={session?.authToken ?? ''}
                  onRetry={() => void loadSocial()}
                  onOpenProfile={setProfileUserId}
-                  onViewOwnProfile={() => {
-                    if (session) setProfileUserId(session.id);
-                  }}
                  onOpenStory={(story) => setServerStoryOpen(story)}
                   onCreatePost={() => setCompose('post')}
                   onCreateStory={() => setCompose('status')}
+                  onComment={setSocialCommentPost}
                   onShare={(post) => {
                     if (post.visibility !== 'public' || !post.allowReposts) {
                       Alert.alert('Sharing is off', 'This post is not public or the author has not allowed reposts.');
@@ -318,7 +322,7 @@ export default function UpdatesScreen() {
 
               <View style={[styles.feedTabs, { borderBottomColor: colors.border }]}>
                 {(['for-you', 'following', 'interests'] as FeedTab[]).map(item => (
-                  <Pressable key={item} testID={`tab-${item}`} onPress={() => setTab(item)} style={[styles.feedTab, tab === item && { borderBottomColor: colors.primary }]}>
+                  <Pressable key={item} testID={`tab-${item}`} onPress={() => selectFeedTab(item)} style={[styles.feedTab, tab === item && { borderBottomColor: colors.primary }]}>
                     <Text style={[styles.feedTabText, { color: tab === item ? colors.primary : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : item === 'following' ? 'Following' : 'Interests'}</Text>
                   </Pressable>
                 ))}
@@ -326,7 +330,7 @@ export default function UpdatesScreen() {
 
               {tab === 'interests' && <InterestPanel interests={interests} onToggle={toggleInterest} onBack={() => setTab('for-you')} colors={colors} />}
 
-              {tab !== 'interests' && visiblePosts.length === 0 && (
+              {tab !== 'interests' && socialPosts.length === 0 && visiblePosts.length === 0 && (
                 <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '600' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
               )}
            </>}
@@ -382,7 +386,7 @@ export default function UpdatesScreen() {
         )}
       </Modal>
 
-      <Modal visible={compose !== null} transparent animationType="slide" onRequestClose={() => setCompose(null)}>
+      <Modal visible={compose !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setCompose(null)}>
         {compose && (
           <ComposeModal
              type={compose}
@@ -440,6 +444,20 @@ export default function UpdatesScreen() {
       <Modal visible={commentPost !== null} transparent animationType="slide" onRequestClose={() => setCommentPost(null)}>
         {commentPost ? (
           <CommentSheet post={commentPost} onClose={() => setCommentPost(null)} colors={colors} onAdd={(text: string) => { addPostComment(commentPost.id, text); }} />
+        ) : null}
+      </Modal>
+
+      <Modal visible={socialCommentPost !== null} transparent animationType="slide" onRequestClose={() => setSocialCommentPost(null)}>
+        {socialCommentPost ? (
+          <SocialCommentsSheet
+            post={socialCommentPost}
+            token={session?.authToken ?? ''}
+            colors={colors}
+            onClose={() => setSocialCommentPost(null)}
+            onPostChanged={(updated) => {
+              setSocialPosts((items) => items.map((item) => item.id === updated.id ? updated : item));
+            }}
+          />
         ) : null}
       </Modal>
 
@@ -565,6 +583,13 @@ export default function UpdatesScreen() {
             if (notification.readAt || !session?.authToken) return;
             void markSocialNotificationRead(session.authToken, notification.id);
             setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, readAt: Date.now() } : item));
+            if (notification.storyId) {
+              const story = socialStories.find((item) => item.id === notification.storyId);
+              if (story) {
+                setShowNotifications(false);
+                setServerStoryOpen(story);
+              }
+            }
           }}
         />
       </Modal>
@@ -1062,10 +1087,10 @@ function SocialHubPanel({
   token,
   onRetry,
   onOpenProfile,
-  onViewOwnProfile,
   onOpenStory,
   onCreatePost,
   onCreateStory,
+  onComment,
   onShare,
   onChanged,
 }: {
@@ -1078,10 +1103,10 @@ function SocialHubPanel({
   token: string;
   onRetry: () => void;
   onOpenProfile: (id: number) => void;
-  onViewOwnProfile: () => void;
   onOpenStory: (story: Story) => void;
   onCreatePost: () => void;
   onCreateStory: () => void;
+  onComment: (post: SocialPost) => void;
   onShare: (post: SocialPost) => void;
   onChanged: (post: SocialPost) => void;
 }) {
@@ -1089,17 +1114,6 @@ function SocialHubPanel({
   const otherStories = stories.filter((story) => !story.viewer.isOwner);
   return (
     <View style={styles.socialHub}>
-      <Pressable onPress={onViewOwnProfile} style={[styles.socialIdentity, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="View your social profile and posts">
-        <Avatar name={card?.name ?? 'You'} size={48} color={colors.primary} />
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.socialIdentityName, { color: colors.foreground }]}>{card?.name ?? 'Your social profile'}</Text>
-          <Text style={[styles.socialIdentityHandle, { color: colors.mutedForeground }]}>{card ? `@${card.username}` : 'View your profile and posts'}</Text>
-        </View>
-        <View style={[styles.socialProfileLink, { backgroundColor: colors.secondary }]}>
-          <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '700' }}>View profile</Text>
-          <Ionicons name="chevron-forward" size={14} color={colors.primary} />
-        </View>
-      </Pressable>
       <View style={styles.socialStoryHeading}>
         <View>
           <Text style={[styles.socialSectionTitle, { color: colors.foreground }]}>Stories</Text>
@@ -1136,7 +1150,7 @@ function SocialHubPanel({
       ) : posts.length > 0 ? (
         <View style={styles.socialPostList}>
           {posts.slice(0, 3).map((post) => (
-               <SocialPostCard key={post.id} post={post} colors={colors} token={token} onOpenProfile={() => onOpenProfile(post.author.id)} onShare={() => onShare(post)} onChanged={onChanged} />
+           <SocialPostCard key={post.id} post={post} colors={colors} token={token} onOpenProfile={() => onOpenProfile(post.author.id)} onShare={() => onShare(post)} onComment={() => onComment(post)} onChanged={onChanged} />
           ))}
         </View>
       ) : (
@@ -1146,7 +1160,7 @@ function SocialHubPanel({
   );
 }
 
-function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onChanged }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onChanged: (post: SocialPost) => void }) {
+function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment, onChanged }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onComment?: () => void; onChanged: (post: SocialPost) => void }) {
   const [busy, setBusy] = useState(false);
   const media = post.media[0];
   const canRepost = post.visibility === 'public' && post.allowReposts;
@@ -1182,7 +1196,9 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onChanged
             <Text style={[styles.socialAuthorMeta, { color: colors.mutedForeground }]}>@{post.author.username} · {audienceLabel(post.visibility)}</Text>
           </View>
         </Pressable>
-        <Ionicons name="ellipsis-horizontal" size={19} color={colors.mutedForeground} />
+        <Pressable onPress={() => Alert.alert('Post options', 'Choose what you want to do with this post.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Report', style: 'destructive', onPress: () => void reportSocialContent(token, { targetType: 'post', targetId: post.id, reason: 'other' }).then(() => Alert.alert('Report sent', 'Thanks for helping keep Old Time safe.')).catch(() => Alert.alert('Report unavailable', 'Please try again.')) }])} accessibilityRole="button" accessibilityLabel="Open post options" hitSlop={10}>
+          <Ionicons name="ellipsis-horizontal" size={19} color={colors.mutedForeground} />
+        </Pressable>
       </View>
       {post.content ? <Text style={[styles.socialPostContent, { color: colors.foreground }]}>{post.content}</Text> : null}
       {media?.type === 'image' ? <Image source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.socialPostMedia} contentFit="cover" /> : null}
@@ -1202,7 +1218,10 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onChanged
           <Ionicons name={post.viewer.liked ? 'heart' : 'heart-outline'} size={19} color={post.viewer.liked ? colors.destructive : colors.mutedForeground} />
           <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{post.counts.likes}</Text>
         </Pressable>
-        <View style={styles.socialAction}><Ionicons name="chatbubble-outline" size={18} color={colors.mutedForeground} /><Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{post.counts.comments}</Text></View>
+        <Pressable onPress={onComment} style={styles.socialAction} accessibilityRole="button" accessibilityLabel={`Open comments, ${post.counts.comments} comments`}>
+          <Ionicons name="chatbubble-outline" size={18} color={colors.mutedForeground} />
+          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{post.counts.comments}</Text>
+        </Pressable>
         <Pressable onPress={() => void toggle('save')} style={styles.socialAction} accessibilityRole="button" accessibilityLabel={post.viewer.saved ? 'Unsave post' : 'Save post'}>
           <Ionicons name={post.viewer.saved ? 'bookmark' : 'bookmark-outline'} size={18} color={post.viewer.saved ? colors.primary : colors.mutedForeground} />
           <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{post.counts.saves}</Text>
@@ -1352,6 +1371,82 @@ function NotificationsSheet({ notifications, loading, colors, token, onClose, on
             </Pressable>
           ))}
         </ScrollView>}
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function SocialCommentsSheet({ post, token, colors, onClose, onPostChanged }: { post: SocialPost; token: string; colors: any; onClose: () => void; onPostChanged: (post: SocialPost) => void }) {
+  const [comments, setComments] = useState<SocialComment[]>([]);
+  const [text, setText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    void getPostComments(token, post.id)
+      .then((items) => { if (mounted) setComments(items); })
+      .catch(() => { if (mounted) setComments([]); })
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
+  }, [post.id, token]);
+
+  async function submit() {
+    const content = text.trim();
+    if (!content || sending) return;
+    setSending(true);
+    try {
+      const comment = await createPostComment(token, post.id, content);
+      setComments((items) => [...items, comment]);
+      setText('');
+      onPostChanged({ ...post, counts: { ...post.counts, comments: post.counts.comments + 1 } });
+    } catch (error) {
+      Alert.alert('Comment not posted', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView behavior="padding" style={styles.sheetOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={[styles.commentsSheet, { backgroundColor: colors.card }]}>
+        <View style={styles.sheetTop}>
+          <View>
+            <Text style={[styles.sheetEyebrow, { color: colors.mutedForeground }]}>SOCIAL POST</Text>
+            <Text style={[styles.notificationsTitle, { color: colors.foreground }]}>Comments</Text>
+          </View>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        {loading ? <ActivityIndicator color={colors.primary} style={{ margin: 34 }} /> : (
+          <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
+            {comments.length === 0 ? <Text style={[styles.profilePostsEmpty, { color: colors.mutedForeground }]}>Be the first person to comment.</Text> : comments.map((comment) => (
+              <View key={comment.id} style={[styles.commentRow, { borderBottomColor: colors.border }]}>
+                <Avatar name={comment.author.name} size={34} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.commentAuthor, { color: colors.foreground }]}>{comment.author.name} <Text style={{ color: colors.mutedForeground, fontWeight: '400' }}>@{comment.author.username}</Text></Text>
+                  <Text style={[styles.commentContent, { color: colors.foreground }]}>{comment.content}</Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+        <View style={[styles.commentComposer, { borderTopColor: colors.border }]}>
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            placeholder="Write a comment…"
+            placeholderTextColor={colors.mutedForeground}
+            multiline
+            maxLength={1000}
+            style={[styles.commentInput, { color: colors.foreground, backgroundColor: colors.muted }]}
+            accessibilityLabel="Comment"
+          />
+          <Pressable onPress={() => void submit()} disabled={!text.trim() || sending} style={{ opacity: !text.trim() || sending ? 0.4 : 1 }} accessibilityRole="button" accessibilityLabel="Post comment">
+            <Ionicons name="send" size={22} color={colors.primary} />
+          </Pressable>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -1598,6 +1693,7 @@ const styles = StyleSheet.create({
   peopleSearchHint: { fontSize: 11, marginTop: 8, marginBottom: 10 },
   peopleSearchRow: { minHeight: 70, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', gap: 11 },
   notificationsSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, minHeight: WINDOW_HEIGHT * 0.64, maxHeight: WINDOW_HEIGHT * 0.82, padding: 20 },
+  commentsSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, minHeight: WINDOW_HEIGHT * 0.48, maxHeight: WINDOW_HEIGHT * 0.78, padding: 20 },
   sheetTop: { width: '100%', minHeight: 45, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetEyebrow: { fontSize: 10, fontWeight: '600', letterSpacing: 1.4 },
   socialProfileName: { fontSize: 23, fontWeight: '600', marginTop: 13 },
@@ -1617,6 +1713,11 @@ const styles = StyleSheet.create({
   unreadDot: { width: 8, height: 8, borderRadius: 4 },
   notificationEmpty: { alignItems: 'center', paddingHorizontal: 30, paddingTop: 55, gap: 9 },
   notificationEmptyTitle: { fontSize: 17, fontWeight: '600' },
+  commentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  commentAuthor: { fontSize: 13, fontWeight: '700' },
+  commentContent: { fontSize: 14, lineHeight: 19, marginTop: 3 },
+  commentComposer: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  commentInput: { flex: 1, minHeight: 42, maxHeight: 96, borderRadius: 19, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14 },
   serverStoryViewer: { flex: 1, justifyContent: 'space-between' },
   serverStoryShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.32)' },
   serverStoryTop: { paddingTop: 54, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 10 },
