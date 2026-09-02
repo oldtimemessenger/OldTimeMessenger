@@ -10,7 +10,7 @@ import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { typography } from '@/constants/typography';
 import { useQueryClient } from '@tanstack/react-query';
-import { getStories, type Story } from '@/lib/social-api';
+import { acceptMessageRequest, declineMessageRequest, getMessageRequests, getStories, type MessageRequest, type Story } from '@/lib/social-api';
 import { presenceLabel } from '@/lib/presence';
 
 function timeLabel(timestamp?: number) {
@@ -37,6 +37,9 @@ export default function ChatsScreen() {
   const [contactDiscoveryState, setContactDiscoveryState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [pendingMedia, setPendingMedia] = useState<{ uri: string; type: 'image' | 'video'; fit?: 'contain' | 'cover' } | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [showMessageRequests, setShowMessageRequests] = useState(false);
+  const [messageRequests, setMessageRequests] = useState<MessageRequest[]>([]);
+  const [messageRequestsLoading, setMessageRequestsLoading] = useState(false);
   const [contactsPermission, setContactsPermission] = useState<{ granted: boolean; status: string; canAskAgain: boolean } | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session), refetchInterval: 6000, queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
@@ -58,6 +61,31 @@ export default function ChatsScreen() {
       .then((page) => { if (active) setStories(page.items); })
       .catch(() => { if (active) setStories([]); });
     return () => { active = false; };
+  }, [session?.authToken]);
+
+  useEffect(() => {
+    if (!session?.authToken) {
+      setMessageRequests([]);
+      return;
+    }
+    let active = true;
+    const loadRequests = async () => {
+      setMessageRequestsLoading(true);
+      try {
+        const result = await getMessageRequests(session.authToken, 'incoming');
+        if (active) setMessageRequests(result.items.filter((item) => item.status === 'pending'));
+      } catch {
+        if (active) setMessageRequests([]);
+      } finally {
+        if (active) setMessageRequestsLoading(false);
+      }
+    };
+    void loadRequests();
+    const interval = setInterval(() => void loadRequests(), 6000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [session?.authToken]);
 
   useEffect(() => {
@@ -153,7 +181,10 @@ export default function ChatsScreen() {
 
   const renderChatItem = ({ item }: { item: InboxItem }) => (
     <Pressable onPress={() => router.push(`/chat/${item.chat.id}`)} style={({ pressed }) => [styles.chatRow, { borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 }]}>
-      <Avatar name={item.contact.name} />
+      <View style={styles.avatarWrap}>
+        <Avatar name={item.contact.name} />
+        {item.contact.online ? <View style={[styles.onlineDot, { backgroundColor: colors.primary, borderColor: colors.card }]} /> : null}
+      </View>
       <View style={styles.chatBody}>
         <View style={styles.chatTop}>
           <Text style={[styles.chatName, { color: colors.foreground }]} numberOfLines={1}>{item.contact.name}</Text>
@@ -167,7 +198,7 @@ export default function ChatsScreen() {
     </Pressable>
   );
 
-  return <Screen title="Chats" left={<IconButton name="albums-outline" label="Open stories" onPress={() => router.push('/(tabs)/updates-screen')} />} right={<View style={styles.headerActions}><IconButton name="person-add-outline" label="Start a new message" onPress={() => setShowNew(true)} /><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="add" label="Create story or send media" onPress={() => setShowCreate(true)} /></View>}>
+  return <Screen title="Messages" left={<IconButton name="albums-outline" label="Open stories" onPress={() => router.push('/(tabs)/updates-screen')} />} right={<View style={styles.headerActions}><IconButton name="person-add-outline" label="Start a new message" onPress={() => setShowNew(true)} /><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="add" label="Create story or send media" onPress={() => setShowCreate(true)} /></View>}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.storyDrawer, { borderBottomColor: colors.border, backgroundColor: colors.card }]} contentContainerStyle={styles.storyDrawerContent}>
       <Pressable onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel="Add your story">
         <StoryAvatar name={profileName} color={colors.muted} uri={profile.avatarUri} add />
@@ -186,6 +217,15 @@ export default function ChatsScreen() {
         <TextInput value={search} onChangeText={setSearch} placeholder="Search" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} clearButtonMode="while-editing" />
       </View>
     </View>
+    <Pressable onPress={() => setShowMessageRequests(true)} style={({ pressed }) => [styles.requestsRow, { backgroundColor: colors.card, borderBottomColor: colors.border, opacity: pressed ? 0.72 : 1 }]} accessibilityRole="button" accessibilityLabel="Open message requests">
+      <View style={[styles.requestsIcon, { backgroundColor: colors.secondary }]}><Ionicons name="mail-unread-outline" size={19} color={colors.primary} /></View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.requestsTitle, { color: colors.foreground }]}>Message requests</Text>
+        <Text style={[styles.requestsSubtitle, { color: colors.mutedForeground }]}>{messageRequestsLoading ? 'Checking for requests…' : messageRequests.length > 0 ? `${messageRequests.length} waiting for your response` : 'No pending requests'}</Text>
+      </View>
+      {messageRequests.length > 0 ? <View style={[styles.requestsBadge, { backgroundColor: colors.primary }]}><Text style={styles.badgeText}>{messageRequests.length}</Text></View> : null}
+      <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+    </Pressable>
     {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '600', fontSize: 16 }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '600', fontSize: 16 }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100 }} renderItem={renderChatItem} />}
     <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
       <View style={styles.modalShade}>
@@ -216,7 +256,7 @@ export default function ChatsScreen() {
               {contactMatches.length > 0 ? <Text style={[styles.directoryLabel, { color: colors.mutedForeground }]}>FROM YOUR CONTACTS</Text> : null}
               {contactMatches.map((user) => (
                 <Pressable key={`contact-${user.id}`} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
-                  <Avatar name={user.name} size={42} />
+                  <View style={styles.avatarWrap}><Avatar name={user.name} size={42} />{user.online ? <View style={[styles.onlineDotSmall, { backgroundColor: colors.primary, borderColor: colors.card }]} /> : null}</View>
                   <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: colors.primary }]}>On Old Time · {presenceLabel(user)}</Text></View>
                   <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.primary} />
                 </Pressable>
@@ -224,7 +264,7 @@ export default function ChatsScreen() {
               <Text style={[styles.directoryLabel, { color: colors.mutedForeground }]}>ON OLD TIME</Text>
               {directoryUsers.length ? directoryUsers.map((user) => (
                 <Pressable key={user.id} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
-                  <Avatar name={user.name} size={42} />
+                  <View style={styles.avatarWrap}><Avatar name={user.name} size={42} />{user.online ? <View style={[styles.onlineDotSmall, { backgroundColor: colors.primary, borderColor: colors.card }]} /> : null}</View>
                   <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: user.online ? colors.primary : colors.mutedForeground }]}>{presenceLabel(user)}</Text></View>
                   <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.primary} />
                 </Pressable>
@@ -239,6 +279,30 @@ export default function ChatsScreen() {
           </ScrollView>
         </View>
       </View>
+    </Modal>
+
+    <Modal visible={showMessageRequests} transparent animationType="slide" onRequestClose={() => setShowMessageRequests(false)}>
+      <InboxMessageRequestsSheet
+        requests={messageRequests}
+        loading={messageRequestsLoading}
+        colors={colors}
+        onClose={() => setShowMessageRequests(false)}
+        onAccept={(request) => {
+          if (!session?.authToken) return;
+          void acceptMessageRequest(session.authToken, request.id).then(({ chatId }) => {
+            setMessageRequests((items) => items.filter((item) => item.id !== request.id));
+            setShowMessageRequests(false);
+            void inbox.refetch();
+            router.push(`/chat/${chatId}`);
+          }).catch((error) => Alert.alert('Could not accept request', error instanceof Error ? error.message : 'Please try again.'));
+        }}
+        onDecline={(request) => {
+          if (!session?.authToken) return;
+          void declineMessageRequest(session.authToken, request.id).then(() => {
+            setMessageRequests((items) => items.filter((item) => item.id !== request.id));
+          }).catch((error) => Alert.alert('Could not decline request', error instanceof Error ? error.message : 'Please try again.'));
+        }}
+      />
     </Modal>
 
      <Modal visible={showCreate} transparent animationType="slide" onRequestClose={() => setShowCreate(false)}>
@@ -299,8 +363,73 @@ export default function ChatsScreen() {
   </Screen>;
 }
 
+function InboxMessageRequestsSheet({ requests, loading, colors, onClose, onAccept, onDecline }: { requests: MessageRequest[]; loading: boolean; colors: any; onClose: () => void; onAccept: (request: MessageRequest) => void; onDecline: (request: MessageRequest) => void }) {
+  return (
+    <View style={styles.modalShade}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={[styles.requestSheet, { backgroundColor: colors.card }]}>
+        <View style={styles.sheetHeader}>
+          <View>
+            <Text style={[styles.sheetEyebrow, { color: colors.mutedForeground }]}>PRIVATE INBOX</Text>
+            <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Message requests</Text>
+          </View>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        {loading ? <LoadingState /> : requests.length === 0 ? (
+          <View style={styles.requestsEmpty}>
+            <Ionicons name="mail-open-outline" size={28} color={colors.primary} />
+            <Text style={[styles.requestsEmptyTitle, { color: colors.foreground }]}>No pending requests</Text>
+            <Text style={[styles.requestsEmptyText, { color: colors.mutedForeground }]}>New conversations stay here until you accept them.</Text>
+          </View>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+            {requests.map((request) => (
+              <View key={request.id} style={[styles.requestRow, { borderBottomColor: colors.border }]}>
+                <View style={styles.avatarWrap}>
+                  <Avatar name={request.sender.name} size={44} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.requestName, { color: colors.foreground }]}>{request.sender.name}</Text>
+                  <Text style={[styles.requestMeta, { color: colors.mutedForeground }]}>@{request.sender.username} wants to message you</Text>
+                  <View style={styles.requestActions}>
+                    <Pressable onPress={() => onAccept(request)} style={[styles.requestAccept, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel={`Accept message request from ${request.sender.name}`}>
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Accept</Text>
+                    </Pressable>
+                    <Pressable onPress={() => onDecline(request)} style={[styles.requestDecline, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={`Decline message request from ${request.sender.name}`}>
+                      <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 13 }}>Decline</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  avatarWrap: { position: 'relative' },
+  onlineDot: { position: 'absolute', width: 13, height: 13, borderRadius: 7, right: 0, bottom: 0, borderWidth: 2 },
+  onlineDotSmall: { position: 'absolute', width: 11, height: 11, borderRadius: 6, right: -1, bottom: -1, borderWidth: 2 },
+  requestsRow: { minHeight: 63, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderBottomWidth: StyleSheet.hairlineWidth },
+  requestsIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  requestsTitle: { fontSize: 15, fontWeight: '700' },
+  requestsSubtitle: { fontSize: 12, marginTop: 2 },
+  requestsBadge: { minWidth: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  requestSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, minHeight: 340, maxHeight: '82%', padding: 20 },
+  sheetEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginBottom: 2 },
+  requestsEmpty: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 56, gap: 8 },
+  requestsEmptyTitle: { fontSize: 17, fontWeight: '700' },
+  requestsEmptyText: { fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  requestRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  requestName: { fontSize: 14, fontWeight: '700' },
+  requestMeta: { fontSize: 12, marginTop: 3 },
+  requestActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  requestAccept: { minHeight: 36, borderRadius: 18, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  requestDecline: { minHeight: 36, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   storyDrawer: { maxHeight: 98, borderBottomWidth: StyleSheet.hairlineWidth },
   storyDrawerContent: { paddingHorizontal: 14, paddingVertical: 11, gap: 14 },
   storyItem: { width: 62, alignItems: 'center' },

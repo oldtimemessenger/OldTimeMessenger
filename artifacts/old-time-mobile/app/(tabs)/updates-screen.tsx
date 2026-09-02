@@ -308,7 +308,7 @@ export default function UpdatesScreen() {
       <Screen title="Updates" left={<IconButton name="albums-outline" label="Open stories" onPress={openStatusShortcut} />} right={
         <View style={styles.socialHeaderActions}>
           <View>
-            <IconButton name="mail-outline" label="Messages" onPress={() => void openMessageRequests()} />
+            <IconButton name="mail-outline" label="Open messages" onPress={() => router.push('/(tabs)')} />
             {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
           </View>
           <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
