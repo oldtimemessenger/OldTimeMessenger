@@ -1,7 +1,9 @@
-- [OpenAPI codegen compatibility](openapi-codegen-compat.md) — this workspace’s Orval output needs a small post-codegen compatibility adjustment with its pinned Zod version.
-- [Artifact workflow ports](artifact-workflow-ports.md) — artifact Vite builds require injected PORT and BASE_PATH; diagnose listeners before repeating managed restarts.
-- [Updates news boundaries](updates-news-boundaries.md) — personalization may learn locally now, but provider ingestion must remain labeled inactive until licensing and rights controls exist.
-- [Mobile object uploads](mobile-object-uploads.md) — this workspace’s storage sidecar can stream objects but cannot create V4 signed URLs; enforce uploads through the API.
-- [Social media authorization](social-media-authorization.md) — audience and exclusion checks must protect direct object reads as well as feed/story discovery.
-- [GitHub connector payload filtering](github-connector-payload-filtering.md) — authenticated repository writes may be filtered by payload; verify remote trees after connector-based syncs.
-- [EAS monorepo base directory](eas-monorepo-base-directory.md) — Expo GitHub builds must target the mobile artifact directory, where its EAS config belongs.
+- [Expo monorepo module identity](expo-monorepo-module-identity.md) — Metro must resolve React and context-owning libraries from one workspace instance.
+- [Expo map SDK compatibility](expo-map-sdk-compatibility.md) — keep the mobile map package on the Expo Go-compatible pin even when generic doctor advice differs.
+- [Story viewer content model](story-viewer-content-model.md) — sequence discriminated viewer items so sponsored content can be inserted without changing navigation.
+- [GitHub sync identity](github-sync-identity.md) — the connected repository is singular `oldtimemessenger/OldTimeMessenger`; the workspace Git remote is backup-only.
+- [Mobile dev API routing](mobile-dev-api-routing.md) — preview builds may inherit a stale production API domain, and local OTP retries can hit resend throttles.
+- [Development readiness checks](development-readiness-checks.md) — use healthz for local smoke tests; readyz intentionally requires production-only provider configuration.
+- [Generated client regeneration](generated-client-regeneration.md) — restart live Metro/Vite workflows after clean API codegen to avoid transient missing-module errors.
+- [Updates and Community separation](updates-feed-separation.md) — Updates is media-only; text and mixed social posts belong in Community and profiles.
+- [Private navigation boundaries](private-navigation-boundaries.md) — Story viewing stays modal/standalone; Updates Map actions use the visible Map tab, never hidden tab routes.

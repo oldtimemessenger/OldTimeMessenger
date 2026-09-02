@@ -15,6 +15,7 @@ import {
 import { z } from "@workspace/api-zod";
 import {
   db,
+  chatNotesTable,
   chatMessageRequestsTable,
   chatParticipantsTable,
   chatsTable,
@@ -58,6 +59,10 @@ const reportReasons = z.enum([
   "other",
 ]);
 
+const noteInput = z.object({
+  content: z.string().trim().min(1).max(280),
+});
+
 const postInput = z.object({
   content: z.string().trim().max(2_000).default(""),
   kind: postKind.default("text"),
@@ -92,6 +97,7 @@ const storyVisibility = z.enum(["public", "friends", "followers", "close_friends
 const storyInput = z.object({
   content: z.string().trim().max(2_000).default(""),
   visibility: storyVisibility.default("friends"),
+  taggedUserIds: z.array(z.number().int().positive()).max(20).default([]),
   media: z.object({
     type: z.enum(["image", "video"]),
     objectPath: z.string().min(1).max(500),
@@ -309,6 +315,20 @@ async function canSeePost(
   return Boolean(reciprocal);
 }
 
+async function areFriends(viewerId: number, otherUserId: number): Promise<boolean> {
+  if (viewerId === otherUserId) return true;
+  const rows = await db
+    .select({ followerId: socialFollowsTable.followerId, followingId: socialFollowsTable.followingId })
+    .from(socialFollowsTable)
+    .where(
+      or(
+        and(eq(socialFollowsTable.followerId, viewerId), eq(socialFollowsTable.followingId, otherUserId)),
+        and(eq(socialFollowsTable.followerId, otherUserId), eq(socialFollowsTable.followingId, viewerId)),
+      ),
+    );
+  return rows.length === 2;
+}
+
 async function serializePosts(posts: SocialPost[], viewerId: number) {
   if (!posts.length) return [];
   const authorIds = [...new Set(posts.map((post) => post.authorId))];
@@ -443,7 +463,26 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
 router.get("/social/feed", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   if (viewerId === null) return;
-  const mode = req.query.mode === "following" ? "following" : "for-you";
+  const mode = req.query.mode === "following"
+    ? "following"
+    : req.query.mode === "community"
+      ? "community"
+      : "for-you";
+  const communityFilter = req.query.filter === "following"
+    ? "following"
+    : req.query.filter === "interests"
+      ? "interests"
+      : "friends";
+  const interestTerms = typeof req.query.interests === "string"
+    ? req.query.interests
+      .split(",")
+      .flatMap((term) => {
+        const normalized = term.trim().toLowerCase().replace(/[-_]/g, " ");
+        return [normalized, normalized.split(".").at(-1) ?? normalized];
+      })
+      .filter((term) => term.length > 1)
+    : [];
+  const mediaOnly = req.query.mediaOnly === "true";
   const limit = parseLimit(req.query.limit);
   const cursor = req.query.cursor ? Number(req.query.cursor) : Number.POSITIVE_INFINITY;
   if (!Number.isFinite(cursor) && cursor !== Number.POSITIVE_INFINITY) {
@@ -468,7 +507,14 @@ router.get("/social/feed", async (req, res): Promise<void> => {
     .limit(Math.min(100, limit * 4));
   const visible: SocialPost[] = [];
   for (const post of candidates) {
+    if (mediaOnly && (!Array.isArray(post.media) || !post.media.some((item) => item?.type === "image" || item?.type === "video"))) continue;
     if (mode === "following" && !following.has(post.authorId)) continue;
+    if (mode === "community" && communityFilter === "following" && !following.has(post.authorId)) continue;
+    if (mode === "community" && communityFilter === "friends" && !(await areFriends(viewerId, post.authorId))) continue;
+    if ((mode === "community" || communityFilter === "interests") && communityFilter === "interests") {
+      const haystack = [post.content, post.linkTitle, post.linkDescription].filter(Boolean).join(" ").toLowerCase();
+      if (!interestTerms.length || !interestTerms.some((term) => haystack.includes(term))) continue;
+    }
     if (muted.has(post.authorId)) continue;
     if (await canSeePost(viewerId, post, following, blocked)) visible.push(post);
   }
@@ -1419,16 +1465,21 @@ async function serializeStories(stories: Story[], viewerId: number) {
   if (!stories.length) return [];
   const storyIds = stories.map((story) => story.id);
   const authorIds = [...new Set(stories.map((story) => story.authorId))];
-  const [authors, views, reactions, mine] = await Promise.all([
+  const taggedIds = [...new Set(stories.flatMap((story) => story.taggedUserIds ?? []))];
+  const [authors, views, reactions, mine, myReactions, taggedUsers] = await Promise.all([
     db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(inArray(usersTable.id, authorIds)),
     db.select({ storyId: socialStoryViewersTable.storyId, count: sql<number>`count(*)` }).from(socialStoryViewersTable).where(inArray(socialStoryViewersTable.storyId, storyIds)).groupBy(socialStoryViewersTable.storyId),
     db.select({ storyId: socialStoryReactionsTable.storyId, count: sql<number>`count(*)` }).from(socialStoryReactionsTable).where(inArray(socialStoryReactionsTable.storyId, storyIds)).groupBy(socialStoryReactionsTable.storyId),
     db.select({ storyId: socialStoryViewersTable.storyId }).from(socialStoryViewersTable).where(and(eq(socialStoryViewersTable.viewerId, viewerId), inArray(socialStoryViewersTable.storyId, storyIds))),
+    db.select({ storyId: socialStoryReactionsTable.storyId }).from(socialStoryReactionsTable).where(and(eq(socialStoryReactionsTable.userId, viewerId), inArray(socialStoryReactionsTable.storyId, storyIds))),
+    taggedIds.length ? db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(inArray(usersTable.id, taggedIds)) : Promise.resolve([]),
   ]);
   const authorById = new Map(authors.map((author) => [author.id, author]));
   const viewsById = new Map(views.map((row) => [row.storyId, Number(row.count)]));
   const reactionsById = new Map(reactions.map((row) => [row.storyId, Number(row.count)]));
   const viewed = new Set(mine.map((row) => row.storyId));
+  const reacted = new Set(myReactions.map((row) => row.storyId));
+  const taggedById = new Map(taggedUsers.map((user) => [user.id, user]));
   return stories.map((story) => {
     const author = authorById.get(story.authorId);
     return {
@@ -1436,7 +1487,8 @@ async function serializeStories(stories: Story[], viewerId: number) {
       createdAt: story.createdAt, expiresAt: story.expiresAt,
       location: story.latitude !== null && story.longitude !== null ? { latitude: story.latitude, longitude: story.longitude } : null,
       author: author ? publicUser(author) : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}`, bio: "" },
-      viewer: { viewed: viewed.has(story.id), isOwner: story.authorId === viewerId },
+      taggedUsers: (story.taggedUserIds ?? []).map((id) => taggedById.get(id)).filter(Boolean).map((user) => publicUser(user!)),
+      viewer: { viewed: viewed.has(story.id), isOwner: story.authorId === viewerId, reacted: reacted.has(story.id) },
       counts: { views: viewsById.get(story.id) ?? 0, reactions: reactionsById.get(story.id) ?? 0 },
     };
   });
@@ -1467,6 +1519,127 @@ router.get("/social/stories", async (req, res): Promise<void> => {
   const visible: Story[] = [];
   for (const story of candidates) if (await canSeeStory(viewerId, story)) visible.push(story);
   res.json({ items: await serializeStories(visible, viewerId) });
+});
+
+type ChatNote = typeof chatNotesTable.$inferSelect;
+
+async function serializeNotes(notes: ChatNote[]) {
+  if (!notes.length) return [];
+  const owners = await db
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio })
+    .from(usersTable)
+    .where(inArray(usersTable.id, notes.map((note) => note.ownerId)));
+  const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
+  return notes.map((note) => ({
+    id: note.id,
+    content: note.content,
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt,
+    expiresAt: note.expiresAt,
+    owner: ownerById.get(note.ownerId)
+      ? publicUser(ownerById.get(note.ownerId)!)
+      : { id: note.ownerId, name: "Old Time user", username: `user${note.ownerId}`, bio: "" },
+    viewer: { isOwner: false },
+  }));
+}
+
+router.get("/social/notes", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const now = Date.now();
+  const surface = req.query.surface === "chat" ? "chat" : "messages";
+  const candidates = await db
+    .select()
+    .from(chatNotesTable)
+    .where(and(
+      eq(chatNotesTable.deleted, false),
+      surface === "chat"
+        ? gt(chatNotesTable.expiresAt, now)
+        : or(gt(chatNotesTable.expiresAt, now), eq(chatNotesTable.ownerId, viewerId)),
+    ))
+    .orderBy(desc(chatNotesTable.updatedAt))
+    .limit(100);
+  const visible: ChatNote[] = [];
+  for (const note of candidates) {
+    if (note.ownerId !== viewerId && (await isBlocked(viewerId, note.ownerId) || await isExcludedFromSharing(note.ownerId, viewerId))) continue;
+    visible.push(note);
+  }
+  const items = await serializeNotes(visible);
+  res.json({
+    items: items.map((item) => ({ ...item, viewer: { isOwner: item.owner.id === viewerId } })),
+  });
+});
+
+router.post("/social/notes", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const parsed = noteInput.safeParse(req.body);
+  if (viewerId === null) return;
+  if (!parsed.success) {
+    res.status(400).json({ error: "A note must contain 1–280 characters." });
+    return;
+  }
+  const now = Date.now();
+  const expiresAt = now + 24 * 60 * 60 * 1000;
+  const [existing] = await db
+    .select()
+    .from(chatNotesTable)
+    .where(and(eq(chatNotesTable.ownerId, viewerId), eq(chatNotesTable.deleted, false)))
+    .orderBy(desc(chatNotesTable.updatedAt))
+    .limit(1);
+  let note: ChatNote;
+  if (existing) {
+    [note] = await db.update(chatNotesTable)
+      .set({ content: parsed.data.content, updatedAt: now, expiresAt })
+      .where(eq(chatNotesTable.id, existing.id))
+      .returning();
+  } else {
+    [note] = await db.insert(chatNotesTable)
+      .values({ ownerId: viewerId, content: parsed.data.content, createdAt: now, updatedAt: now, expiresAt })
+      .returning();
+  }
+  const [serialized] = await serializeNotes([note]);
+  res.status(201).json({ ...serialized, viewer: { isOwner: true } });
+});
+
+router.patch("/social/notes/:noteId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const noteId = parseId(req.params.noteId);
+  const parsed = noteInput.safeParse(req.body);
+  if (viewerId === null) return;
+  if (noteId === null || !parsed.success) {
+    res.status(400).json({ error: "A valid note and note text are required." });
+    return;
+  }
+  const now = Date.now();
+  const [note] = await db.update(chatNotesTable)
+    .set({ content: parsed.data.content, updatedAt: now, expiresAt: now + 24 * 60 * 60 * 1000 })
+    .where(and(eq(chatNotesTable.id, noteId), eq(chatNotesTable.ownerId, viewerId), eq(chatNotesTable.deleted, false)))
+    .returning();
+  if (!note) {
+    res.status(404).json({ error: "Note not found or not owned by you." });
+    return;
+  }
+  const [serialized] = await serializeNotes([note]);
+  res.json({ ...serialized, viewer: { isOwner: true } });
+});
+
+router.delete("/social/notes/:noteId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const noteId = parseId(req.params.noteId);
+  if (viewerId === null) return;
+  if (noteId === null) {
+    res.status(400).json({ error: "A valid note ID is required." });
+    return;
+  }
+  const [deleted] = await db.update(chatNotesTable)
+    .set({ deleted: true, updatedAt: Date.now() })
+    .where(and(eq(chatNotesTable.id, noteId), eq(chatNotesTable.ownerId, viewerId), eq(chatNotesTable.deleted, false)))
+    .returning({ id: chatNotesTable.id });
+  if (!deleted) {
+    res.status(404).json({ error: "Note not found or not owned by you." });
+    return;
+  }
+  res.json({ success: true });
 });
 
 router.get("/social/stories/nearby", async (req, res): Promise<void> => {
@@ -1507,6 +1680,12 @@ router.post("/social/stories", async (req, res): Promise<void> => {
   }
   const input = parsed.data;
   const now = Date.now();
+  const taggedUserIds = [...new Set(input.taggedUserIds)].filter((id) => id !== viewerId);
+  const taggedUsers = taggedUserIds.length
+    ? await db.select({ id: usersTable.id }).from(usersTable).where(inArray(usersTable.id, taggedUserIds))
+    : [];
+  const tagAccess = await Promise.all(taggedUsers.map(async (user) => ({ id: user.id, allowed: !(await isBlocked(viewerId, user.id)) })));
+  const validTaggedUserIds = tagAccess.filter((user) => user.allowed).map((user) => user.id);
   const expiresAt = input.expiresAt ?? now + 24 * 60 * 60 * 1000;
   if (expiresAt <= now || expiresAt > now + 7 * 24 * 60 * 60 * 1000) {
     res.status(400).json({ error: "Story expiry must be in the next seven days." }); return;
@@ -1545,7 +1724,7 @@ router.post("/social/stories", async (req, res): Promise<void> => {
     [created] = await db.transaction(async (tx) => {
       const inserted = await tx.insert(socialStoriesTable).values({
         authorId: viewerId, kind: input.media?.type ?? "text", content: input.content,
-         visibility: input.visibility, media: input.media ?? null,
+          visibility: input.visibility, taggedUserIds: validTaggedUserIds, media: input.media ?? null,
          latitude: input.location?.latitude ?? null, longitude: input.location?.longitude ?? null,
          createdAt: now, expiresAt,
       }).returning();
@@ -1562,6 +1741,15 @@ router.post("/social/stories", async (req, res): Promise<void> => {
     if (claimedUploadId) await db.update(uploadSlotsTable).set({ status: "uploaded" })
       .where(and(eq(uploadSlotsTable.id, claimedUploadId), eq(uploadSlotsTable.status, "committing")));
     res.status(500).json({ error: "Unable to publish story." }); return;
+  }
+  if (validTaggedUserIds.length) {
+    await Promise.all(validTaggedUserIds.map((recipientId) => db.insert(socialNotificationsTable).values({
+      recipientId,
+      actorId: viewerId,
+      type: "story_mention",
+      storyId: created.id,
+      createdAt: now,
+    })));
   }
   res.status(201).json((await serializeStories([created], viewerId))[0]);
 });
@@ -1599,7 +1787,31 @@ router.post("/social/stories/:storyId/replies", async (req, res): Promise<void> 
   const parsed = storyReplyInput.safeParse(req.body); if (!parsed.success) { res.status(400).json({ error: "A valid reply is required." }); return; }
   const [reply] = await db.insert(socialStoryRepliesTable).values({ storyId: access.story.id, authorId: access.viewerId, content: parsed.data.content, createdAt: Date.now() }).returning();
   if (access.story.authorId !== access.viewerId) await db.insert(socialNotificationsTable).values({ recipientId: access.story.authorId, actorId: access.viewerId, type: "story_reply", storyId: access.story.id, replyId: reply.id, createdAt: Date.now() });
-  res.status(201).json(reply);
+  const [author] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(eq(usersTable.id, access.viewerId)).limit(1);
+  res.status(201).json({ ...reply, author: author ? publicUser(author) : { id: access.viewerId, name: "Old Time user", username: `user${access.viewerId}`, bio: "" } });
+});
+router.get("/social/stories/:storyId/replies", async (req, res): Promise<void> => {
+  const access = await accessibleStory(req, res); if (!access) return;
+  const replies = await db
+    .select({
+      id: socialStoryRepliesTable.id,
+      storyId: socialStoryRepliesTable.storyId,
+      authorId: socialStoryRepliesTable.authorId,
+      content: socialStoryRepliesTable.content,
+      createdAt: socialStoryRepliesTable.createdAt,
+      author: {
+        id: usersTable.id,
+        name: usersTable.name,
+        username: usersTable.username,
+        bio: usersTable.bio,
+      },
+    })
+    .from(socialStoryRepliesTable)
+    .innerJoin(usersTable, eq(usersTable.id, socialStoryRepliesTable.authorId))
+    .where(and(eq(socialStoryRepliesTable.storyId, access.story.id), eq(socialStoryRepliesTable.deleted, false)))
+    .orderBy(asc(socialStoryRepliesTable.createdAt))
+    .limit(200);
+  res.json({ items: replies.map((reply) => ({ ...reply, author: publicUser(reply.author) })) });
 });
 router.get("/social/stories/:storyId/viewers", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
