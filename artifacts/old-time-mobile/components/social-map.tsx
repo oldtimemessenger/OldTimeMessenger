@@ -9,6 +9,7 @@ export default function SocialMap({
   region,
   pins,
   stories,
+  currentEventRooms = [],
   selectedPinId,
   loading,
   colors,
@@ -16,6 +17,7 @@ export default function SocialMap({
   onCreate,
   onSelectPin,
   onSelectStory,
+  onSelectCurrentEventRoom,
   onAreaPress,
 }: SocialMapProps) {
   if (!region || !center) {
@@ -58,6 +60,21 @@ export default function SocialMap({
         const positions = [{ right: 100, top: 245 }, { left: 90, top: 120 }, { left: 210, top: 390 }, { right: 45, top: 455 }, { left: 35, top: 330 }];
         return <Pressable key={story.id} onPress={() => onSelectStory(story)} style={[styles.storyMarker, positions[index]]}><StoryAvatar name={story.author.name} size={48} color={colors.primary} viewed={story.viewer.viewed} /></Pressable>;
       })}
+      {currentEventRooms.filter((room) => room.latitude !== null && room.longitude !== null).slice(0, 5).map((room, index) => {
+        const positions = [{ left: 110, top: 205 }, { right: 135, top: 165 }, { left: 220, top: 285 }, { right: 75, top: 390 }, { left: 35, top: 430 }];
+        return (
+          <Pressable
+            key={`current-event-${room.id}`}
+            onPress={() => onSelectCurrentEventRoom?.(room)}
+            accessibilityRole="button"
+            accessibilityLabel={`Join Current Events room ${room.title}`}
+            style={[styles.eventMarker, positions[index], { backgroundColor: colors.primary }]}
+          >
+            <Ionicons name="mic" size={17} color={colors.primaryForeground} />
+            <View style={styles.eventLiveDot} />
+          </Pressable>
+        );
+      })}
       <View style={styles.controls}>
         <Pressable accessibilityLabel="Recenter map" onPress={onLocate} style={[styles.control, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Ionicons name={loading ? 'hourglass-outline' : 'locate'} size={21} color={colors.primary} />
@@ -82,4 +99,6 @@ const styles = StyleSheet.create({
   control: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   pinMarker: { position: 'absolute', width: 36, height: 36, borderRadius: 18, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center' },
   storyMarker: { position: 'absolute' },
+  eventMarker: { position: 'absolute', width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, elevation: 4 },
+  eventLiveDot: { position: 'absolute', width: 9, height: 9, borderRadius: 5, backgroundColor: '#EF4444', right: -2, top: -2, borderWidth: 1.5, borderColor: '#fff' },
 });

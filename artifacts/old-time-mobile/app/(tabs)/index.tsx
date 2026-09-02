@@ -12,6 +12,9 @@ import { typography } from '@/constants/typography';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStories, type Story } from '@/lib/social-api';
 import { presenceLabel } from '@/lib/presence';
+import { ServerStoryViewer } from '@/components/server-story-viewer';
+import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
+import { userStoryViewerItemId } from '@/components/story-viewer-content';
 
 function timeLabel(timestamp?: number) {
   if (!timestamp) return '';
@@ -37,6 +40,7 @@ export default function ChatsScreen() {
   const [contactDiscoveryState, setContactDiscoveryState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [pendingMedia, setPendingMedia] = useState<{ uri: string; type: 'image' | 'video'; fit?: 'contain' | 'cover' } | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [storyOpen, setStoryOpen] = useState<Story | null>(null);
   const [contactsPermission, setContactsPermission] = useState<{ granted: boolean; status: string; canAskAgain: boolean } | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session), refetchInterval: 6000, queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
@@ -90,6 +94,28 @@ export default function ChatsScreen() {
         Alert.alert('Chat unavailable', error instanceof Error ? error.message : `You cannot start a chat with ${user.name} yet.`);
       },
     });
+  }
+
+  function openStory(story: Story) {
+    setStoryOpen(story);
+  }
+
+  function openStories() {
+    const firstStory = stories[0];
+    if (firstStory) {
+      openStory(firstStory);
+      return;
+    }
+    router.navigate('/(tabs)/updates');
+  }
+
+  function openMyStory() {
+    const ownStory = stories.find((story) => story.viewer.isOwner);
+    if (ownStory) {
+      openStory(ownStory);
+      return;
+    }
+    router.navigate({ pathname: '/(tabs)/updates', params: { composeType: 'status' } });
   }
 
   function normalizePhone(value?: string) {
@@ -170,14 +196,14 @@ export default function ChatsScreen() {
     </Pressable>
   );
 
-  return <Screen title="Chats" left={<IconButton name="albums-outline" label="Open stories" onPress={() => router.push('/(tabs)/updates-screen')} />} right={<View style={styles.headerActions}><IconButton name="person-add-outline" label="Start a new message" onPress={() => setShowNew(true)} /><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="add" label="Create story or send media" onPress={() => setShowCreate(true)} /></View>}>
+  return <Screen title="Chats" left={<IconButton name="albums-outline" label="Open stories" onPress={openStories} />} right={<View style={styles.headerActions}><IconButton name="person-add-outline" label="Start a new message" onPress={() => setShowNew(true)} /><IconButton name="person-outline" label="Open profile" onPress={() => setShowProfile(true)} /><IconButton name="add" label="Create story or send media" onPress={() => setShowCreate(true)} /></View>}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.storyDrawer, { borderBottomColor: colors.border, backgroundColor: colors.card }]} contentContainerStyle={styles.storyDrawerContent}>
-      <Pressable onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel="Add your story">
+      <Pressable onPress={openMyStory} style={styles.storyItem} accessibilityRole="button" accessibilityLabel={stories.some((story) => story.viewer.isOwner) ? 'Open your story' : 'Add your story'}>
         <StoryAvatar name={profileName} color={colors.muted} uri={profile.avatarUri} add />
         <Text style={[styles.storyName, { color: colors.foreground }]}>My Story</Text>
       </Pressable>
       {stories.filter((story) => !story.viewer.isOwner).map((story) => (
-        <Pressable key={story.id} onPress={() => router.push('/(tabs)/updates-screen')} style={styles.storyItem} accessibilityRole="button" accessibilityLabel={`Open ${story.author.name}'s story`}>
+        <Pressable key={story.id} onPress={() => openStory(story)} style={styles.storyItem} accessibilityRole="button" accessibilityLabel={`Open ${story.author.name}'s story`}>
           <StoryAvatar name={story.author.name} color={colors.secondary} viewed={story.viewer.viewed} />
           <Text style={[styles.storyName, { color: colors.foreground }]} numberOfLines={1}>{story.author.name}</Text>
         </Pressable>
@@ -247,10 +273,10 @@ export default function ChatsScreen() {
      <Modal visible={showCreate} transparent animationType="slide" onRequestClose={() => setShowCreate(false)}>
        <View style={styles.modalShade}>
          <View style={[styles.sheet, { backgroundColor: colors.card }]}>
-           <View style={styles.sheetHeader}><View><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Create</Text><Text style={[styles.createHint, { color: colors.mutedForeground }]}>Camera first. You choose what happens next.</Text></View><IconButton name="close" onPress={() => setShowCreate(false)} /></View>
-           <Pressable onPress={() => { setShowCreate(false); router.push({ pathname: '/camera', params: { returnTo: 'status' } }); }} style={[styles.createChoice, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Create a story from the camera">
-             <View style={[styles.createChoiceIcon, { backgroundColor: colors.primary }]}><Ionicons name="add-circle-outline" size={22} color="#fff" /></View>
-             <View style={{ flex: 1 }}><Text style={[styles.createChoiceTitle, { color: colors.foreground }]}>Create a story</Text><Text style={[styles.createChoiceDetail, { color: colors.mutedForeground }]}>Take a photo or video and share it for 24 hours.</Text></View>
+           <View style={styles.sheetHeader}><View><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Create</Text><Text style={[styles.createHint, { color: colors.mutedForeground }]}>Stories stay in Updates. Camera is for media you send.</Text></View><IconButton name="close" onPress={() => setShowCreate(false)} /></View>
+           <Pressable onPress={() => { setShowCreate(false); router.replace({ pathname: '/(tabs)/updates', params: { composeType: 'status' } }); }} style={[styles.createChoice, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Create a story in Updates">
+             <View style={[styles.createChoiceIcon, { backgroundColor: colors.primary }]}><Ionicons name="color-wand-outline" size={22} color="#fff" /></View>
+             <View style={{ flex: 1 }}><Text style={[styles.createChoiceTitle, { color: colors.foreground }]}>Create a Story</Text><Text style={[styles.createChoiceDetail, { color: colors.mutedForeground }]}>Write a text Story or add a photo/video. It stays on your social side for 24 hours.</Text></View>
              <Ionicons name="chevron-forward" size={19} color={colors.mutedForeground} />
            </Pressable>
            <Pressable onPress={() => { setShowCreate(false); router.push({ pathname: '/camera', params: { returnTo: 'chat' } }); }} style={[styles.createChoice, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Create media to send to someone">
@@ -261,6 +287,17 @@ export default function ChatsScreen() {
          </View>
        </View>
      </Modal>
+
+    <Modal visible={storyOpen !== null} transparent animationType="fade" onRequestClose={() => setStoryOpen(null)}>
+      {storyOpen ? (
+        <ServerStoryViewer
+          items={buildStoryViewerItems(stories)}
+          initialItemId={userStoryViewerItemId(storyOpen.id)}
+          token={session?.authToken ?? ''}
+          onClose={() => setStoryOpen(null)}
+        />
+      ) : null}
+    </Modal>
 
      <Modal visible={showProfile} transparent animationType="slide" onRequestClose={() => setShowProfile(false)}>
       <View style={styles.profileOverlay}>

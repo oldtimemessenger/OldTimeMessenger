@@ -3,10 +3,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState, useRef, useEffect } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, Platform, PanResponder, Animated, Linking } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Platform, PanResponder, Animated, Linking, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { VideoSurface } from '@/components/video-surface';
+import { useApp } from '@/context/app-state';
+import { createNote } from '@/lib/social-api';
 
 const ZOOM_STOPS = [
   { label: '5×', value: 1 },
@@ -23,6 +25,7 @@ export default function CameraScreen() {
   }>();
   const insets = useSafeAreaInsets();
   const colors = useColors();
+  const { session } = useApp();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
@@ -31,6 +34,8 @@ export default function CameraScreen() {
   const [flash, setFlash] = useState<'off' | 'on' | 'auto'>('off');
   const [zoom, setZoom] = useState(0);
   const [captureMode, setCaptureMode] = useState<'picture' | 'video'>('picture');
+  const [cameraMode, setCameraMode] = useState<'photo' | 'video' | 'text'>('photo');
+  const [noteText, setNoteText] = useState('');
 
   const [preview, setPreview] = useState<{ uri: string, type: 'photo' | 'video' } | null>(null);
   const [contentFit, setContentFit] = useState<'contain' | 'cover'>('contain');
@@ -185,6 +190,21 @@ export default function CameraScreen() {
 
   const cycleFlash = () => setFlash((f) => (f === 'off' ? 'on' : f === 'on' ? 'auto' : 'off'));
   const flipCamera = () => setFacing((f) => f === 'back' ? 'front' : 'back');
+  const selectCameraMode = (next: 'photo' | 'video' | 'text') => {
+    setCameraMode(next);
+    if (next !== 'text') setCaptureMode(next === 'video' ? 'video' : 'picture');
+  };
+
+  async function publishTextNote() {
+    const content = noteText.trim();
+    if (!content || !session?.authToken) return;
+    try {
+      await createNote(session.authToken, content);
+      router.back();
+    } catch (error) {
+      Alert.alert('Note not saved', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
 
   if (permission === null || micPermission === null) {
     return <View style={styles.root} />;
@@ -350,8 +370,32 @@ export default function CameraScreen() {
           </View>
         )}
 
+        {cameraMode === 'text' ? (
+          <View style={styles.textModePanel}>
+            <Text style={styles.textModeEyebrow}>NOTE</Text>
+            <TextInput
+              autoFocus
+              multiline
+              maxLength={280}
+              value={noteText}
+              onChangeText={setNoteText}
+              placeholder="Write a note…"
+              placeholderTextColor="rgba(255,255,255,0.55)"
+              style={styles.textModeInput}
+            />
+            <Text style={styles.textModeHint}>Your note appears in Messages and in chats for 24 hours.</Text>
+          </View>
+        ) : null}
+
         {/* Bottom Controls */}
         <View style={[styles.bottom, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+          <View style={styles.modeRow}>
+            {(['photo', 'video', 'text'] as const).map((mode) => (
+              <Pressable key={mode} onPress={() => selectCameraMode(mode)} accessibilityRole="tab" accessibilityState={{ selected: cameraMode === mode }}>
+                <Text style={[styles.mode, cameraMode === mode && styles.modeActive]}>{mode.toUpperCase()}</Text>
+              </Pressable>
+            ))}
+          </View>
           <View style={styles.captureRow}>
             <Pressable onPress={openGallery} style={styles.gallery} testID="gallery-button">
               {shots[0] ? (
@@ -361,14 +405,20 @@ export default function CameraScreen() {
               )}
             </Pressable>
 
-            <View {...panResponder.panHandlers} testID="shutter-button" style={styles.shutterContainer}>
-              <View style={styles.shutter}>
-                <Animated.View style={[
-                  styles.shutterInner,
-                  isRecording && styles.recordingInner
-                ]} />
+            {cameraMode === 'text' ? (
+              <Pressable onPress={() => void publishTextNote()} disabled={!noteText.trim()} testID="shutter-button" style={[styles.shutterContainer, { opacity: noteText.trim() ? 1 : 0.45 }]}>
+                <View style={styles.shutter}><Ionicons name="arrow-up" size={32} color="#000" /></View>
+              </Pressable>
+            ) : (
+              <View {...panResponder.panHandlers} testID="shutter-button" style={styles.shutterContainer}>
+                <View style={styles.shutter}>
+                  <Animated.View style={[
+                    styles.shutterInner,
+                    isRecording && styles.recordingInner
+                  ]} />
+                </View>
               </View>
-            </View>
+            )}
 
             <Pressable onPress={flipCamera} style={[styles.flip, isWeb && { opacity: 0.5 }]} disabled={isWeb} testID="flip-button">
               <Ionicons name="camera-reverse-outline" size={24} color="#fff" />
@@ -403,6 +453,10 @@ const styles = StyleSheet.create({
   zoomRail: { position: 'absolute', right: 16, top: '40%', gap: 12, alignItems: 'center', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.3)', paddingVertical: 12, borderRadius: 24 },
   zoomText: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '500' },
   zoomActive: { color: '#FFD54A', fontWeight: '600', fontSize: 15 },
+  textModePanel: { position: 'absolute', left: 22, right: 22, top: '24%', backgroundColor: 'rgba(0,0,0,0.42)', borderRadius: 18, padding: 18 },
+  textModeEyebrow: { color: '#FFD54A', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 8 },
+  textModeInput: { minHeight: 130, color: '#fff', fontSize: 25, lineHeight: 31, textAlignVertical: 'top' },
+  textModeHint: { color: 'rgba(255,255,255,0.68)', fontSize: 12, lineHeight: 17, marginTop: 8 },
 
   bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 18, paddingHorizontal: 0, backgroundColor: 'rgba(0,0,0,0.28)' },
   modeRow: { gap: 30, paddingHorizontal: 30, paddingBottom: 24 },

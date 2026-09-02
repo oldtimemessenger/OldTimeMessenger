@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "expo start --port $PORT",
     "build": "node scripts/build.js",
+    "check:private-navigation": "node scripts/navigation-regression.mjs",
     "serve": "node server/serve.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "expo start",

@@ -1,5 +1,6 @@
 import type { MapPin } from '@/lib/map-api';
 import type { Story } from '@/lib/social-api';
+import type { CurrentEventRoom } from '@workspace/api-client-react';
 
 export type SocialMapCoordinate = {
   latitude: number;
@@ -16,6 +17,7 @@ export type SocialMapProps = {
   region: SocialMapRegion | null;
   pins: MapPin[];
   stories: Story[];
+  currentEventRooms?: CurrentEventRoom[];
   selectedPinId: number | null;
   loading: boolean;
   colors: {
@@ -33,6 +35,7 @@ export type SocialMapProps = {
   onCreate: () => void;
   onSelectPin: (pin: MapPin) => void;
   onSelectStory: (story: Story) => void;
+  onSelectCurrentEventRoom?: (room: CurrentEventRoom) => void;
   onAreaPress: (coordinate: SocialMapCoordinate) => void;
   onRegionChange: (region: SocialMapRegion) => void;
 };

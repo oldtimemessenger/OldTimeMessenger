@@ -2,12 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, KeyboardAvoidingView, PanResponder, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Animated, FlatList, KeyboardAvoidingView, PanResponder, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/ui';
 import { SponsoredStory, type StoryViewerItem } from '@/components/story-viewer-content';
 import { VideoSurface } from '@/components/video-surface';
-import { getStoryViewers, reactToStory, replyToStory, socialMediaUrl, viewStory, type Story } from '@/lib/social-api';
+import { getStoryReplies, getStoryViewers, reactToStory, removeStoryReaction, replyToStory, socialMediaUrl, viewStory, type Story, type StoryReply, type SocialUser } from '@/lib/social-api';
 import { typography } from '@/constants/typography';
 
 type Props = {
@@ -40,6 +40,11 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
   const [reactionSent, setReactionSent] = useState(false);
   const [reply, setReply] = useState('');
   const [replying, setReplying] = useState(false);
+  const [showReplies, setShowReplies] = useState(false);
+  const [replies, setReplies] = useState<StoryReply[]>([]);
+  const [repliesLoading, setRepliesLoading] = useState(false);
+  const [viewers, setViewers] = useState<Array<SocialUser & { viewedAt: number }> | null>(null);
+  const [viewersLoading, setViewersLoading] = useState(false);
   const translateY = useRef(new Animated.Value(0)).current;
   const item = activeItems[index];
   const story: Story | null = item?.type === 'USER_STORY' ? item.story : null;
@@ -59,10 +64,11 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
   }, [activeItems.length, close, index]);
 
   async function sendReaction() {
-    if (!story || reactionSent) return;
+    if (!story) return;
     try {
-      await reactToStory(token, story.id, 'like');
-      setReactionSent(true);
+      if (reactionSent) await removeStoryReaction(token, story.id);
+      else await reactToStory(token, story.id, '❤️');
+      setReactionSent((active) => !active);
     } catch (error) {
       Alert.alert('Reaction not sent', error instanceof Error ? error.message : 'Please try again.');
     }
@@ -73,9 +79,10 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
     if (!story || !content || replying) return;
     setReplying(true);
     try {
-      await replyToStory(token, story.id, content);
+      const created = await replyToStory(token, story.id, content);
       setReply('');
-      Alert.alert('Reply sent', 'Your reply was sent to the Story author.');
+      setReplies((items) => [...items, created as StoryReply]);
+      setShowReplies(true);
     } catch (error) {
       Alert.alert('Reply not sent', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -85,11 +92,31 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
 
   async function showViewers() {
     if (!story) return;
+    setViewersLoading(true);
     try {
       const result = await getStoryViewers(token, story.id);
-      Alert.alert('Story viewers', result.items.length ? result.items.map((viewer) => viewer.name).join('\n') : 'No viewers yet.');
+      setViewers(result.items);
     } catch (error) {
       Alert.alert('Viewers unavailable', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setViewersLoading(false);
+    }
+  }
+
+  async function openReplies() {
+    if (!story || repliesLoading) {
+      setShowReplies(true);
+      return;
+    }
+    setShowReplies(true);
+    setRepliesLoading(true);
+    try {
+      const result = await getStoryReplies(token, story.id);
+      setReplies(result.items);
+    } catch (error) {
+      Alert.alert('Comments unavailable', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setRepliesLoading(false);
     }
   }
 
@@ -99,9 +126,12 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
   }, [index]);
 
   useEffect(() => {
-    if (!story || story.viewer.viewed) return;
-    void viewStory(token, story.id).catch(() => {
-      // Viewing remains available if the best-effort read receipt races expiry or deletion.
+    if (!story) return;
+    setReactionSent(story.viewer.reacted);
+    setReplies([]);
+    setViewers(null);
+    void viewStory(token, story.id).catch((error) => {
+      Alert.alert('Story view not recorded', error instanceof Error ? error.message : 'Please try again.');
     });
   }, [story?.id, story?.viewer.viewed, token]);
 
@@ -196,8 +226,10 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
       {story?.content ? (
         <View pointerEvents="none" style={[styles.content, story.media ? styles.contentBottom : styles.contentCenter]}>
           <Text style={[styles.storyText, story.media ? styles.mediaCaption : null]}>{story.content}</Text>
+          {story.taggedUsers?.length ? <Text style={styles.taggedPeople}>Tagged: {story.taggedUsers.map((user) => `@${user.username}`).join(', ')}</Text> : null}
         </View>
       ) : null}
+      {!story?.content && story?.taggedUsers?.length ? <Text pointerEvents="none" style={styles.taggedPeopleStandalone}>Tagged: {story.taggedUsers.map((user) => `@${user.username}`).join(', ')}</Text> : null}
       {story ? (
         <KeyboardAvoidingView behavior="padding" style={[styles.actions, { bottom: Math.max(12, insets.bottom + 10) }]}>
           <Pressable onPress={() => void sendReaction()} style={styles.actionButton} accessibilityRole="button" accessibilityLabel={reactionSent ? 'Story reaction sent' : 'React to story'}>
@@ -207,6 +239,7 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
             value={reply}
             onChangeText={setReply}
             onSubmitEditing={() => void sendReply()}
+            onFocus={() => void openReplies()}
             placeholder="Reply to Story…"
             placeholderTextColor="rgba(255,255,255,0.72)"
             returnKeyType="send"
@@ -217,7 +250,7 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
           <Pressable onPress={() => void sendReply()} disabled={!reply.trim() || replying} style={[styles.actionButton, { opacity: !reply.trim() || replying ? 0.45 : 1 }]} accessibilityRole="button" accessibilityLabel="Send story reply">
             <Ionicons name="send" size={20} color="#FFFFFF" />
           </Pressable>
-          <Pressable onPress={() => void Share.share({ message: `${story.author.name} shared a Story on Old Time.` })} style={styles.actionButton} accessibilityRole="button" accessibilityLabel="Share story">
+          <Pressable onPress={() => void shareStory(story)} style={styles.actionButton} accessibilityRole="button" accessibilityLabel="Share story">
             <Ionicons name="share-outline" size={21} color="#FFFFFF" />
           </Pressable>
           {story.viewer.isOwner ? (
@@ -230,7 +263,141 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
       <View pointerEvents="none" style={[styles.swipeHint, { bottom: story ? Math.max(72, insets.bottom + 64) : Math.max(14, insets.bottom + 6) }]}>
         <View style={styles.swipeHandle} />
       </View>
+      {showReplies && story ? (
+        <StoryRepliesSheet
+          story={story}
+          token={token}
+          replies={replies}
+          loading={repliesLoading}
+          draft={reply}
+          onDraftChange={setReply}
+          onSend={() => void sendReply()}
+          onClose={() => setShowReplies(false)}
+        />
+      ) : null}
+      {viewers ? <StoryViewersSheet viewers={viewers} loading={viewersLoading} onClose={() => setViewers(null)} /> : null}
     </Animated.View>
+  );
+}
+
+async function shareStory(story: Story) {
+  try {
+    await Share.share({
+      message: `${story.author.name} shared a Story on Old Time.\n\nold-time-mobile://story/${story.id}`,
+      url: `old-time-mobile://story/${story.id}`,
+    });
+  } catch (error) {
+    Alert.alert('Story not shared', error instanceof Error ? error.message : 'Please try again.');
+  }
+}
+
+function StoryRepliesSheet({
+  story,
+  token,
+  replies,
+  loading,
+  draft,
+  onDraftChange,
+  onSend,
+  onClose,
+}: {
+  story: Story;
+  token: string;
+  replies: StoryReply[];
+  loading: boolean;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <View style={styles.sheetOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close story replies" />
+      <KeyboardAvoidingView behavior="padding" style={styles.replySheet}>
+        <View style={styles.sheetHeading}>
+          <Text style={styles.sheetTitle}>Replies to @{story.author.username}</Text>
+          <Pressable onPress={onClose} style={styles.sheetClose} accessibilityRole="button" accessibilityLabel="Close replies">
+            <Ionicons name="close" size={22} color="#1C3550" />
+          </Pressable>
+        </View>
+        {loading ? <Text style={styles.sheetEmpty}>Loading replies…</Text> : (
+          <FlatList
+            data={replies}
+            keyExtractor={(item) => String(item.id)}
+            contentContainerStyle={replies.length ? styles.replyList : styles.replyListEmpty}
+            ListEmptyComponent={<Text style={styles.sheetEmpty}>No replies yet. Start the conversation.</Text>}
+            renderItem={({ item }) => (
+              <View style={styles.replyRow}>
+                <Avatar name={item.author.name} size={32} color="#DCE7F2" />
+                <View style={styles.replyBody}>
+                  <Text style={styles.replyAuthor}>@{item.author.username}</Text>
+                  <Text style={styles.replyText}>{item.content}</Text>
+                </View>
+              </View>
+            )}
+          />
+        )}
+        <View style={styles.replyComposer}>
+          <TextInput
+            value={draft}
+            onChangeText={onDraftChange}
+            placeholder="Reply to this Story…"
+            placeholderTextColor="#748398"
+            maxLength={1000}
+            style={styles.replyComposerInput}
+            accessibilityLabel="Story reply"
+          />
+          <Pressable onPress={onSend} disabled={!draft.trim()} style={[styles.replySend, { opacity: draft.trim() ? 1 : 0.45 }]} accessibilityRole="button" accessibilityLabel="Send story reply">
+            <Ionicons name="send" size={18} color="#fff" />
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+function StoryViewersSheet({
+  viewers,
+  loading,
+  onClose,
+}: {
+  viewers: Array<SocialUser & { viewedAt: number }>;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <View style={styles.sheetOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close story viewers" />
+      <View style={styles.viewerSheet}>
+        <View style={styles.sheetHeading}>
+          <View>
+            <Text style={styles.sheetTitle}>Story viewers</Text>
+            <Text style={styles.sheetSubTitle}>Only you can see this list.</Text>
+          </View>
+          <Pressable onPress={onClose} style={styles.sheetClose} accessibilityRole="button" accessibilityLabel="Close viewers">
+            <Ionicons name="close" size={22} color="#1C3550" />
+          </Pressable>
+        </View>
+        {loading ? <Text style={styles.sheetEmpty}>Loading viewers…</Text> : viewers.length === 0 ? (
+          <Text style={styles.sheetEmpty}>No one has viewed this Story yet.</Text>
+        ) : (
+          <FlatList
+            data={viewers}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item }) => (
+              <View style={styles.viewerRow}>
+                <Avatar name={item.name} size={38} color="#DCE7F2" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.replyAuthor}>{item.name}</Text>
+                  <Text style={styles.viewerUsername}>@{item.username}</Text>
+                </View>
+                <Text style={styles.viewerTime}>{relativeTime(item.viewedAt)} ago</Text>
+              </View>
+            )}
+          />
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -265,8 +432,30 @@ const styles = StyleSheet.create({
   contentBottom: { justifyContent: 'flex-end', paddingBottom: 88 },
   storyText: { ...typography.storyTitle, color: '#FFFFFF', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.38)', textShadowRadius: 8 },
   mediaCaption: { fontSize: 18, lineHeight: 24, textAlign: 'left' },
+  taggedPeople: { color: 'rgba(255,255,255,0.84)', fontSize: 12, textAlign: 'left', marginTop: 8 },
+  taggedPeopleStandalone: { position: 'absolute', left: 28, right: 28, bottom: 120, color: 'rgba(255,255,255,0.84)', fontSize: 12, textAlign: 'center', zIndex: 20 },
   swipeHint: { position: 'absolute', alignSelf: 'center', alignItems: 'center' },
   swipeHandle: { width: 34, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.72)' },
+  sheetOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.42)', zIndex: 80 },
+  replySheet: { maxHeight: '72%', minHeight: 300, backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 16 },
+  viewerSheet: { maxHeight: '62%', minHeight: 240, backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 16 },
+  sheetHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sheetTitle: { color: '#1C3550', fontSize: 17, fontWeight: '800' },
+  sheetSubTitle: { color: '#748398', fontSize: 12, marginTop: 3 },
+  sheetClose: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EDF3F8' },
+  sheetEmpty: { color: '#748398', textAlign: 'center', paddingVertical: 28, fontSize: 14 },
+  replyList: { gap: 14, paddingBottom: 12 },
+  replyListEmpty: { flexGrow: 1, justifyContent: 'center' },
+  replyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
+  replyBody: { flex: 1, paddingTop: 1 },
+  replyAuthor: { color: '#1C3550', fontSize: 13, fontWeight: '800' },
+  replyText: { color: '#1C3550', fontSize: 14, lineHeight: 19, marginTop: 3 },
+  replyComposer: { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1, borderTopColor: '#E1E8EF', paddingTop: 10 },
+  replyComposerInput: { flex: 1, minHeight: 42, maxHeight: 100, borderWidth: 1, borderColor: '#C9D5E0', borderRadius: 21, paddingHorizontal: 14, color: '#1C3550', fontSize: 14 },
+  replySend: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#2674A8' },
+  viewerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  viewerUsername: { color: '#748398', fontSize: 11, marginTop: 2 },
+  viewerTime: { color: '#748398', fontSize: 11 },
   expired: { flex: 1, backgroundColor: '#1C3550', alignItems: 'center', justifyContent: 'center', gap: 12 },
   expiredTitle: { ...typography.sectionTitle, color: '#FFFFFF', fontSize: 18 },
   expiredButton: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)', minHeight: 42, borderRadius: 21, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },

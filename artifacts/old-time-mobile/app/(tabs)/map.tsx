@@ -3,6 +3,8 @@ import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Avatar, Screen } from '@/components/ui';
+import { useRouter } from 'expo-router';
+import { getCurrentEventRooms, type CurrentEventRoom } from '@workspace/api-client-react';
 import SocialMap from '@/components/social-map';
 import type { SocialMapRegion } from '@/components/social-map.types';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
@@ -12,12 +14,14 @@ import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { createMapPin, createMapPinComment, deleteMapPin, getMapPinComments, getNearbyPins, reportMapPin, setMapPinRelation, type MapComment, type MapPin, type MapVisibility } from '@/lib/map-api';
 import { getNearbyStories, setUserBlocked, type Story } from '@/lib/social-api';
+import CurrentEventsHome from '@/components/current-events-home';
 
 type Coordinate = { latitude: number; longitude: number };
 
 export default function MapScreen() {
   const colors = useColors();
   const { session, settings } = useApp();
+  const router = useRouter();
   const [permission, requestPermission] = Location.useForegroundPermissions();
   const [location, setLocation] = useState<Coordinate | null>(null);
   const [region, setRegion] = useState<SocialMapRegion | null>(null);
@@ -36,12 +40,19 @@ export default function MapScreen() {
   const [discoveryStories, setDiscoveryStories] = useState<Story[] | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [storyOpen, setStoryOpen] = useState<Story | null>(null);
+  const [currentEventsMode, setCurrentEventsMode] = useState(false);
+  const [currentEventRooms, setCurrentEventRooms] = useState<CurrentEventRoom[]>([]);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[] }>());
 
   useEffect(() => {
     setVisibility(settings.locationAudience === 'public' ? 'friends' : settings.locationAudience);
   }, [settings.locationAudience]);
+
+  useEffect(() => {
+    if (!session?.authToken) return;
+    void getCurrentEventRooms().then(({ items }) => setCurrentEventRooms(items)).catch(() => setCurrentEventRooms([]));
+  }, [session?.authToken]);
 
   const loadRegion = useCallback(async (nextRegion: SocialMapRegion, force = false) => {
     if (!session?.authToken) return;
@@ -161,14 +172,43 @@ export default function MapScreen() {
     }
   }
 
+  if (currentEventsMode) {
+    return (
+      <Screen>
+        <CurrentEventsHome
+          colors={colors}
+          onBack={() => setCurrentEventsMode(false)}
+          onOpenRoom={(room) => router.push({ pathname: '/current-event/[id]', params: { id: String(room.id), returnTo: 'events' } })}
+          onRoomCreated={(room) => {
+            setCurrentEventRooms((rooms) => [room, ...rooms.filter((item) => item.id !== room.id)]);
+            router.push({ pathname: '/current-event/[id]', params: { id: String(room.id), returnTo: 'events' } });
+          }}
+          onRoomsChanged={setCurrentEventRooms}
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen title="Map">
       <View style={styles.mapCanvas}>
+        <Pressable
+          onPress={() => setCurrentEventsMode(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Open Current Events"
+          style={[styles.currentEventsButton, { backgroundColor: colors.primary }]}
+        >
+          <Ionicons name="mic-outline" size={16} color={colors.primaryForeground} />
+          <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>Current Events</Text>
+          <View style={styles.liveDot} />
+          <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>{currentEventRooms.length}</Text>
+        </Pressable>
         <SocialMap
           center={location}
           region={region}
           pins={pins}
           stories={stories}
+          currentEventRooms={currentEventRooms}
           selectedPinId={selectedPin?.id ?? null}
           loading={loading}
           colors={colors}
@@ -185,6 +225,7 @@ export default function MapScreen() {
           }}
           onSelectPin={selectPin}
           onSelectStory={(story) => setStoryOpen(story)}
+          onSelectCurrentEventRoom={(room) => router.push({ pathname: '/current-event/[id]', params: { id: String(room.id), returnTo: 'map' } })}
           onAreaPress={(coordinate) => {
             setSelectedPin(null);
             void discoverArea(coordinate);
@@ -315,6 +356,8 @@ function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; to
 
 const styles = StyleSheet.create({
   mapCanvas: { flex: 1, position: 'relative', overflow: 'hidden' },
+  currentEventsButton: { position: 'absolute', zIndex: 8, top: 14, right: 14, minHeight: 38, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#EF4444', marginLeft: 1 },
   loadingPill: { position: 'absolute', top: 14, alignSelf: 'center', width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
   errorPill: { position: 'absolute', top: 14, left: 14, minHeight: 38, borderRadius: 19, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },
   selectedPinPanel: { position: 'absolute', left: 10, right: 10, bottom: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 6 },

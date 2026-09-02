@@ -564,7 +564,7 @@ function DetailShell({ title, onBack, children, rightAction }: any) {
          </Pressable>
          {rightAction}
       </View>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 60 }}>
+       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 100 }}>
          <Text style={[styles.shellTitle, { color: colors.foreground }]}>{title}</Text>
          {children}
       </ScrollView>

@@ -69,10 +69,11 @@ export type MessageRequest = {
 };
 
 export type FeedPage = {
-  mode: 'for-you' | 'following';
+  mode: 'for-you' | 'following' | 'community';
   items: SocialPost[];
   nextCursor: number | null;
 };
+export type CommunityFilter = 'friends' | 'following' | 'interests';
 
 export type SearchResults = {
   users: SocialUser[];
@@ -83,8 +84,10 @@ export type Story = {
   visibility: 'public' | 'friends' | 'followers' | 'close_friends' | 'private';
   media: { type: 'image' | 'video'; objectPath: string; mimeType: string; width?: number; height?: number; duration?: number; fit?: 'contain' | 'cover' } | null;
   createdAt: number; expiresAt: number; location: { latitude: number; longitude: number } | null; author: SocialUser;
-  viewer: { viewed: boolean; isOwner: boolean }; counts: { views: number; reactions: number };
+  taggedUsers: SocialUser[];
+  viewer: { viewed: boolean; isOwner: boolean; reacted: boolean }; counts: { views: number; reactions: number };
 };
+export type StoryReply = { id: number; storyId: number; authorId: number; content: string; createdAt: number; author: SocialUser };
 export type SocialNotification = {
   id: number;
   recipientId: number;
@@ -95,6 +98,16 @@ export type SocialNotification = {
   createdAt: number;
   readAt: number | null;
   actor: SocialUser;
+};
+
+export type Note = {
+  id: number;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+  owner: SocialUser;
+  viewer: { isOwner: boolean };
 };
 
 function baseUrl(): string {
@@ -132,11 +145,17 @@ export function socialMediaUrl(objectPath: string): string {
 
 export function getSocialFeed(
   token: string,
-  mode: 'for-you' | 'following',
+  mode: 'for-you' | 'following' | 'community',
   cursor?: number | null,
+  communityFilter?: CommunityFilter,
+  interests?: string[],
+  mediaOnly = false,
 ) {
   const query = new URLSearchParams({ mode, limit: '20' });
   if (cursor) query.set('cursor', String(cursor));
+  if (communityFilter) query.set('filter', communityFilter);
+  if (interests?.length) query.set('interests', interests.join(','));
+  if (mediaOnly) query.set('mediaOnly', 'true');
   return request<FeedPage>(token, `/api/social/feed?${query.toString()}`);
 }
 
@@ -359,15 +378,36 @@ export function searchSocial(token: string, query: string) {
   );
 }
 export function getStories(token: string) { return request<{ items: Story[] }>(token, '/api/social/stories'); }
+export function getStory(token: string, storyId: number) { return request<Story>(token, `/api/social/stories/${storyId}`); }
+export function getNotes(token: string, surface: 'messages' | 'chat' = 'messages') {
+  return request<{ items: Note[] }>(token, `/api/social/notes?surface=${surface}`);
+}
+export function createNote(token: string, content: string) {
+  return request<Note>(token, '/api/social/notes', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+}
+export function updateNote(token: string, noteId: number, content: string) {
+  return request<Note>(token, `/api/social/notes/${noteId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+  });
+}
+export function deleteNote(token: string, noteId: number) {
+  return request<{ success: boolean }>(token, `/api/social/notes/${noteId}`, { method: 'DELETE' });
+}
 export function getNearbyStories(token: string, latitude: number, longitude: number, radiusKm = 5, limit = 60) {
   return request<{ items: Story[] }>(token, `/api/social/stories/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=${encodeURIComponent(radiusKm)}&limit=${encodeURIComponent(limit)}`);
 }
-export function createStory(token: string, input: { content: string; visibility: Story['visibility']; media?: Story['media']; location?: { latitude: number; longitude: number } | null }) {
+export function createStory(token: string, input: { content: string; visibility: Story['visibility']; media?: Story['media']; location?: { latitude: number; longitude: number } | null; taggedUserIds?: number[] }) {
   return request<Story>(token, '/api/social/stories', { method: 'POST', body: JSON.stringify(input) });
 }
 export function viewStory(token: string, storyId: number) { return request<{ success: boolean }>(token, `/api/social/stories/${storyId}/view`, { method: 'PUT' }); }
 export function reactToStory(token: string, storyId: number, reaction: string) { return request<{ success: boolean }>(token, `/api/social/stories/${storyId}/reaction`, { method: 'PUT', body: JSON.stringify({ reaction }) }); }
-export function replyToStory(token: string, storyId: number, content: string) { return request<{ id: number }>(token, `/api/social/stories/${storyId}/replies`, { method: 'POST', body: JSON.stringify({ content }) }); }
+export function removeStoryReaction(token: string, storyId: number) { return request<{ success: boolean }>(token, `/api/social/stories/${storyId}/reaction`, { method: 'DELETE' }); }
+export function replyToStory(token: string, storyId: number, content: string) { return request<StoryReply>(token, `/api/social/stories/${storyId}/replies`, { method: 'POST', body: JSON.stringify({ content }) }); }
+export function getStoryReplies(token: string, storyId: number) { return request<{ items: StoryReply[] }>(token, `/api/social/stories/${storyId}/replies`); }
 export function getStoryViewers(token: string, storyId: number) { return request<{ items: Array<SocialUser & { viewedAt: number }> }>(token, `/api/social/stories/${storyId}/viewers`); }
 export function getSocialNotifications(token: string) {
   return request<{ items: SocialNotification[] }>(token, '/api/social/notifications?limit=30');

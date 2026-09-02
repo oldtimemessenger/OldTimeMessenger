@@ -42,6 +42,7 @@ import { VideoSurface } from '@/components/video-surface';
 import { presenceLabel } from '@/lib/presence';
 import { emojiPickerGroups } from '@/constants/emoji';
 import { apiBaseUrl } from '@/lib/api-base-url';
+import { getNotes, type Note } from '@/lib/social-api';
 
 type PendingAsset = {
   uri: string;
@@ -81,6 +82,7 @@ export default function ChatDetailScreen() {
   const [contactProfileOpen, setContactProfileOpen] = useState(false);
   const [uploadLabel, setUploadLabel] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
+  const [chatNotes, setChatNotes] = useState<Note[]>([]);
   const inputRef = useRef<TextInput>(null);
   const openingIds = useRef(new Set<number>());
   const handledCameraUri = useRef<string | null>(null);
@@ -140,6 +142,21 @@ export default function ChatDetailScreen() {
       }
     }
   }, [messages.data, session?.id]);
+
+  useEffect(() => {
+    if (!session?.authToken) return;
+    let cancelled = false;
+    void getNotes(session.authToken, 'chat')
+      .then(({ items }) => {
+        if (!cancelled) setChatNotes(items.filter((note) => note.owner.id === session.id || note.owner.id === contact?.id));
+      })
+      .catch(() => {
+        if (!cancelled) setChatNotes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.authToken, session?.id, contact?.id]);
 
   useEffect(() => {
     if (!mediaUri || !session || handledCameraUri.current === mediaUri) return;
@@ -311,6 +328,20 @@ export default function ChatDetailScreen() {
         </Pressable>
         {contact?.phone ? <IconButton name="call-outline" label={`Call ${contact.name}`} onPress={() => void callContact()} /> : null}
       </View>
+
+      {chatNotes.length > 0 ? (
+        <View style={[styles.chatNotesStrip, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <Ionicons name="sparkles-outline" size={15} color={colors.primary} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chatNotesContent}>
+            {chatNotes.map((note) => (
+              <View key={note.id} style={[styles.chatNoteChip, { backgroundColor: colors.muted }]}>
+                <Text style={[styles.chatNoteOwner, { color: colors.primary }]}>{note.owner.id === session.id ? 'You' : note.owner.name}</Text>
+                <Text style={[styles.chatNoteText, { color: colors.foreground }]} numberOfLines={1}>{note.content}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
 
       <FlatList
         inverted
@@ -612,6 +643,11 @@ const styles = StyleSheet.create({
   headerName: { fontSize: 16, fontWeight: '700' },
   headerSub: { fontSize: 12, marginTop: 2 },
   contactHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 8, marginRight: 8 },
+  chatNotesStrip: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  chatNotesContent: { gap: 7, paddingVertical: 6 },
+  chatNoteChip: { maxWidth: 220, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  chatNoteOwner: { fontSize: 11, fontWeight: '800' },
+  chatNoteText: { fontSize: 12, flexShrink: 1 },
   messageList: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12 },
   messageLine: { flexDirection: 'row', marginBottom: 7 },
   bubble: {

@@ -3,7 +3,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import * as Location from 'expo-location';
 import {
   ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
-  FlatList, Dimensions, Platform, Share
+  FlatList, Dimensions, Platform, Share, PanResponder
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -24,6 +24,7 @@ import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
 import { useRequestUploadUrl } from '@workspace/api-client-react';
 import {
   createStory,
+  createNote,
   acceptMessageRequest,
   createMessageRequest,
   declineMessageRequest,
@@ -33,6 +34,9 @@ import {
   getMessageRequests,
   getSharingExclusions,
   getStories,
+  getNotes,
+  updateNote,
+  deleteNote,
   getUserCard,
   getUserPosts,
   getPostComments,
@@ -50,8 +54,10 @@ import {
   type SocialComment,
   type MessageRequest,
   type SocialPost,
+  type CommunityFilter,
   type SocialUser,
   type Story,
+  type Note,
   type UserCard,
 } from '@/lib/social-api';
 
@@ -100,11 +106,14 @@ export default function UpdatesScreen() {
   const { statuses, posts, interests, interestWeights, followedCreators, hiddenPostIds, markStatusViewed, togglePostLike, togglePostSaved, addPostComment, recordPostInteraction, recordInterestFeedback, toggleInterest, toggleFollow, hidePost: persistHiddenPost, session, settings, updateSettings } = useApp();
   const requestUploadUrl = useRequestUploadUrl();
 
-  const [viewMode, setViewMode] = useState<'landing' | 'feed' | 'status'>('landing');
+  const [viewMode, setViewMode] = useState<'landing' | 'feed' | 'creator-feed' | 'status'>('landing');
+  const [showCommunity, setShowCommunity] = useState(false);
+  const [communityFilter, setCommunityFilter] = useState<CommunityFilter>('friends');
   const [tab, setTab] = useState<FeedTab>('for-you');
   const [feedIndex, setFeedIndex] = useState(0);
   const [storyGroupOpen, setStoryGroupOpen] = useState<StatusUserGroup | null>(null);
   const [compose, setCompose] = useState<'status' | 'post' | null>(null);
+  const [postComposerSurface, setPostComposerSurface] = useState<'creator' | 'community'>('creator');
   const [commentPost, setCommentPost] = useState<UpdatePost | null>(null);
   const [socialCommentPost, setSocialCommentPost] = useState<SocialPost | null>(null);
   const [capturedStatusMedia, setCapturedStatusMedia] = useState<{
@@ -114,7 +123,10 @@ export default function UpdatesScreen() {
   } | null>(null);
   const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
   const [socialStories, setSocialStories] = useState<Story[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [socialLoading, setSocialLoading] = useState(true);
+  const [communityCursor, setCommunityCursor] = useState<number | null>(null);
+  const [communityLoadingMore, setCommunityLoadingMore] = useState(false);
   const [socialError, setSocialError] = useState<string | null>(null);
   const [profileUserId, setProfileUserId] = useState<number | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -132,22 +144,26 @@ export default function UpdatesScreen() {
   const [peopleSearchLoading, setPeopleSearchLoading] = useState(false);
   const [peopleSearchError, setPeopleSearchError] = useState<string | null>(null);
   const [interestPrompt, setInterestPrompt] = useState<{ topic: string; title: string } | null>(null);
+  const [noteEditor, setNoteEditor] = useState<Note | 'new' | null>(null);
   const promptedContent = useRef(new Set<string>());
 
-  const loadSocial = useCallback(async (mode: 'for-you' | 'following' = 'for-you') => {
+  const loadSocial = useCallback(async (mode: 'for-you' | 'following' | 'community' = 'for-you', filter: CommunityFilter = communityFilter) => {
     if (!session?.authToken) return;
     setSocialLoading(true);
     setSocialError(null);
     try {
-      const [feed, storyPage, card, notificationPage, exclusions] = await Promise.all([
-        getSocialFeed(session.authToken, mode),
+      const [feed, storyPage, notePage, card, notificationPage, exclusions] = await Promise.all([
+        getSocialFeed(session.authToken, mode, null, filter, interests, mode !== 'community'),
         getStories(session.authToken),
+        getNotes(session.authToken),
         getUserCard(session.authToken, session.id),
         getSocialNotifications(session.authToken),
         getSharingExclusions(session.authToken),
       ]);
       setSocialPosts(feed.items);
+      setCommunityCursor(mode === 'community' ? feed.nextCursor : null);
       setSocialStories(storyPage.items);
+      setNotes(notePage.items);
       setOwnCard(card);
       setNotifications(notificationPage.items);
       updateSettings({ excludedPeople: exclusions.items.map((item) => ({ id: item.id, name: item.name })) });
@@ -156,7 +172,24 @@ export default function UpdatesScreen() {
     } finally {
       setSocialLoading(false);
     }
-  }, [session?.authToken, session?.id]);
+  }, [communityFilter, interests, session?.authToken, session?.id]);
+
+  const loadMoreCommunity = useCallback(async () => {
+    if (!session?.authToken || !communityCursor || communityLoadingMore) return;
+    setCommunityLoadingMore(true);
+    try {
+      const page = await getSocialFeed(session.authToken, 'community', communityCursor, communityFilter, interests);
+      setSocialPosts((items) => {
+        const known = new Set(items.map((item) => item.id));
+        return [...items, ...page.items.filter((item) => !known.has(item.id))];
+      });
+      setCommunityCursor(page.nextCursor);
+    } catch (error) {
+      Alert.alert('Community could not load more', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setCommunityLoadingMore(false);
+    }
+  }, [communityCursor, communityFilter, communityLoadingMore, interests, session?.authToken]);
 
   useEffect(() => {
     void loadSocial();
@@ -164,12 +197,12 @@ export default function UpdatesScreen() {
 
   useEffect(() => {
     const firstPost = socialPosts[0];
-    if (socialLoading || !firstPost) return;
+    if (showCommunity || socialLoading || !firstPost) return;
     const key = `social-${firstPost.id}`;
     if (promptedContent.current.has(key) || Math.random() > 0.32) return;
     promptedContent.current.add(key);
     setInterestPrompt({ topic: inferSocialTopic(firstPost), title: firstPost.author.name });
-  }, [socialLoading, socialPosts]);
+  }, [showCommunity, socialLoading, socialPosts]);
 
   useEffect(() => {
     if (!showPeopleSearch || !session?.authToken) return;
@@ -237,29 +270,15 @@ export default function UpdatesScreen() {
   }
 
   const unreadNotifications = notifications.filter((item) => !item.readAt).length;
-  const firstOtherStory = socialStories.find((story) => !story.viewer.isOwner);
-
-  function openStatusShortcut() {
-    if (firstOtherStory) {
-      setServerStoryOpen(firstOtherStory);
-      return;
-    }
-    const firstLocalGroup = otherGroups[0];
-    if (firstLocalGroup) {
-      setStoryGroupOpen(firstLocalGroup);
-      setViewMode('status');
-      return;
-    }
-    setCompose('status');
-  }
-
   useEffect(() => {
-    if (!mediaUri) return;
-    setCapturedStatusMedia({
-      uri: mediaUri,
-      type: mediaType === 'video' ? 'video' : 'photo',
-      fit: mediaFit,
-    });
+    if (!mediaUri && !composeType) return;
+    if (mediaUri) {
+      setCapturedStatusMedia({
+        uri: mediaUri,
+        type: mediaType === 'video' ? 'video' : 'photo',
+        fit: mediaFit,
+      });
+    }
     setCompose(composeType ?? 'status');
     router.setParams({ mediaUri: undefined, mediaType: undefined, mediaFit: undefined, composeType: undefined });
   }, [mediaUri, composeType]);
@@ -292,6 +311,10 @@ export default function UpdatesScreen() {
   const forYouPosts = useMemo(() => rankForYou(posts.filter((post) => !hiddenPostIds.includes(post.id)), interests, interestWeights), [posts, interests, interestWeights, hiddenPostIds]);
   const followingPosts = useMemo(() => posts.filter((post) => followedCreators.includes(post.handle) && !hiddenPostIds.includes(post.id)), [posts, followedCreators, hiddenPostIds]);
   const visiblePosts = tab === 'following' ? followingPosts : forYouPosts;
+  const creatorPosts = useMemo(
+    () => socialPosts.filter((post) => post.media?.some((media) => media.type === 'image' || media.type === 'video')),
+    [socialPosts],
+  );
 
   function hidePost(post: UpdatePost) {
     persistHiddenPost(post.id);
@@ -300,7 +323,39 @@ export default function UpdatesScreen() {
 
   function selectFeedTab(nextTab: FeedTab) {
     setTab(nextTab);
-    if (nextTab !== 'interests') void loadSocial(nextTab);
+    if (nextTab === 'interests') void loadSocial('for-you', 'interests');
+    else void loadSocial(nextTab);
+  }
+
+  function openCommunity() {
+    setShowCommunity(true);
+    setViewMode('landing');
+    setCommunityCursor(null);
+    void loadSocial('community', communityFilter);
+  }
+
+  function closeCommunity() {
+    setShowCommunity(false);
+    setCommunityCursor(null);
+    void loadSocial(tab === 'following' ? 'following' : 'for-you');
+  }
+
+  function changeCommunityFilter(filter: CommunityFilter) {
+    setCommunityFilter(filter);
+    setCommunityCursor(null);
+    void loadSocial('community', filter);
+  }
+
+  async function shareSocialPost(post: SocialPost) {
+    if (post.visibility !== 'public') {
+      Alert.alert('Sharing is off', 'Only public posts can be shared outside Old Time.');
+      return;
+    }
+    try {
+      await Share.share({ message: `${post.author.name} on Old Time:\n\n${post.content}` });
+    } catch (error) {
+      Alert.alert('Share did not open', error instanceof Error ? error.message : 'Please try again.');
+    }
   }
 
   function maybeAskInterest(post: UpdatePost) {
@@ -314,9 +369,15 @@ export default function UpdatesScreen() {
     updateSettings({ feedLanguages: current.includes(language) ? current.filter((item) => item !== language) : [...current, language] });
   }
 
+  const editingNote = noteEditor !== null && noteEditor !== 'new' ? noteEditor : null;
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
-      <Screen title="Updates" left={<IconButton name="albums-outline" label="Open stories" onPress={openStatusShortcut} />} right={
+     <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
+       <Screen title="Updates" left={
+         <View style={styles.headerLeftActions}>
+           <IconButton name="albums-outline" label="Open community" onPress={openCommunity} />
+         </View>
+       } right={
         <View style={styles.socialHeaderActions}>
           <View>
             <IconButton name="mail-outline" label="Open messages" onPress={openMessagesInbox} />
@@ -326,14 +387,44 @@ export default function UpdatesScreen() {
           <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
             <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} />
           </Pressable>
-          <IconButton name="add" label="Create post or story" onPress={() => setCompose('post')} />
+           <IconButton
+             name="add"
+             label={showCommunity ? 'Create a community post' : 'Create a photo or video'}
+             onPress={() => {
+               setPostComposerSurface(showCommunity ? 'community' : 'creator');
+               setCompose('post');
+             }}
+           />
         </View>
       }>
-         <FlatList
+         {showCommunity ? (
+           <CommunityFeed
+             posts={socialPosts}
+             loading={socialLoading}
+             error={socialError}
+             colors={colors}
+             token={session?.authToken ?? ''}
+             filter={communityFilter}
+             interests={interests}
+             onFilterChange={changeCommunityFilter}
+             onClose={closeCommunity}
+             onRetry={() => void loadSocial('community', communityFilter)}
+             onEndReached={() => void loadMoreCommunity()}
+             loadingMore={communityLoadingMore}
+             onOpenProfile={setProfileUserId}
+             onComment={setSocialCommentPost}
+             onShare={(post) => void shareSocialPost(post)}
+              onCreatePost={() => {
+                setPostComposerSurface('community');
+                setCompose('post');
+              }}
+             onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
+           />
+          ) : <FlatList
            testID="landing-grid"
-           data={tab === 'interests' ? [] : visiblePosts}
+            data={tab === 'interests' ? [] : creatorPosts}
            numColumns={3}
-           keyExtractor={item => item.id}
+            keyExtractor={item => String(item.id)}
            columnWrapperStyle={{ gap: 2 }}
            ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
            contentContainerStyle={{ paddingHorizontal: 2, paddingBottom: 100 }}
@@ -350,7 +441,10 @@ export default function UpdatesScreen() {
                  onRetry={() => void loadSocial()}
                  onOpenProfile={setProfileUserId}
                  onOpenStory={(story) => setServerStoryOpen(story)}
-                  onCreatePost={() => setCompose('post')}
+                   onCreatePost={() => {
+                     setPostComposerSurface('creator');
+                     setCompose('post');
+                   }}
                   onCreateStory={() => setCompose('status')}
                 interestPrompt={interestPrompt}
                 onDismissInterestPrompt={() => setInterestPrompt(null)}
@@ -361,13 +455,7 @@ export default function UpdatesScreen() {
                   setInterestPrompt(null);
                 }}
                   onComment={setSocialCommentPost}
-                  onShare={(post) => {
-                    if (post.visibility !== 'public' || !post.allowReposts) {
-                      Alert.alert('Sharing is off', 'This post is not public or the author has not allowed reposts.');
-                      return;
-                    }
-                    void Share.share({ message: `${post.author.name} on Old Time:\n\n${post.content}` });
-                  }}
+                  onShare={(post) => void shareSocialPost(post)}
                  onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
                />
 
@@ -381,24 +469,40 @@ export default function UpdatesScreen() {
 
               {tab === 'interests' && <InterestPanel interests={interests} onToggle={toggleInterest} languages={settings.feedLanguages} onToggleLanguage={chooseFeedLanguage} onBack={() => setTab('for-you')} colors={colors} />}
 
-              {tab !== 'interests' && socialPosts.length === 0 && visiblePosts.length === 0 && (
+              {tab !== 'interests' && creatorPosts.length === 0 && (
                 <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '600' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
               )}
            </>}
            renderItem={({ item, index }) => (
-             <Pressable testID={`grid-item-${item.id}`} onPress={() => { setFeedIndex(index); setViewMode('feed'); }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: item.color, justifyContent: 'flex-end', padding: 8 }}>
-               {(item as any).uri ? (
-                 <Image source={{ uri: (item as any).uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
-               ) : null}
+              <Pressable testID={`grid-item-${item.id}`} onPress={() => { setFeedIndex(index); setViewMode('creator-feed'); }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: colors.card, justifyContent: 'flex-end', padding: 8 }}>
+                {item.media?.[0] ? (
+                  <Image source={{ uri: socialMediaUrl(item.media[0].objectPath) }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                ) : null}
                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.15)' }]} />
                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Ionicons name="play-outline" size={12} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{item.likes}</Text>
+                   <Ionicons name={item.media?.[0]?.type === 'video' ? 'play' : 'image-outline'} size={12} color="#fff" />
+                   <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{item.counts.likes}</Text>
                </View>
              </Pressable>
            )}
-         />
+          />}
       </Screen>
+
+      <Modal visible={viewMode === 'creator-feed'} transparent animationType="slide" onRequestClose={() => setViewMode('landing')}>
+        {viewMode === 'creator-feed' ? (
+          <CreatorFeedPager
+            posts={creatorPosts}
+            initialIndex={feedIndex}
+            token={session?.authToken ?? ''}
+            colors={colors}
+            onClose={() => setViewMode('landing')}
+            onComment={setSocialCommentPost}
+            onShare={(post) => void shareSocialPost(post)}
+            onOpenProfile={(userId) => { setViewMode('landing'); setProfileUserId(userId); }}
+            onChanged={(updated) => setSocialPosts((items) => items.map((item) => item.id === updated.id ? updated : item))}
+          />
+        ) : null}
+      </Modal>
 
       <Modal visible={viewMode === 'feed'} transparent animationType="slide" onRequestClose={() => setViewMode('landing')}>
         {viewMode === 'feed' ? (
@@ -417,7 +521,11 @@ export default function UpdatesScreen() {
               recordPostInteraction(id, 'share');
               void Share.share({ message: `${post.author} on Old Time:\n\n${post.caption}` });
             }}
-            onOpenProfile={() => Alert.alert('Profile moved to Inbox', 'Open a conversation or use People search in Updates to view the full profile.')}
+             onOpenProfile={(handle: string) => {
+               setViewMode('landing');
+               setPeopleQuery(handle.replace(/^@/, ''));
+               setShowPeopleSearch(true);
+             }}
             onFollow={(handle: string) => toggleFollow(handle)}
             followedCreators={followedCreators}
             onHide={(post: UpdatePost) => hidePost(post)}
@@ -442,8 +550,10 @@ export default function UpdatesScreen() {
 
       <Modal visible={compose !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setCompose(null)}>
         {compose && (
-          <ComposeModal
-             type={compose}
+           <ComposeModal
+              type={compose}
+              token={session?.authToken ?? ''}
+              mediaRequired={compose === 'post' && postComposerSurface === 'creator'}
               initialMediaUri={capturedStatusMedia?.uri}
               initialMediaType={capturedStatusMedia?.type}
               initialMediaFit={capturedStatusMedia?.fit}
@@ -477,7 +587,7 @@ export default function UpdatesScreen() {
                     const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
                     storyLocation = { latitude: current.coords.latitude, longitude: current.coords.longitude };
                   }
-                  const story = await createStory(session.authToken, { content: data.caption, visibility: data.audience, media, location: storyLocation });
+                  const story = await createStory(session.authToken, { content: data.caption, visibility: data.audience, media, location: storyLocation, taggedUserIds: data.taggedUserIds });
                   setSocialStories((items) => [story, ...items]);
                 } else {
                   const post = await createSocialPost(session.authToken, {
@@ -567,6 +677,8 @@ export default function UpdatesScreen() {
               ]);
             }}
             unreadCount={unreadNotifications}
+             onComment={setSocialCommentPost}
+             onShare={(post) => void shareSocialPost(post)}
           />
         ) : null}
       </Modal>
@@ -603,10 +715,18 @@ export default function UpdatesScreen() {
           loading={messageRequestsLoading}
           username={ownCard?.username ?? session?.username ?? 'oldtime'}
           displayName={ownCard?.name ?? session?.name ?? 'Old Time'}
-          stories={socialStories}
           posts={socialPosts}
+          notes={notes}
           colors={colors}
           onClose={() => setShowMessagesInbox(false)}
+          onCreateNote={() => setNoteEditor('new')}
+          onEditNote={(note) => setNoteEditor(note)}
+          onDeleteNote={(note) => {
+            if (!session?.authToken) return;
+            void deleteNote(session.authToken, note.id).then(() => {
+              setNotes((items) => items.filter((item) => item.id !== note.id));
+            }).catch((error) => Alert.alert('Could not delete note', error instanceof Error ? error.message : 'Please try again.'));
+          }}
           onOpenMessages={() => {
             setShowMessagesInbox(false);
             router.push('/(tabs)');
@@ -616,6 +736,30 @@ export default function UpdatesScreen() {
             openMessageRequests();
           }}
         />
+      </Modal>
+
+      <Modal visible={noteEditor !== null} transparent animationType="slide" onRequestClose={() => setNoteEditor(null)}>
+        {noteEditor !== null ? (
+          <NoteEditorSheet
+            note={editingNote}
+            colors={colors}
+            onClose={() => setNoteEditor(null)}
+            onSave={async (content) => {
+              if (!session?.authToken) throw new Error('Sign in again to save a note.');
+              const saved = noteEditor === 'new'
+                ? await createNote(session.authToken, content)
+                : await updateNote(session.authToken, editingNote!.id, content);
+              setNotes((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
+              setNoteEditor(null);
+            }}
+            onDelete={editingNote ? async () => {
+              if (!session?.authToken) return;
+              await deleteNote(session.authToken, editingNote.id);
+              setNotes((items) => items.filter((item) => item.id !== editingNote.id));
+              setNoteEditor(null);
+            } : undefined}
+          />
+        ) : null}
       </Modal>
 
       <Modal visible={showMessageRequests} transparent animationType="slide" onRequestClose={() => setShowMessageRequests(false)}>
@@ -668,6 +812,135 @@ export default function UpdatesScreen() {
         {serverStoryOpen ? <ServerStoryViewer items={buildStoryViewerItems(socialStories)} initialItemId={userStoryViewerItemId(serverStoryOpen.id)} token={session?.authToken ?? ''} onClose={() => setServerStoryOpen(null)} /> : null}
       </Modal>
 
+    </View>
+  );
+}
+
+function CreatorFeedPager({ posts, initialIndex, token, colors, onClose, onComment, onShare, onOpenProfile, onChanged }: {
+  posts: SocialPost[];
+  initialIndex: number;
+  token: string;
+  colors: any;
+  onClose: () => void;
+  onComment: (post: SocialPost) => void;
+  onShare: (post: SocialPost) => void;
+  onOpenProfile: (userId: number) => void;
+  onChanged: (post: SocialPost) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    const firstVisible = viewableItems.find((entry: any) => entry?.item?.id);
+    if (firstVisible) setCurrentIndex(firstVisible.index ?? 0);
+  }).current;
+
+  return (
+    <View style={styles.creatorFeedPager} testID="creator-feed-pager">
+      <Pressable onPress={onClose} style={[styles.creatorFeedBack, { top: Math.max(insets.top, 20) + 10 }]} accessibilityRole="button" accessibilityLabel="Back to Updates">
+        <Ionicons name="chevron-back" size={30} color="#fff" />
+      </Pressable>
+      <FlatList
+        data={posts}
+        keyExtractor={(item) => String(item.id)}
+        pagingEnabled
+        snapToInterval={WINDOW_HEIGHT}
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        initialScrollIndex={Math.min(initialIndex, Math.max(posts.length - 1, 0))}
+        getItemLayout={(_, index) => ({ length: WINDOW_HEIGHT, offset: WINDOW_HEIGHT * index, index })}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+        renderItem={({ item, index }) => (
+          <CreatorFeedPost
+            post={item}
+            active={index === currentIndex}
+            token={token}
+            colors={colors}
+            onComment={() => onComment(item)}
+            onShare={() => onShare(item)}
+            onOpenProfile={() => onOpenProfile(item.author.id)}
+            onChanged={onChanged}
+          />
+        )}
+      />
+    </View>
+  );
+}
+
+function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOpenProfile, onChanged }: {
+  post: SocialPost;
+  active: boolean;
+  token: string;
+  colors: any;
+  onComment: () => void;
+  onShare: () => void;
+  onOpenProfile: () => void;
+  onChanged: (post: SocialPost) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [muted, setMuted] = useState(true);
+  const [showHeart, setShowHeart] = useState(false);
+  const media = post.media?.[0];
+  const mediaUrl = media ? socialMediaUrl(media.objectPath) : null;
+
+  async function changeRelation(relation: 'like' | 'repost' | 'save') {
+    const activeNow = relation === 'like' ? post.viewer.liked : relation === 'repost' ? post.viewer.reposted : post.viewer.saved;
+    const nextActive = !activeNow;
+    const countKey = relation === 'like' ? 'likes' : relation === 'repost' ? 'reposts' : 'saves';
+    const next: SocialPost = {
+      ...post,
+      counts: { ...post.counts, [countKey]: Math.max(0, post.counts[countKey] + (nextActive ? 1 : -1)) },
+      viewer: { ...post.viewer, liked: relation === 'like' ? nextActive : post.viewer.liked, reposted: relation === 'repost' ? nextActive : post.viewer.reposted, saved: relation === 'save' ? nextActive : post.viewer.saved },
+    };
+    onChanged(next);
+    try {
+      await setPostRelation(token, post.id, relation, nextActive);
+    } catch (error) {
+      onChanged(post);
+      Alert.alert('Could not update post', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
+
+  function doubleTap() {
+    if (!post.viewer.liked) void changeRelation('like');
+    setShowHeart(true);
+    setTimeout(() => setShowHeart(false), 650);
+  }
+
+  return (
+    <View style={styles.creatorFeedPage}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={doubleTap} accessibilityRole="button" accessibilityLabel="Like this creator post">
+        {mediaUrl && media?.type === 'video' ? <VideoSurface source={mediaUrl} style={StyleSheet.absoluteFill} muted={muted} paused={!active} /> : mediaUrl ? <Image source={{ uri: mediaUrl }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+      </Pressable>
+      <View style={styles.creatorFeedShade} pointerEvents="none" />
+      {showHeart ? <View style={styles.creatorHeart} pointerEvents="none"><Ionicons name="heart" size={120} color="#fff" /></View> : null}
+      <Pressable onPress={() => setMuted((value) => !value)} style={[styles.creatorMuteButton, { top: Math.max(insets.top, 20) + 14 }]} accessibilityRole="button" accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}>
+        <Ionicons name={muted ? 'volume-mute' : 'volume-medium'} size={20} color="#fff" />
+      </Pressable>
+      <View style={[styles.creatorFeedActions, { bottom: Math.max(insets.bottom, 16) + 94 }]}>
+        <Pressable onPress={() => void changeRelation('like')} style={styles.creatorAction} accessibilityRole="button" accessibilityLabel="Like post">
+          <Ionicons name={post.viewer.liked ? 'heart' : 'heart-outline'} size={34} color={post.viewer.liked ? '#FFD54A' : '#fff'} />
+          <Text style={styles.creatorActionCount}>{post.counts.likes}</Text>
+        </Pressable>
+        <Pressable onPress={onComment} style={styles.creatorAction} accessibilityRole="button" accessibilityLabel="Open comments">
+          <Ionicons name="chatbubble-ellipses-outline" size={32} color="#fff" />
+          <Text style={styles.creatorActionCount}>{post.counts.comments}</Text>
+        </Pressable>
+        <Pressable onPress={() => void changeRelation('save')} style={styles.creatorAction} accessibilityRole="button" accessibilityLabel="Save post">
+          <Ionicons name={post.viewer.saved ? 'bookmark' : 'bookmark-outline'} size={31} color={post.viewer.saved ? '#FFD54A' : '#fff'} />
+          <Text style={styles.creatorActionCount}>{post.counts.saves}</Text>
+        </Pressable>
+        <Pressable onPress={onShare} style={styles.creatorAction} accessibilityRole="button" accessibilityLabel="Share post">
+          <Ionicons name="arrow-redo-outline" size={32} color="#fff" style={{ transform: [{ scaleX: -1 }] }} />
+          <Text style={styles.creatorActionCount}>Share</Text>
+        </Pressable>
+      </View>
+      <View style={[styles.creatorFeedCaption, { bottom: Math.max(insets.bottom, 16) + 28 }]}>
+        <Pressable onPress={onOpenProfile} accessibilityRole="button" accessibilityLabel={`Open ${post.author.name}'s profile`}>
+          <Text style={styles.creatorAuthor}>@{post.author.username}</Text>
+        </Pressable>
+        {post.content ? <Text style={styles.creatorCaption}>{post.content}</Text> : null}
+      </View>
     </View>
   );
 }
@@ -934,7 +1207,7 @@ function StatusViewer({ initialGroup, allGroups, onClose, colors, onMarkViewed }
   );
 }
 
-function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initialMediaType, initialMediaFit, defaultAudience }: any) {
+function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, colors, initialMediaUri, initialMediaType, initialMediaFit, defaultAudience }: any) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [draft, setDraft] = useState('');
@@ -950,9 +1223,55 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
    const [publishing, setPublishing] = useState(false);
    const [shareLocation, setShareLocation] = useState(false);
    const [allowReposts, setAllowReposts] = useState(false);
+   const [taggedUsers, setTaggedUsers] = useState<SocialUser[]>([]);
+   const [tagPickerOpen, setTagPickerOpen] = useState(false);
+   const [tagQuery, setTagQuery] = useState('');
+   const [tagResults, setTagResults] = useState<SocialUser[]>([]);
+   const [tagSearching, setTagSearching] = useState(false);
+   const [storyTextOffset, setStoryTextOffset] = useState({ x: 0, y: 0 });
+   const storyTextOffsetRef = useRef({ x: 0, y: 0 });
+   const storyTextStart = useRef({ x: 0, y: 0 });
    const gradient: [string, string, string] = type === 'status' && selectedColor === colors.brandBlue
      ? [colors.brandBlue, colors.brandBlue, colors.brandBlue]
      : [...storyGradients[Math.abs(selectedColor.charCodeAt(1) || 0) % storyGradients.length]];
+
+   useEffect(() => {
+     if (!tagPickerOpen || !token || tagQuery.trim().length < 2) {
+       setTagResults([]);
+       return;
+     }
+     let cancelled = false;
+     setTagSearching(true);
+     void searchSocial(token, tagQuery.trim()).then((result) => {
+       if (!cancelled) setTagResults(result.users.filter((user) => !taggedUsers.some((tagged) => tagged.id === user.id)).slice(0, 8));
+     }).catch(() => {
+       if (!cancelled) setTagResults([]);
+     }).finally(() => {
+       if (!cancelled) setTagSearching(false);
+     });
+     return () => { cancelled = true; };
+   }, [tagPickerOpen, tagQuery, taggedUsers, token]);
+
+   useEffect(() => {
+     storyTextOffsetRef.current = storyTextOffset;
+   }, [storyTextOffset]);
+
+   const storyTextPanResponder = useRef(
+     PanResponder.create({
+       onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5,
+       onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5,
+       onPanResponderGrant: () => {
+         storyTextStart.current = storyTextOffsetRef.current;
+       },
+       onPanResponderMove: (_, gestureState) => {
+         setStoryTextOffset({
+           x: Math.max(-WINDOW_WIDTH * 0.3, Math.min(WINDOW_WIDTH * 0.3, storyTextStart.current.x + gestureState.dx)),
+           y: Math.max(-WINDOW_HEIGHT * 0.26, Math.min(WINDOW_HEIGHT * 0.26, storyTextStart.current.y + gestureState.dy)),
+         });
+       },
+     }),
+   ).current;
 
   async function pickMedia() {
     const ImagePicker = await import('expo-image-picker');
@@ -969,10 +1288,14 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
 
    async function handlePublish() {
     if (!draft.trim() && !mediaUri) return;
+      if (mediaRequired && !mediaUri) {
+        Alert.alert('Add a photo or video', 'Creator updates are media-only. Choose a photo or video before posting.');
+        return;
+      }
      setPublishing(true);
      try {
        if (type === 'status') {
-          await onPublish({ caption: draft.trim(), color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, shareLocation, fit: mediaFit });
+           await onPublish({ caption: draft.trim(), color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, shareLocation, fit: mediaFit, taggedUserIds: taggedUsers.map((user) => user.id) });
        } else {
            await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, fit: mediaFit, allowReposts });
        }
@@ -994,22 +1317,44 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
 
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Math.max(insets.top, 20) + 10 }}>
         <IconButton name="close" color="#fff" onPress={onClose} />
-        <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>{type === 'status' ? 'Create a story' : 'Create a post'}</Text>
+        <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>{type === 'status' ? 'Create a story' : mediaRequired ? 'Create media' : 'Create a post'}</Text>
         <Pressable disabled={publishing} onPress={() => void handlePublish()} style={{ backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, opacity: publishing ? 0.65 : 1 }}>
-          <Text style={{ color: '#000', fontWeight: '700', fontSize: 14 }}>{publishing ? 'Posting…' : type === 'status' ? 'Share to story' : 'Post'}</Text>
+          <Text style={{ color: '#000', fontWeight: '700', fontSize: 14 }}>{publishing ? 'Posting…' : type === 'status' ? 'Share to story' : mediaRequired ? 'Share media' : 'Post'}</Text>
         </Pressable>
       </View>
 
       <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 20 }}>
-         <TextInput
-           autoFocus
-           value={draft}
-           onChangeText={setDraft}
-            placeholder={type === 'status' ? 'Say something…' : 'What’s on your mind?'}
-           placeholderTextColor="rgba(255,255,255,0.7)"
-           multiline
-           style={{ color: '#fff', fontSize: 28, fontWeight: '600', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}
-         />
+        {type === 'status' ? (
+          <View style={styles.storyCanvas} pointerEvents="box-none">
+            <View
+              {...storyTextPanResponder.panHandlers}
+              style={[styles.storyTextLayer, { transform: [{ translateX: storyTextOffset.x }, { translateY: storyTextOffset.y }] }]}
+            >
+              <TextInput
+                autoFocus
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Write your Story…"
+                placeholderTextColor="rgba(255,255,255,0.72)"
+                multiline
+                maxLength={280}
+                style={styles.storyTextInput}
+                accessibilityLabel="Story text"
+              />
+            </View>
+            <Text pointerEvents="none" style={styles.storyTextHint}>Tap the text to edit · drag it anywhere</Text>
+          </View>
+        ) : (
+          <TextInput
+            autoFocus
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="What’s on your mind?"
+            placeholderTextColor="rgba(255,255,255,0.7)"
+            multiline
+            style={{ color: '#fff', fontSize: 28, fontWeight: '600', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}
+          />
+        )}
       </View>
 
       <View style={{ paddingBottom: Math.max(insets.bottom, 20) + 20, paddingHorizontal: 16, gap: 20 }}>
@@ -1063,6 +1408,35 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
                 <View style={[styles.mapStoryThumb, { backgroundColor: shareLocation ? selectedColor : '#FFFFFF', transform: [{ translateX: shareLocation ? 16 : 0 }] }]} />
               </View>
             </Pressable>
+          ) : null}
+
+          {type === 'status' ? (
+            <View style={styles.tagPicker}>
+              <Pressable onPress={() => setTagPickerOpen((open) => !open)} style={styles.tagPickerButton} accessibilityRole="button" accessibilityLabel="Tag people in story">
+                <Ionicons name="person-add-outline" size={17} color="#fff" />
+                <Text style={styles.mapStoryLabel}>{taggedUsers.length ? `${taggedUsers.length} people tagged` : 'Tag people'}</Text>
+              </Pressable>
+              {taggedUsers.length ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagChips}>
+                  {taggedUsers.map((user) => (
+                    <Pressable key={user.id} onPress={() => setTaggedUsers((items) => items.filter((item) => item.id !== user.id))} style={styles.tagChip} accessibilityRole="button" accessibilityLabel={`Remove ${user.name} tag`}>
+                      <Text style={styles.tagChipText}>@{user.username} ×</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+              {tagPickerOpen ? (
+                <View style={styles.tagResultsBox}>
+                  <TextInput value={tagQuery} onChangeText={setTagQuery} autoFocus placeholder="Search people by name or username" placeholderTextColor="rgba(255,255,255,0.68)" style={styles.tagSearchInput} accessibilityLabel="Search people to tag" />
+                  {tagSearching ? <Text style={styles.tagSearchHint}>Searching…</Text> : tagQuery.trim().length < 2 ? <Text style={styles.tagSearchHint}>Type at least two characters.</Text> : tagResults.length === 0 ? <Text style={styles.tagSearchHint}>No people found.</Text> : tagResults.map((user) => (
+                    <Pressable key={user.id} onPress={() => { setTaggedUsers((items) => [...items, user]); setTagQuery(''); }} style={styles.tagResultRow} accessibilityRole="button" accessibilityLabel={`Tag ${user.name}`}>
+                      <Avatar name={user.name} size={30} color="rgba(255,255,255,0.28)" />
+                      <View><Text style={styles.tagResultName}>{user.name}</Text><Text style={styles.tagResultUsername}>@{user.username}</Text></View>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </View>
           ) : null}
 
          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
@@ -1203,9 +1577,9 @@ function SocialHubPanel({
         ))}
       </ScrollView>
       <View style={styles.socialCreateRow}>
-        <Pressable onPress={onCreatePost} style={[styles.socialCreateButton, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Create a post">
-          <Ionicons name="create-outline" size={18} color="#fff" />
-          <Text style={styles.socialCreateButtonText}>Create a post</Text>
+        <Pressable onPress={onCreatePost} style={[styles.socialCreateButton, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Create a photo or video">
+          <Ionicons name="videocam-outline" size={18} color="#fff" />
+          <Text style={styles.socialCreateButtonText}>Create media</Text>
         </Pressable>
         <Pressable onPress={onCreateStory} style={[styles.socialCreateButton, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]} accessibilityRole="button" accessibilityLabel="Create a story">
           <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
@@ -1223,19 +1597,123 @@ function SocialHubPanel({
           <Text style={{ color: colors.foreground, flex: 1 }}>{error}</Text>
           <Text style={{ color: colors.primary, fontWeight: '600' }}>Retry</Text>
         </Pressable>
-      ) : posts.length > 0 ? (
-        <View style={styles.socialPostList}>
-          {posts.slice(0, 3).map((post, index) => (
-            <React.Fragment key={post.id}>
-              <SocialPostCard post={post} colors={colors} token={token} onOpenProfile={() => onOpenProfile(post.author.id)} onShare={() => onShare(post)} onComment={() => onComment(post)} onChanged={onChanged} />
-              {index === 0 && interestPrompt ? <InterestPrompt topic={interestPrompt.topic} title={interestPrompt.title} colors={colors} onDismiss={onDismissInterestPrompt} onFeedback={onInterestFeedback} /> : null}
-            </React.Fragment>
-          ))}
-        </View>
       ) : (
         <View />
       )}
     </View>
+  );
+}
+
+function CommunityFeed({
+  posts,
+  loading,
+  error,
+  colors,
+  token,
+  filter,
+  interests,
+  onFilterChange,
+  onClose,
+  onCreatePost,
+  onRetry,
+  onEndReached,
+  loadingMore,
+  onOpenProfile,
+  onComment,
+  onShare,
+  onChanged,
+}: {
+  posts: SocialPost[];
+  loading: boolean;
+  error: string | null;
+  colors: any;
+  token: string;
+  filter: CommunityFilter;
+  interests: string[];
+  onFilterChange: (filter: CommunityFilter) => void;
+  onClose: () => void;
+  onCreatePost: () => void;
+  onRetry: () => void;
+  onEndReached: () => void;
+  loadingMore: boolean;
+  onOpenProfile: (id: number) => void;
+  onComment: (post: SocialPost) => void;
+  onShare: (post: SocialPost) => void;
+  onChanged: (post: SocialPost) => void;
+}) {
+  return (
+    <FlatList
+      testID="community-feed"
+      data={posts}
+      keyExtractor={(item) => String(item.id)}
+      contentContainerStyle={styles.communityFeedContent}
+      showsVerticalScrollIndicator={false}
+      onEndReached={onEndReached}
+      onEndReachedThreshold={0.7}
+      ListHeaderComponent={
+        <View style={styles.communityIntro}>
+          <View style={styles.communityTitleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.communityIntroTitle, { color: colors.foreground }]}>Community</Text>
+              <Text style={[styles.communityIntroText, { color: colors.mutedForeground }]}>Posts from your people and interests.</Text>
+            </View>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Back to Updates" style={[styles.communityCloseButton, { borderColor: colors.border }]}>
+              <Ionicons name="close" size={20} color={colors.foreground} />
+            </Pressable>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.communityFilters}>
+            {([
+              ['friends', 'Friends'],
+              ['following', 'Following'],
+              ['interests', 'Interests'],
+            ] as [CommunityFilter, string][]).map(([value, label]) => (
+              <Pressable key={value} onPress={() => onFilterChange(value)} accessibilityRole="tab" accessibilityState={{ selected: filter === value }} style={[styles.communityFilter, { borderColor: filter === value ? colors.primary : colors.border, backgroundColor: filter === value ? colors.primary : colors.card }]}>
+                <Text style={{ color: filter === value ? '#fff' : colors.foreground, fontSize: 13, fontWeight: '700' }}>{label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+          <Pressable onPress={onCreatePost} style={[styles.communityCreateButton, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Create a community post">
+            <Ionicons name="create-outline" size={17} color="#fff" />
+            <Text style={styles.communityCreateButtonText}>Create a post</Text>
+          </Pressable>
+          {filter === 'interests' && interests.length === 0 ? (
+            <View style={[styles.communityFilterHint, { backgroundColor: colors.secondary }]}>
+              <Ionicons name="options-outline" size={16} color={colors.primary} />
+              <Text style={[styles.communityFilterHintText, { color: colors.foreground }]}>Choose interests in Updates to personalize this view.</Text>
+            </View>
+          ) : null}
+        </View>
+      }
+      ListEmptyComponent={
+        loading ? <ActivityIndicator color={colors.primary} style={{ margin: 40 }} /> :
+          error ? (
+            <Pressable onPress={onRetry} style={[styles.communityState, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityRole="button">
+              <Text style={[styles.communityStateTitle, { color: colors.foreground }]}>Community is unavailable</Text>
+              <Text style={[styles.communityStateText, { color: colors.mutedForeground }]}>{error}</Text>
+              <Text style={[styles.communityRetry, { color: colors.primary }]}>Try again</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.communityState}>
+              <Ionicons name="people-outline" size={32} color={colors.primary} />
+              <Text style={[styles.communityStateTitle, { color: colors.foreground }]}>{filter === 'interests' && interests.length === 0 ? 'No interests selected' : 'No posts in this view'}</Text>
+              <Text style={[styles.communityStateText, { color: colors.mutedForeground }]}>{filter === 'friends' ? 'Posts from mutual connections will appear here.' : filter === 'following' ? 'Posts from people you follow will appear here.' : 'Try another interest or choose more in Updates.'}</Text>
+            </View>
+          )
+      }
+      renderItem={({ item }) => (
+        <SocialPostCard
+          post={item}
+          colors={colors}
+          token={token}
+          onOpenProfile={() => onOpenProfile(item.author.id)}
+          onShare={() => onShare(item)}
+          onComment={() => onComment(item)}
+          onChanged={onChanged}
+        />
+      )}
+      ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.primary} style={{ margin: 18 }} /> : <View style={{ height: 10 }} />}
+    />
   );
 }
 
@@ -1336,7 +1814,7 @@ function relativeSocialTime(timestamp: number) {
   return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
 }
 
-function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequest, onExclude, onNotifications, onRequests, onBlock, unreadCount }: { userId: number; own: boolean; token: string; colors: any; onClose: () => void; onMessageRequest: (userId: number, name: string) => void; onExclude: (person: { id: number; name: string }) => void; onNotifications: () => void; onRequests: () => void; onBlock: (userId: number, name: string) => void; unreadCount: number }) {
+function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequest, onExclude, onNotifications, onRequests, onBlock, unreadCount, onComment, onShare }: { userId: number; own: boolean; token: string; colors: any; onClose: () => void; onMessageRequest: (userId: number, name: string) => void; onExclude: (person: { id: number; name: string }) => void; onNotifications: () => void; onRequests: () => void; onBlock: (userId: number, name: string) => void; unreadCount: number; onComment: (post: SocialPost) => void; onShare: (post: SocialPost) => void }) {
   const [card, setCard] = useState<UserCard | null>(null);
   const [profilePosts, setProfilePosts] = useState<SocialPost[]>([]);
   const [profilePostsLoading, setProfilePostsLoading] = useState(true);
@@ -1394,6 +1872,16 @@ function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequ
               <View><Text style={[styles.profileStatValue, { color: colors.foreground }]}>{card.followerCount}</Text><Text style={[styles.profileStatLabel, { color: colors.mutedForeground }]}>Followers</Text></View>
               <View><Text style={[styles.profileStatValue, { color: colors.foreground }]}>{card.followingCount}</Text><Text style={[styles.profileStatLabel, { color: colors.mutedForeground }]}>Following</Text></View>
             </View>
+            <View style={styles.socialProfileActions}>
+              {own ? <Pressable onPress={onNotifications} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Open notifications"><Ionicons name="notifications-outline" size={19} color={colors.primary} />{unreadCount > 0 ? <View style={{ position: 'absolute', top: -1, right: -1, width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.destructive }} /> : null}<Text style={{ color: colors.foreground, fontWeight: '600' }}>Notifications</Text></Pressable> : null}
+              {own ? <Pressable onPress={onRequests} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Open social messages"><Ionicons name="mail-unread-outline" size={19} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '600' }}>Messages</Text></Pressable> : null}
+              {!own ? <Pressable onPress={() => void toggleFollow()} style={[styles.profileAction, { backgroundColor: following ? colors.secondary : colors.primary }]}><Ionicons name={following ? 'checkmark' : 'person-add-outline'} size={17} color={following ? colors.foreground : '#fff'} /><Text style={{ color: following ? colors.foreground : '#fff', fontWeight: '600' }}>{following ? 'Following' : 'Follow'}</Text></Pressable> : null}
+              {!own && card.canMessage ? <Pressable onPress={() => onMessageRequest(userId, card.name)} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={`Message ${card.name}`}><Ionicons name="mail-outline" size={19} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '600' }}>Message</Text></Pressable> : null}
+            </View>
+            <View style={[styles.profileContentTab, { borderBottomColor: colors.primary }]} accessibilityRole="tab" accessibilityState={{ selected: true }}>
+              <Ionicons name="grid-outline" size={16} color={colors.primary} />
+              <Text style={[styles.profileContentTabText, { color: colors.primary }]}>Posts</Text>
+            </View>
             <View style={styles.profilePostsHeading}>
               <Text style={[styles.socialSectionTitle, { color: colors.foreground }]}>{own ? 'Your posts' : `${card.name}'s posts`}</Text>
               <Text style={[styles.socialSectionHint, { color: colors.mutedForeground }]}>{profilePosts.length} shared</Text>
@@ -1409,7 +1897,8 @@ function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequ
                     colors={colors}
                     token={token}
                     onOpenProfile={() => undefined}
-                    onShare={() => Alert.alert('Post sharing', 'Use repost or share from the post actions.')}
+                    onShare={() => onShare(post)}
+                    onComment={() => onComment(post)}
                     onChanged={(updated) => setProfilePosts((items) => items.map((item) => item.id === updated.id ? updated : item))}
                   />
                 ))}
@@ -1419,12 +1908,6 @@ function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequ
                 {own ? 'Your public and audience-approved posts will appear here.' : 'No visible posts yet.'}
               </Text>
             )}
-            <View style={styles.socialProfileActions}>
-              {own ? <Pressable onPress={onNotifications} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Open notifications"><Ionicons name="notifications-outline" size={19} color={colors.primary} />{unreadCount > 0 ? <View style={{ position: 'absolute', top: -1, right: -1, width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.destructive }} /> : null}</Pressable> : null}
-              {own ? <Pressable onPress={onRequests} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Open social messages"><Ionicons name="mail-unread-outline" size={19} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '600' }}>Messages</Text></Pressable> : null}
-              {!own ? <Pressable onPress={() => void toggleFollow()} style={[styles.profileAction, { backgroundColor: following ? colors.secondary : colors.primary }]}><Ionicons name={following ? 'checkmark' : 'person-add-outline'} size={17} color={following ? colors.foreground : '#fff'} /><Text style={{ color: following ? colors.foreground : '#fff', fontWeight: '600' }}>{following ? 'Following' : 'Follow'}</Text></Pressable> : null}
-              {!own && card.canMessage ? <Pressable onPress={() => onMessageRequest(userId, card.name)} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={`Message ${card.name}`}><Ionicons name="mail-outline" size={19} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '600' }}>Message</Text></Pressable> : null}
-            </View>
             {!own ? <Pressable onPress={() => { onExclude({ id: card.id, name: card.name }); Alert.alert('Sharing list updated', `${card.name} was added or removed from your excluded audience list.`); }} style={styles.excludeAction}><Ionicons name="eye-off-outline" size={17} color={colors.mutedForeground} /><Text style={{ color: colors.mutedForeground }}>Toggle excluded from sharing</Text></Pressable> : null}
             {!own ? <Pressable onPress={() => onBlock(card.id, card.name)} style={styles.excludeAction}><Ionicons name="ban-outline" size={17} color={colors.destructive} /><Text style={{ color: colors.destructive }}>Block {card.name}</Text></Pressable> : null}
             <Pressable onPress={onClose} style={[styles.profileDone, { borderColor: colors.border }]}><Text style={{ color: colors.primary, fontWeight: '600' }}>Done</Text></Pressable>
@@ -1577,10 +2060,11 @@ function MessageRequestsSheet({ requests, loading, colors, onClose, onAccept, on
   );
 }
 
-function MessagesInboxSheet({ requestCount, loading, username, displayName, stories, posts, colors, onClose, onOpenMessages, onOpenRequests }: { requestCount: number; loading: boolean; username: string; displayName: string; stories: Story[]; posts: SocialPost[]; colors: any; onClose: () => void; onOpenMessages: () => void; onOpenRequests: () => void }) {
+function MessagesInboxSheet({ requestCount, loading, username, displayName, notes, posts, colors, onClose, onOpenMessages, onOpenRequests, onCreateNote, onEditNote, onDeleteNote }: { requestCount: number; loading: boolean; username: string; displayName: string; notes: Note[]; posts: SocialPost[]; colors: any; onClose: () => void; onOpenMessages: () => void; onOpenRequests: () => void; onCreateNote: () => void; onEditNote: (note: Note) => void; onDeleteNote: (note: Note) => void }) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const storyAuthors = Array.from(new Map(stories.filter((story) => !story.viewer.isOwner).map((story) => [story.author.id, story.author])).values());
+  const ownNote = notes.find((note) => note.viewer.isOwner);
+  const sharedNotes = notes.filter((note) => !note.viewer.isOwner);
   const messageAuthors = Array.from(new Map(posts.map((post) => [post.author.id, post.author])).values()).filter((author) => author.username !== username);
   const visibleAuthors = messageAuthors.filter((author) => `${author.name} ${author.username}`.toLowerCase().includes(query.trim().toLowerCase()));
   return (
@@ -1598,7 +2082,7 @@ function MessagesInboxSheet({ requestCount, loading, username, displayName, stor
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search or ask Meta AI"
+            placeholder="Search messages on Old Time"
             placeholderTextColor={colors.mutedForeground}
             style={[styles.messagesSearchInput, { color: colors.foreground }]}
             returnKeyType="search"
@@ -1606,18 +2090,22 @@ function MessagesInboxSheet({ requestCount, loading, username, displayName, stor
         </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesRail}>
-            <Pressable onPress={onOpenMessages} style={styles.noteItem} accessibilityRole="button" accessibilityLabel="Create a note">
-              <View style={[styles.noteBubble, { backgroundColor: colors.muted }]}><Text style={[styles.noteBubbleText, { color: colors.foreground }]}>Start your{'\n'}first note…</Text></View>
+             <Pressable onPress={() => ownNote ? onEditNote(ownNote) : onCreateNote()} style={styles.noteItem} accessibilityRole="button" accessibilityLabel={ownNote ? 'Edit your note' : 'Create a note'}>
+               <View style={[styles.noteBubble, { backgroundColor: ownNote ? colors.primary : colors.muted }]}>
+                 <Text style={[styles.noteBubbleText, { color: ownNote ? '#fff' : colors.foreground }]} numberOfLines={3}>
+                   {ownNote?.content ?? 'Share a note with your friends…'}
+                 </Text>
+               </View>
               <Avatar name={displayName} size={56} color={colors.primary} />
               <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>Your note</Text>
-              <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>Tap to add</Text>
+               <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>{ownNote ? (ownNote.expiresAt <= Date.now() ? 'Only you can see this' : 'Visible for 24 hours') : 'Tap to add'}</Text>
             </Pressable>
-            {storyAuthors.slice(0, 8).map((author, index) => (
-              <View key={author.id} style={styles.noteItem}>
-                <View style={[styles.noteBubble, { backgroundColor: colors.muted }]}><Text style={[styles.noteBubbleText, { color: colors.foreground }]} numberOfLines={2}>{stories.find((story) => story.author.id === author.id)?.content || ['It’s true, I’m relaxing', 'What are you up to?', 'New day, new energy'][index % 3]}</Text></View>
-                <Avatar name={author.name} size={56} color={colors.primary} />
-                <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>{author.name}</Text>
-                <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>Active recently</Text>
+             {sharedNotes.slice(0, 8).map((note) => (
+               <View key={note.id} style={styles.noteItem}>
+                 <View style={[styles.noteBubble, { backgroundColor: colors.muted }]}><Text style={[styles.noteBubbleText, { color: colors.foreground }]} numberOfLines={3}>{note.content}</Text></View>
+                 <Avatar name={note.owner.name} size={56} color={colors.primary} />
+                 <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>{note.owner.name}</Text>
+                 <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>Visible for 24 hours</Text>
               </View>
             ))}
           </ScrollView>
@@ -1647,6 +2135,76 @@ function MessagesInboxSheet({ requestCount, loading, username, displayName, stor
             </Pressable>
           ))}
         </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function NoteEditorSheet({ note, colors, onClose, onSave, onDelete }: { note: Note | null; colors: any; onClose: () => void; onSave: (content: string) => Promise<void>; onDelete?: () => Promise<void> }) {
+  const insets = useSafeAreaInsets();
+  const [content, setContent] = useState(note?.content ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (!content.trim()) {
+      setError('Write something first.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(content.trim());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not save your note.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!onDelete) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onDelete();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not delete your note.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView behavior="padding" style={styles.sheetOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={[styles.noteEditorSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 18 }]}>
+        <View style={styles.sheetTop}>
+          <View>
+            <Text style={[styles.sheetEyebrow, { color: colors.mutedForeground }]}>MESSAGES</Text>
+            <Text style={[styles.notificationsTitle, { color: colors.foreground }]}>{note ? 'Edit your note' : 'New note'}</Text>
+          </View>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        <TextInput
+          autoFocus
+          multiline
+          maxLength={280}
+          value={content}
+          onChangeText={setContent}
+          placeholder="Share what’s on your mind…"
+          placeholderTextColor={colors.mutedForeground}
+          style={[styles.noteEditorInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.muted }]}
+        />
+        <View style={styles.noteEditorFooter}>
+          <Text style={[styles.noteEditorHint, { color: colors.mutedForeground }]}>Visible in chats for 24 hours. Your note stays here until you delete it.</Text>
+          {error ? <Text style={[styles.noteEditorError, { color: colors.destructive }]}>{error}</Text> : null}
+          <View style={styles.noteEditorActions}>
+            {onDelete ? <Pressable onPress={remove} disabled={saving}><Text style={[styles.noteDeleteButton, { color: colors.destructive }]}>Delete</Text></Pressable> : <View />}
+            <Pressable onPress={() => void save()} disabled={saving} style={[styles.noteSaveButton, { backgroundColor: colors.primary, opacity: saving ? 0.6 : 1 }]}>
+              {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.noteSaveButtonText}>{note ? 'Save changes' : 'Share note'}</Text>}
+            </Pressable>
+          </View>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -1718,8 +2276,11 @@ function SearchPeopleSheet({ query, results, loading, error, colors, onChangeQue
 }
 
 function notificationCopy(type: string) {
+  if (type.includes('mention')) return 'tagged you in a story';
   if (type.includes('reply')) return 'replied to your story';
   if (type.includes('reaction')) return 'reacted to your story';
+  if (type.includes('comment')) return 'commented on your post';
+  if (type.includes('like')) return 'liked your post';
   return 'interacted with your update';
 }
 
@@ -1732,23 +2293,18 @@ function inferSocialTopic(post: SocialPost) {
 function InterestPrompt({ topic, title, colors, onDismiss, onFeedback }: { topic: string; title: string; colors: any; onDismiss: () => void; onFeedback: (interested: boolean) => void }) {
   return (
     <View style={[styles.interestPrompt, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={[styles.interestPromptIcon, { backgroundColor: colors.secondary }]}>
-        <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
-      </View>
-      <View style={{ flex: 1 }}>
+      <View style={styles.interestPromptTop}>
         <Text style={[styles.interestPromptTitle, { color: colors.foreground }]}>Interested in this?</Text>
-        <Text style={[styles.interestPromptText, { color: colors.mutedForeground }]} numberOfLines={2}>Tell us whether content from {title} belongs in your For You feed.</Text>
+        <Pressable onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss interest question" hitSlop={8}>
+          <Ionicons name="close" size={18} color={colors.mutedForeground} />
+        </Pressable>
       </View>
-      <Pressable onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss interest question" hitSlop={8}>
-        <Ionicons name="close" size={18} color={colors.mutedForeground} />
-      </Pressable>
+      <Text style={[styles.interestPromptText, { color: colors.mutedForeground }]} numberOfLines={2}>Show more posts like this from {title}?</Text>
       <View style={styles.interestPromptActions}>
         <Pressable onPress={() => onFeedback(false)} style={[styles.interestPromptButton, { borderColor: colors.border }]} accessibilityRole="button">
-          <Ionicons name="thumbs-down-outline" size={16} color={colors.mutedForeground} />
-          <Text style={[styles.interestPromptButtonText, { color: colors.mutedForeground }]}>Not for me</Text>
+          <Text style={[styles.interestPromptButtonText, { color: colors.mutedForeground }]}>No thanks</Text>
         </Pressable>
         <Pressable onPress={() => onFeedback(true)} style={[styles.interestPromptButton, { backgroundColor: colors.primary, borderColor: colors.primary }]} accessibilityRole="button">
-          <Ionicons name="thumbs-up-outline" size={16} color="#fff" />
           <Text style={[styles.interestPromptButtonText, { color: '#fff' }]}>Show more</Text>
         </Pressable>
       </View>
@@ -1871,6 +2427,20 @@ function InterestPanel({ interests, onToggle, languages, onToggleLanguage, onBac
 }
 
 const styles = StyleSheet.create({
+  creatorFeedPager: { flex: 1, backgroundColor: '#000' },
+  creatorFeedPage: { width: WINDOW_WIDTH, height: WINDOW_HEIGHT, backgroundColor: '#111' },
+  creatorFeedBack: { position: 'absolute', left: 12, zIndex: 50, width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.28)' },
+  creatorMuteButton: { position: 'absolute', right: 16, width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  creatorFeedShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.16)' },
+  creatorHeart: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', zIndex: 20 },
+  creatorFeedActions: { position: 'absolute', right: 12, alignItems: 'center', gap: 20 },
+  creatorAction: { alignItems: 'center', minWidth: 42 },
+  creatorActionCount: { color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 },
+  creatorFeedCaption: { position: 'absolute', left: 16, right: 82 },
+  creatorAuthor: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  creatorCaption: { color: '#fff', fontSize: 15, lineHeight: 22 },
+  communityCreateButton: { minHeight: 42, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 8 },
+  communityCreateButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   socialHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   headerProfileButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginHorizontal: 1 },
   mapStoryToggle: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'center', paddingHorizontal: 12 },
@@ -1878,6 +2448,21 @@ const styles = StyleSheet.create({
   mapStoryLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
   mapStorySwitch: { width: 42, height: 24, borderRadius: 12, padding: 3 },
   mapStoryThumb: { width: 18, height: 18, borderRadius: 9 },
+  tagPicker: { gap: 8 },
+  storyCanvas: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  storyTextLayer: { width: '100%', maxWidth: 360, minHeight: 74, justifyContent: 'center' },
+  storyTextInput: { color: '#fff', fontSize: 28, lineHeight: 34, fontWeight: '600', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.34)', textShadowRadius: 10, paddingHorizontal: 10, paddingVertical: 10 },
+  storyTextHint: { position: 'absolute', bottom: 22, color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  tagPickerButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  tagChips: { gap: 7, paddingHorizontal: 4 },
+  tagChip: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 },
+  tagChipText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  tagResultsBox: { backgroundColor: 'rgba(0,0,0,0.24)', borderRadius: 16, padding: 8, maxHeight: 190 },
+  tagSearchInput: { minHeight: 38, borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)', borderRadius: 19, paddingHorizontal: 12, color: '#fff', fontSize: 13, marginBottom: 5 },
+  tagSearchHint: { color: 'rgba(255,255,255,0.78)', textAlign: 'center', padding: 10, fontSize: 12 },
+  tagResultRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 6 },
+  tagResultName: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  tagResultUsername: { color: 'rgba(255,255,255,0.72)', fontSize: 11, marginTop: 1 },
   headerAvatarButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   headerUnreadDot: { position: 'absolute', top: 3, right: 3, width: 9, height: 9, borderRadius: 5, borderWidth: 2, borderColor: '#fff' },
   createPill: { minHeight: 36, borderRadius: 20, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -1947,6 +2532,15 @@ const styles = StyleSheet.create({
   notificationsSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, minHeight: WINDOW_HEIGHT * 0.64, maxHeight: WINDOW_HEIGHT * 0.82, padding: 20 },
   messagesInboxOverlay: { flex: 1 },
   messagesInboxSheet: { flex: 1, paddingHorizontal: 16 },
+  noteEditorSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20 },
+  noteEditorInput: { minHeight: 128, borderWidth: 1, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 13, fontSize: 17, textAlignVertical: 'top', marginTop: 12 },
+  noteEditorFooter: { marginTop: 10 },
+  noteEditorHint: { fontSize: 12, lineHeight: 17 },
+  noteEditorError: { fontSize: 12, marginTop: 6 },
+  noteEditorActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
+  noteDeleteButton: { fontSize: 15, fontWeight: '700', paddingVertical: 11, paddingHorizontal: 5 },
+  noteSaveButton: { minHeight: 44, borderRadius: 22, minWidth: 126, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
+  noteSaveButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   messagesInboxHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   messagesInboxUsername: { fontSize: 21, fontWeight: '800', letterSpacing: -0.5 },
   messagesInboxHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -2005,15 +2599,15 @@ const styles = StyleSheet.create({
   feedTabs: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
   feedTab: { flex: 1, alignItems: 'center', paddingVertical: 11, borderBottomWidth: 2 },
   feedTabText: { fontWeight: '600', fontSize: 14 },
-  interestContent: { paddingBottom: 100 },
+  interestContent: { paddingHorizontal: 16, paddingBottom: 150 },
   interestHeading: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
   interestTitle: { fontSize: 23, fontWeight: '600' },
   interestSubtitle: { fontSize: 13, lineHeight: 18, marginTop: 4 },
   interestSearch: { minHeight: 44, borderWidth: 1, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13, marginBottom: 14 },
   interestSearchInput: { flex: 1, fontSize: 15, paddingVertical: 8 },
   interestGrid: { gap: 8 },
-  interestChip: { borderWidth: 1, borderRadius: 11, minHeight: 62, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  interestChildChip: { borderWidth: 1, borderRadius: 11, minHeight: 54, marginLeft: 14, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  interestChip: { borderWidth: 1, borderRadius: 11, minHeight: 62, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  interestChildChip: { borderWidth: 1, borderRadius: 11, minHeight: 54, marginLeft: 14, paddingHorizontal: 12, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 8 },
   interestNodeGroup: { gap: 6 },
   interestNodeChildGroup: { gap: 6 },
   interestNodeMain: { flex: 1, minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -2024,20 +2618,37 @@ const styles = StyleSheet.create({
   interestDescription: { fontSize: 11, marginTop: 3 },
   interestSelectedCount: { fontSize: 10, fontWeight: '600', marginTop: 3 },
   interestNoResults: { textAlign: 'center', paddingVertical: 28, fontSize: 13 },
-  languageSection: { borderWidth: 1, borderRadius: 16, padding: 13, marginBottom: 14 },
+  languageSection: { borderWidth: 1, borderRadius: 16, padding: 15, marginBottom: 14 },
   languageSectionTitle: { fontSize: 15, fontWeight: '700' },
   languageSectionHint: { fontSize: 12, lineHeight: 17, marginTop: 3, marginBottom: 10 },
   languageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  languageChip: { borderWidth: 1, borderRadius: 12, minWidth: '30%', flexGrow: 1, paddingHorizontal: 10, paddingVertical: 9 },
+  languageChip: { borderWidth: 1, borderRadius: 12, minWidth: '30%', flexGrow: 1, paddingHorizontal: 12, paddingVertical: 11 },
   languageChipText: { fontSize: 13, fontWeight: '700' },
   languageChipSubtext: { fontSize: 10, marginTop: 2 },
-  interestPrompt: { borderWidth: 1, borderRadius: 17, padding: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 9, marginTop: 2 },
-  interestPromptIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  interestPrompt: { borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 2 },
+  interestPromptTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   interestPromptTitle: { fontSize: 14, fontWeight: '800' },
-  interestPromptText: { fontSize: 11, lineHeight: 15, marginTop: 3 },
-  interestPromptActions: { width: '100%', flexDirection: 'row', gap: 8, marginTop: 2 },
+  interestPromptText: { fontSize: 12, lineHeight: 16, marginTop: 4 },
+  interestPromptActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   interestPromptButton: { flex: 1, minHeight: 38, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   interestPromptButtonText: { fontSize: 12, fontWeight: '700' },
+  headerLeftActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  communityFeedContent: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 150 },
+  communityIntro: { paddingBottom: 12 },
+  communityTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  communityCloseButton: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  communityIntroTitle: { fontSize: 17, fontWeight: '600' },
+  communityIntroText: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  communityFilters: { gap: 8, paddingTop: 12, paddingBottom: 4 },
+  communityFilter: { minHeight: 36, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  communityFilterHint: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 10, marginTop: 9 },
+  communityFilterHintText: { flex: 1, fontSize: 12, lineHeight: 16 },
+  communityState: { alignItems: 'center', paddingHorizontal: 28, paddingTop: 54, gap: 8 },
+  communityStateTitle: { fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  communityStateText: { fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  communityRetry: { fontSize: 14, fontWeight: '700', marginTop: 4 },
+  profileContentTab: { width: '100%', minHeight: 42, borderBottomWidth: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 12 },
+  profileContentTabText: { fontSize: 14, fontWeight: '700' },
   pipelineCard: { borderWidth: 1, borderRadius: 11, padding: 14, marginTop: 12 },
   pipelineTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   pipelineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },

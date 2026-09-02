@@ -12,14 +12,14 @@ export function initials(name: string) {
   return name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'OT';
 }
 
-export function Screen({ children, title, left, right, scroll = false }: { children: ReactNode; title?: string; left?: ReactNode; right?: ReactNode; scroll?: boolean }) {
+export function Screen({ children, title, left, right, scroll = false }: { children: ReactNode; title?: string | ReactNode; left?: ReactNode; right?: ReactNode; scroll?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const content = scroll ? <View style={[styles.scroll, { paddingBottom: insets.bottom + 100 }]}>{children}</View> : children;
   return (
-    <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      {title ? <BlurView intensity={55} tint="systemMaterial" style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: colors.border }]}>
-        <View style={styles.headerTitleGroup}>{left}<Text style={[styles.title, { color: colors.foreground }]}>{title}</Text></View><View style={styles.headerRight}>{right}</View>
+    <View style={[styles.screen, { backgroundColor: colors.background }, !scroll && { paddingBottom: insets.bottom + 86 }]}>
+       {title ? <BlurView intensity={55} tint="systemMaterial" style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: colors.border }]}>
+         <View style={styles.headerTitleGroup}>{left}{typeof title === 'string' ? <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text> : title}</View><View style={styles.headerRight}>{right}</View>
       </BlurView> : null}
       {content}
     </View>

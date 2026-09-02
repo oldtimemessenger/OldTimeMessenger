@@ -1,0 +1,402 @@
+import { Ionicons } from '@expo/vector-icons';
+import {
+  createCurrentEventMessage,
+  getCurrentEventMessages,
+  getCurrentEventRoom,
+  getCurrentEventWallet,
+  joinCurrentEventRoom,
+  leaveCurrentEventRoom,
+  sendCurrentEventGift,
+  setCurrentEventHand,
+  updateCurrentEventParticipant,
+  type CurrentEventMessage,
+  type CurrentEventParticipant,
+  type CurrentEventRoom,
+} from '@workspace/api-client-react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Avatar } from '@/components/ui';
+import { useColors } from '@/hooks/useColors';
+import { audioService } from '@/lib/audio-service';
+
+const gifts = [
+  { key: 'coffee' as const, label: 'Coffee', icon: 'cafe-outline' as const, cost: 25 },
+  { key: 'idea' as const, label: 'Idea', icon: 'bulb-outline' as const, cost: 100 },
+  { key: 'heart' as const, label: 'Heart', icon: 'heart-outline' as const, cost: 200 },
+  { key: 'gem' as const, label: 'Gem', icon: 'diamond-outline' as const, cost: 500 },
+  { key: 'studio' as const, label: 'Studio', icon: 'radio-outline' as const, cost: 1000 },
+];
+
+export default function CurrentEventRoomScreen() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ id: string }>();
+  const roomId = Number(params.id);
+  const [room, setRoom] = useState<CurrentEventRoom | null>(null);
+  const [messages, setMessages] = useState<CurrentEventMessage[]>([]);
+  const [wallet, setWallet] = useState({ coins: 0, gold: 0, pendingGold: 0 });
+  const [loading, setLoading] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [giftOpen, setGiftOpen] = useState(false);
+  const [message, setMessage] = useState('');
+  const [giftRecipientId, setGiftRecipientId] = useState<number | null>(null);
+  const [audioConnected, setAudioConnected] = useState(false);
+  const [reactionCount, setReactionCount] = useState(0);
+  const [roomUnavailable, setRoomUnavailable] = useState(false);
+  const roomEndedRef = useRef(false);
+
+  const loadRoom = useCallback(async (join = false) => {
+    if (!Number.isInteger(roomId) || roomId < 1) return;
+    try {
+      let nextRoom = await getCurrentEventRoom(roomId);
+      if (!nextRoom.isLive) {
+        roomEndedRef.current = true;
+        setRoom(nextRoom);
+        return;
+      }
+      if (join && nextRoom.viewer.participantId === null) {
+        nextRoom = await joinCurrentEventRoom(roomId);
+      }
+      setRoom(nextRoom);
+      setRoomUnavailable(false);
+      const session = await audioService.join(roomId, nextRoom.viewer.role ?? 'listener');
+      setAudioConnected(session.connected);
+      if (nextRoom.viewer.participantId !== null) {
+        const [messageResult, walletResult] = await Promise.all([
+          getCurrentEventMessages(roomId),
+          getCurrentEventWallet(),
+        ]);
+        setMessages(messageResult.items);
+        setWallet(walletResult);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/404|not found/i.test(message)) {
+        roomEndedRef.current = true;
+        setRoomUnavailable(true);
+        return;
+      }
+      Alert.alert('Room unavailable', error instanceof Error ? error.message : 'This room could not be opened.', [{ text: 'Go back', onPress: () => router.back() }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [roomId, router]);
+
+  useEffect(() => {
+    void loadRoom(true);
+    const interval = setInterval(() => {
+      if (!roomEndedRef.current) void loadRoom(false);
+    }, 5_000);
+    return () => {
+      clearInterval(interval);
+      void audioService.leave();
+    };
+  }, [loadRoom]);
+
+  const speakers = useMemo(() => room?.participants.filter((participant) => ['host', 'moderator', 'speaker'].includes(participant.role)) ?? [], [room]);
+  const listeners = useMemo(() => room?.participants.filter((participant) => participant.role === 'listener') ?? [], [room]);
+  const canModerate = room?.viewer.role === 'host' || room?.viewer.role === 'moderator';
+  const activeRecipientId = giftRecipientId ?? speakers.find((participant) => participant.user.id !== room?.viewer.participantId)?.user.id ?? speakers[0]?.user.id ?? null;
+
+  async function leaveRoom() {
+    if (room?.isLive && room.viewer.participantId !== null) await leaveCurrentEventRoom(room.id).catch(() => undefined);
+    await audioService.leave();
+    router.back();
+  }
+
+  async function raiseHand() {
+    if (!room) return;
+    try {
+      const nextRoom = await setCurrentEventHand(room.id, { raised: !room.viewer.handRaised });
+      setRoom(nextRoom);
+    } catch (error) {
+      Alert.alert('Could not update your hand', error instanceof Error ? error.message : 'Try again.');
+    }
+  }
+
+  async function moderate(participant: CurrentEventParticipant, action: 'promote' | 'mute' | 'unmute' | 'remove') {
+    if (!room) return;
+    try {
+      const nextRoom = await updateCurrentEventParticipant(room.id, participant.id, { action });
+      setRoom(nextRoom);
+    } catch (error) {
+      Alert.alert('Moderation unavailable', error instanceof Error ? error.message : 'Try again.');
+    }
+  }
+
+  async function sendMessage() {
+    if (!room || !message.trim()) return;
+    try {
+      const sent = await createCurrentEventMessage(room.id, { content: message.trim() });
+      setMessages((items) => [...items, sent]);
+      setMessage('');
+    } catch (error) {
+      Alert.alert('Message not sent', error instanceof Error ? error.message : 'Try again.');
+    }
+  }
+
+  async function sendGift(gift: (typeof gifts)[number]) {
+    if (!room || !activeRecipientId) return;
+    if (wallet.coins < gift.cost) {
+      Alert.alert('Not enough coins', `You need ${gift.cost} coins for this gift, but your balance is ${wallet.coins}.`);
+      return;
+    }
+    try {
+      const result = await sendCurrentEventGift(room.id, { gift: gift.key, recipientId: activeRecipientId });
+      setWallet((current) => ({ ...current, coins: result.coinsRemaining }));
+      setGiftOpen(false);
+    } catch (error) {
+      Alert.alert('Gift not sent', error instanceof Error ? error.message : 'Try again.');
+    }
+  }
+
+  if (loading || (!room && !roomUnavailable)) {
+    return <View style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
+  }
+
+  if (roomUnavailable || !room) {
+    return <EndedRoomState colors={colors} topInset={insets.top} onBack={() => router.back()} />;
+  }
+
+  if (!room.isLive) {
+    return <EndedRoomState colors={colors} topInset={insets.top} onBack={() => router.back()} />;
+  }
+
+  return (
+    <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <Pressable onPress={leaveRoom} accessibilityLabel="Leave Current Event room" style={styles.headerButton}>
+          <Ionicons name="chevron-down" size={25} color={colors.foreground} />
+        </Pressable>
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerKicker, { color: colors.mutedForeground }]}>{room.clubName.toUpperCase()}</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>{room.title}</Text>
+        </View>
+        <Pressable onPress={() => setChatOpen(true)} accessibilityLabel="Open room chat" style={styles.headerButton}>
+          <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.foreground} />
+        </Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 112 }]} showsVerticalScrollIndicator={false}>
+        <View style={styles.liveRow}>
+          <View style={styles.livePill}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
+          <Text style={[styles.listenerSummary, { color: colors.mutedForeground }]}>{room.counts.speakers} speakers · {room.counts.listeners} listeners</Text>
+          <Text style={[styles.coinBalance, { color: colors.foreground }]}>◈ {wallet.coins}</Text>
+        </View>
+
+        {!room.audio.configured ? (
+          <View style={[styles.audioNotice, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+            <Ionicons name="volume-mute-outline" size={18} color={colors.mutedForeground} />
+            <Text style={[styles.audioNoticeText, { color: colors.mutedForeground }]}>{audioConnected ? 'Audio service preview: provider not connected yet.' : 'Voice audio is not connected yet. A provider can be enabled without changing this room.'}</Text>
+          </View>
+        ) : null}
+
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>On stage</Text>
+        <View style={styles.stageGrid}>
+          {speakers.map((participant) => (
+            <Pressable key={participant.id} onPress={() => setGiftRecipientId(participant.user.id)} style={[styles.speakerCard, { backgroundColor: colors.card, borderColor: activeRecipientId === participant.user.id ? colors.primary : colors.border }, activeRecipientId === participant.user.id && styles.speakerCardSelected]}>
+              <View style={[styles.avatarRing, { borderColor: participant.role === 'host' ? colors.destructive : colors.primary }]}><Avatar name={participant.user.name} size={58} color={participant.role === 'host' ? colors.destructive : colors.primary} /></View>
+              <Text style={[styles.speakerName, { color: colors.foreground }]} numberOfLines={1}>{participant.user.name}</Text>
+              <Text style={[styles.speakerRole, { color: colors.mutedForeground }]}>{participant.role === 'host' ? 'host' : participant.role}</Text>
+              <Ionicons name={participant.muted ? 'mic-off' : 'mic'} size={14} color={participant.muted ? colors.mutedForeground : colors.primary} />
+            </Pressable>
+          ))}
+          {speakers.length === 0 ? <Text style={[styles.noSpeakers, { backgroundColor: colors.card, color: colors.mutedForeground, borderColor: colors.border }]}>The stage is open. Raise your hand to join the conversation.</Text> : null}
+        </View>
+
+        {canModerate ? (
+          <View style={[styles.moderationPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.panelTitle, { color: colors.foreground }]}>Host controls</Text>
+            {room.participants.filter((participant) => participant.role === 'listener' && participant.handRaised).map((participant) => (
+              <View key={participant.id} style={styles.controlRow}>
+                <Avatar name={participant.user.name} size={30} color={colors.primary} />
+                <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name} raised their hand</Text>
+                <Pressable onPress={() => void moderate(participant, 'promote')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite</Text></Pressable>
+              </View>
+            ))}
+            {room.participants.filter((participant) => participant.role === 'listener' && participant.handRaised).length === 0 ? <Text style={styles.mutedNote}>No hands raised right now.</Text> : null}
+          </View>
+        ) : null}
+
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Listeners</Text>
+        <View style={styles.listenerRow}>
+          {listeners.map((participant) => (
+            <View key={participant.id} style={styles.listener}>
+              <Avatar name={participant.user.name} size={38} color={colors.foreground} />
+              <Text style={[styles.listenerName, { color: colors.foreground }]} numberOfLines={1}>{participant.user.name}</Text>
+            </View>
+          ))}
+          {listeners.length === 0 ? <Text style={styles.mutedNote}>No listeners yet.</Text> : null}
+        </View>
+
+        <View style={styles.roomActions}>
+          <Pressable onPress={raiseHand} style={[styles.actionButton, { backgroundColor: room.viewer.handRaised ? colors.primary : colors.card, borderColor: colors.border }]}>
+            <Ionicons name="hand-left-outline" size={20} color={room.viewer.handRaised ? colors.primaryForeground : colors.foreground} />
+            <Text style={[styles.actionText, { color: room.viewer.handRaised ? colors.primaryForeground : colors.foreground }]}>{room.viewer.handRaised ? 'hand raised' : 'ask to speak'}</Text>
+          </Pressable>
+          <Pressable onPress={() => setChatOpen(true)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="chatbubble-outline" size={20} color={colors.foreground} />
+            <Text style={[styles.actionText, { color: colors.foreground }]}>chat</Text>
+          </Pressable>
+          <Pressable onPress={() => setGiftOpen(true)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="gift-outline" size={20} color={colors.foreground} />
+            <Text style={[styles.actionText, { color: colors.foreground }]}>gift</Text>
+          </Pressable>
+          <Pressable onPress={() => setReactionCount((count) => count + 1)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="heart-outline" size={20} color={colors.foreground} />
+            <Text style={[styles.actionText, { color: colors.foreground }]}>{reactionCount || 'react'}</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+
+      <View style={[styles.leaveBar, { backgroundColor: colors.background, paddingBottom: insets.bottom + 10 }]}>
+        <Pressable onPress={leaveRoom} style={[styles.leaveButton, { backgroundColor: colors.destructive }]}><Ionicons name="exit-outline" size={19} color={colors.destructiveForeground} /><Text style={[styles.leaveText, { color: colors.destructiveForeground }]}>{room.viewer.role === 'host' ? 'end room' : 'leave quietly'}</Text></Pressable>
+      </View>
+
+      <Modal visible={chatOpen} animationType="slide" transparent onRequestClose={() => setChatOpen(false)}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalRoot}>
+          <View style={styles.modalShade} />
+          <View style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
+            <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Room chat</Text><Pressable onPress={() => setChatOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
+            <FlatList
+              data={[...messages].reverse()}
+              inverted
+              keyExtractor={(item) => String(item.id)}
+              contentContainerStyle={styles.messageList}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => <View style={[styles.message, { backgroundColor: colors.muted }]}><Text style={[styles.messageAuthor, { color: colors.primary }]}>{item.sender.name}</Text><Text style={[styles.messageText, { color: colors.foreground }]}>{item.content}</Text></View>}
+              ListEmptyComponent={<Text style={[styles.mutedNote, { color: colors.mutedForeground }]}>Be the first to say hello.</Text>}
+            />
+            <View style={styles.messageComposer}>
+              <TextInput value={message} onChangeText={setMessage} placeholder="Say something..." placeholderTextColor={colors.mutedForeground} style={[styles.messageInput, { backgroundColor: colors.muted, color: colors.foreground }]} returnKeyType="send" onSubmitEditing={() => void sendMessage()} />
+              <Pressable onPress={() => void sendMessage()} style={[styles.sendButton, { backgroundColor: colors.primary }]}><Ionicons name="arrow-up" size={19} color={colors.primaryForeground} /></Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={giftOpen} transparent animationType="slide" onRequestClose={() => setGiftOpen(false)}>
+        <View style={styles.modalShadeRoot}><View style={styles.modalShade} /><View style={[styles.giftSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20 }]}>
+          <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Send a gift</Text><Pressable onPress={() => setGiftOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
+          <Text style={[styles.sheetHint, { color: colors.mutedForeground }]}>{activeRecipientId ? 'Tap a gift to support the selected speaker.' : 'Join a speaker to send a gift.'}</Text>
+          <View style={styles.giftGrid}>{gifts.map((gift) => <Pressable key={gift.key} disabled={!activeRecipientId} onPress={() => void sendGift(gift)} style={[styles.giftItem, { backgroundColor: colors.muted }, !activeRecipientId && { opacity: 0.45 }]}><Ionicons name={gift.icon} size={25} color={colors.primary} /><Text style={[styles.giftLabel, { color: colors.foreground }]}>{gift.label}</Text><Text style={[styles.giftCost, { color: colors.mutedForeground }]}>◈ {gift.cost}</Text></Pressable>)}</View>
+           <Text style={[styles.walletBalance, { color: colors.mutedForeground }]}>Balance ◈ {wallet.coins}</Text>
+        </View></View>
+      </Modal>
+    </View>
+  );
+}
+
+function EndedRoomState({ colors, topInset, onBack }: { colors: any; topInset: number; onBack: () => void }) {
+  return (
+    <View style={[styles.endedRoot, { backgroundColor: colors.background, paddingTop: topInset }]}>
+      <View style={[styles.endedHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <Pressable onPress={onBack} accessibilityLabel="Back to Current Events" style={styles.headerButton}>
+          <Ionicons name="chevron-down" size={25} color={colors.foreground} />
+        </Pressable>
+        <Text style={[styles.endedHeaderTitle, { color: colors.foreground }]}>Current Events</Text>
+        <View style={styles.headerButton} />
+      </View>
+      <View style={styles.endedContent}>
+        <Ionicons name="radio-outline" size={42} color={colors.mutedForeground} />
+        <Text style={[styles.endedTitle, { color: colors.foreground }]}>This room has ended</Text>
+        <Text style={[styles.endedText, { color: colors.mutedForeground }]}>The host closed this conversation. Go back to see what’s live now.</Text>
+        <Pressable onPress={onBack} style={[styles.endedButton, { backgroundColor: colors.primary }]}>
+          <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>Back to Current Events</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  endedRoot: { flex: 1 },
+  endedHeader: { minHeight: 60, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  endedHeaderTitle: { fontSize: 24, lineHeight: 30, fontWeight: '600', letterSpacing: -0.4 },
+  endedContent: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
+  endedTitle: { fontSize: 22, lineHeight: 28, fontWeight: '600', marginTop: 14 },
+  endedText: { fontSize: 14, lineHeight: 19, textAlign: 'center', marginTop: 8, maxWidth: 290 },
+  endedButton: { minHeight: 48, borderRadius: 24, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', marginTop: 22 },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: { minHeight: 60, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  headerButton: { width: 42, height: 42, justifyContent: 'center', alignItems: 'center' },
+  headerCenter: { flex: 1, paddingHorizontal: 8 },
+  headerKicker: { fontSize: 10, fontWeight: '600', letterSpacing: 1 },
+  headerTitle: { fontSize: 17, fontWeight: '600', marginTop: 3 },
+  content: { padding: 16 },
+  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 14 },
+  livePill: { backgroundColor: '#FCE8E8', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#E5484D' },
+  liveText: { color: '#C53030', fontSize: 10, fontWeight: '900' },
+  listenerSummary: { fontSize: 12, fontWeight: '400', flex: 1 },
+  coinBalance: { fontSize: 13, fontWeight: '600' },
+  audioNotice: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
+  audioNoticeText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '400' },
+  sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '600', marginTop: 8, marginBottom: 11 },
+  stageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  speakerCard: { width: '31%', minWidth: 98, alignItems: 'center', paddingVertical: 11, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },
+  speakerCardSelected: { borderWidth: 2 },
+  avatarRing: { borderRadius: 34, padding: 3, borderWidth: 2, borderColor: '#D9E2FF' },
+  speakerName: { fontSize: 12, fontWeight: '600', marginTop: 7, maxWidth: 88 },
+  speakerRole: { fontSize: 10, fontWeight: '400', marginBottom: 4 },
+  noSpeakers: { fontSize: 13, lineHeight: 19, padding: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth },
+  moderationPanel: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: 13, marginTop: 17 },
+  panelTitle: { fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  controlRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
+  controlName: { flex: 1, fontSize: 12, fontWeight: '500' },
+  smallAction: { borderRadius: 15, paddingHorizontal: 11, paddingVertical: 7 },
+  smallActionText: { fontSize: 11, fontWeight: '600' },
+  mutedNote: { fontSize: 12, fontWeight: '400', paddingVertical: 7 },
+  listenerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 13, alignItems: 'flex-start' },
+  listener: { alignItems: 'center', width: 52 },
+  listenerName: { fontSize: 10, fontWeight: '500', marginTop: 4, maxWidth: 52 },
+  roomActions: { flexDirection: 'row', gap: 8, marginTop: 24 },
+  actionButton: { flex: 1, minHeight: 52, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  actionButtonActive: { borderWidth: 0 },
+  actionText: { fontSize: 10, fontWeight: '600' },
+  leaveBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 9 },
+  leaveButton: { minHeight: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
+  leaveText: { fontWeight: '600' },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalShadeRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
+  chatSheet: { height: '76%', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16 },
+  giftSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 18 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sheetTitle: { fontSize: 22, lineHeight: 28, fontWeight: '600' },
+  sheetHint: { fontSize: 12, lineHeight: 17, marginBottom: 15 },
+  messageList: { gap: 10, paddingBottom: 10 },
+  message: { borderRadius: 13, padding: 10 },
+  messageAuthor: { fontSize: 11, fontWeight: '600', marginBottom: 3 },
+  messageText: { fontSize: 13, lineHeight: 18 },
+  messageComposer: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 10 },
+  messageInput: { flex: 1, minHeight: 44, borderRadius: 22, paddingHorizontal: 15 },
+  sendButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  giftGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  giftItem: { width: '18%', minWidth: 62, alignItems: 'center', paddingVertical: 10, borderRadius: 13, backgroundColor: '#fff' },
+  giftLabel: { fontSize: 10, fontWeight: '600', marginTop: 5 },
+  giftCost: { fontSize: 10, marginTop: 3, fontWeight: '400' },
+  walletLink: { alignItems: 'center', paddingTop: 19 },
+  walletLinkText: { fontSize: 12, fontWeight: '600' },
+  walletBalance: { textAlign: 'center', fontSize: 12, paddingTop: 18 },
+  packRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 14, padding: 13, marginTop: 8 },
+  packName: { fontSize: 14, fontWeight: '600' },
+  packCoins: { fontSize: 12, marginTop: 3 },
+  comingSoon: { fontSize: 11, fontWeight: '500' },
+});
