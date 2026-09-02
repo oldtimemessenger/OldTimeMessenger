@@ -1,5 +1,5 @@
 import { Archive, ArrowLeft, Check, CheckCheck, ChevronDown, FilePlus2, ImagePlus, Menu, MessageCircle, MoreVertical, Paperclip, Phone, Plus, Search, Send, Settings, UsersRound, VolumeX } from 'lucide-react';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { useRef, type ButtonHTMLAttributes, type ChangeEvent, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 
 export const initials = (name: string) => name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
@@ -94,11 +94,39 @@ export function ContactIcon({ group = false }: { group?: boolean }) {
   return group ? <UsersRound size={17} /> : <Plus size={17} />;
 }
 
-export function AttachmentMenu({ onClose }: { onClose: () => void }) {
+type AttachmentKind = 'media' | 'file';
+
+export function AttachmentMenu({
+  onClose,
+  onSelectFile,
+  onSelectLocation,
+}: {
+  onClose: () => void;
+  onSelectFile: (file: File, kind: AttachmentKind) => void;
+  onSelectLocation: () => void;
+}) {
+  const mediaInput = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const handleFile = (event: ChangeEvent<HTMLInputElement>, kind: AttachmentKind) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) onSelectFile(file, kind);
+  };
+
   return <div className="absolute bottom-14 left-0 z-20 w-52 rounded-xl border border-border bg-card p-2 shadow-[var(--shadow-md)] animate-page-in" data-testid="menu-attachments">
-    <button onClick={() => { window.alert('Photo picker opened.'); onClose(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold hover:bg-muted" data-testid="button-attach-photo"><span className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-primary"><ImagePlus size={16} /></span>Photo or video</button>
-    <button onClick={() => { window.alert('File picker opened.'); onClose(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold hover:bg-muted" data-testid="button-attach-file"><span className="grid h-8 w-8 place-items-center rounded-full bg-accent/15 text-accent-foreground"><FilePlus2 size={16} /></span>Document</button>
-    <button onClick={() => { window.alert('Location sharing is ready.'); onClose(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold hover:bg-muted" data-testid="button-attach-location"><span className="grid h-8 w-8 place-items-center rounded-full bg-secondary text-primary"><MessageCircle size={16} /></span>Location</button>
+    <input ref={mediaInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm" className="hidden" onChange={(event) => handleFile(event, 'media')} />
+    <input ref={fileInput} type="file" accept=".pdf,.txt,.doc,.docx,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={(event) => handleFile(event, 'file')} />
+    <button onClick={() => mediaInput.current?.click()} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold hover:bg-muted" data-testid="button-attach-photo"><span className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-primary"><ImagePlus size={16} /></span>Photo or video</button>
+    <button onClick={() => fileInput.current?.click()} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold hover:bg-muted" data-testid="button-attach-file"><span className="grid h-8 w-8 place-items-center rounded-full bg-accent/15 text-accent-foreground"><FilePlus2 size={16} /></span>Document</button>
+    <button onClick={onSelectLocation} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold hover:bg-muted" data-testid="button-attach-location"><span className="grid h-8 w-8 place-items-center rounded-full bg-secondary text-primary"><MessageCircle size={16} /></span>Location</button>
+  </div>;
+}
+
+const chatEmojis = ['❤️', '😂', '👍', '🔥', '🎉', '😮', '😢', '🙏', '👏', '✨', '☕', '🌙'];
+
+export function EmojiPicker({ onSelect }: { onSelect: (emoji: string) => void }) {
+  return <div className="absolute bottom-14 right-0 z-20 grid w-56 grid-cols-6 gap-1 rounded-xl border border-border bg-card p-2 shadow-[var(--shadow-md)] animate-page-in" data-testid="menu-emoji-picker">
+    {chatEmojis.map((emoji) => <button key={emoji} type="button" onClick={() => onSelect(emoji)} className="grid h-8 place-items-center rounded-lg text-lg hover:bg-muted" aria-label={`Use ${emoji}`}>{emoji}</button>)}
   </div>;
 }
 
