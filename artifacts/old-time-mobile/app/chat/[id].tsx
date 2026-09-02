@@ -13,6 +13,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -38,6 +39,8 @@ import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoSurface } from '@/components/video-surface';
+import { presenceLabel } from '@/lib/presence';
+import { emojiPickerGroups } from '@/constants/emoji';
 
 type PendingAsset = {
   uri: string;
@@ -74,6 +77,7 @@ export default function ChatDetailScreen() {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [attachmentMenu, setAttachmentMenu] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [uploadLabel, setUploadLabel] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
   const inputRef = useRef<TextInput>(null);
@@ -299,11 +303,7 @@ export default function ChatDetailScreen() {
             {contact?.name ?? 'Conversation'}
           </Text>
           <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-            {contact?.online
-              ? 'online'
-              : contact?.lastSeen
-                ? `last seen ${new Date(contact.lastSeen).toLocaleString()}`
-                : 'offline'}
+             {contact ? presenceLabel(contact) : 'offline'}
           </Text>
         </View>
         {contact?.phone ? <IconButton name="call-outline" label={`Call ${contact.name}`} onPress={() => void callContact()} /> : null}
@@ -422,6 +422,11 @@ export default function ChatDetailScreen() {
           onPress={() => setAttachmentMenu(true)}
           label="Add attachment"
         />
+        <IconButton
+          name="happy-outline"
+          onPress={() => setEmojiOpen(true)}
+          label="Open emoji picker"
+        />
         <TextInput
           ref={inputRef}
           value={text}
@@ -490,6 +495,16 @@ export default function ChatDetailScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      <EmojiPickerSheet
+        visible={emojiOpen}
+        onClose={() => setEmojiOpen(false)}
+        onSelect={(emoji) => {
+          setText((current) => `${current}${current && !current.endsWith(' ') ? ' ' : ''}${emoji}`);
+          setEmojiOpen(false);
+          inputRef.current?.focus();
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -512,6 +527,50 @@ function AttachmentAction({
       </View>
       <Text style={styles.attachmentLabel}>{label}</Text>
     </Pressable>
+  );
+}
+
+function EmojiPickerSheet({ visible, onClose, onSelect }: { visible: boolean; onClose: () => void; onSelect: (emoji: string) => void }) {
+  const colors = useColors();
+  const [activeCategory, setActiveCategory] = useState(emojiPickerGroups[0].id);
+  const category = emojiPickerGroups.find((item) => item.id === activeCategory) ?? emojiPickerGroups[0];
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.emojiOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[styles.emojiSheet, { backgroundColor: colors.card }]}>
+          <View style={styles.emojiHeader}>
+            <View>
+              <Text style={[styles.emojiTitle, { color: colors.foreground }]}>Choose an emoji</Text>
+              <Text style={[styles.emojiSubtitle, { color: colors.mutedForeground }]}>Your keyboard still supports every emoji variant.</Text>
+            </View>
+            <IconButton name="close" onPress={onClose} size={22} />
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojiCategoryRail}>
+            {emojiPickerGroups.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() => setActiveCategory(item.id)}
+                style={[styles.emojiCategory, { backgroundColor: activeCategory === item.id ? colors.primary : colors.muted }]}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeCategory === item.id }}
+                accessibilityLabel={`${item.label} emoji`}
+              >
+                <Ionicons name={item.icon as keyof typeof Ionicons.glyphMap} size={18} color={activeCategory === item.id ? colors.primaryForeground : colors.mutedForeground} />
+              </Pressable>
+            ))}
+          </ScrollView>
+          <ScrollView contentContainerStyle={styles.emojiGrid} showsVerticalScrollIndicator={false}>
+            {category.emojis.map((emoji, index) => (
+              <Pressable key={`${category.id}-${emoji}-${index}`} onPress={() => onSelect(emoji)} style={styles.emojiButton} accessibilityRole="button" accessibilityLabel={`Insert ${emoji}`}>
+                <Text style={styles.emojiText}>{emoji}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -606,4 +665,14 @@ const styles = StyleSheet.create({
   attachmentAction: { width: 74, alignItems: 'center', gap: 8, paddingBottom: 12 },
   attachmentIcon: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
   attachmentLabel: { fontSize: 12, fontWeight: '600', color: '#4A4A4A' },
+  emojiOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.42)' },
+  emojiSheet: { maxHeight: '72%', minHeight: 360, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 14, paddingBottom: 10 },
+  emojiHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, marginBottom: 10 },
+  emojiTitle: { fontSize: 17, fontWeight: '800' },
+  emojiSubtitle: { fontSize: 11, marginTop: 3 },
+  emojiCategoryRail: { gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
+  emojiCategory: { width: 38, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingBottom: 22 },
+  emojiButton: { width: '12.5%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+  emojiText: { fontSize: 27, lineHeight: 34 },
 });
