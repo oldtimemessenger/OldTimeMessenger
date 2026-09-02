@@ -9,6 +9,7 @@ import { useColors } from '@/hooks/useColors';
 import { typography } from '@/constants/typography';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStories, type Story } from '@/lib/social-api';
+import { presenceLabel } from '@/lib/presence';
 
 function timeLabel(timestamp?: number) {
   if (!timestamp) return '';
@@ -107,7 +108,7 @@ export default function ChatsScreen() {
            {users.isLoading ? <LoadingState /> : (users.data ?? []).filter((user) => user.id !== session?.id).map((user) => (
             <Pressable key={user.id} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
                <Avatar name={user.name} size={42} />
-              <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: colors.mutedForeground }]}>{user.online ? 'Online now' : user.lastSeen ? `Last seen ${new Date(user.lastSeen).toLocaleString()}` : 'Offline'}</Text></View>
+               <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: user.online ? colors.primary : colors.mutedForeground }]}>{presenceLabel(user)}</Text></View>
               <Ionicons name="arrow-forward-circle-outline" size={22} color={colors.primary} />
             </Pressable>
           ))}
