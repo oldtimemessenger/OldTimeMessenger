@@ -52,6 +52,7 @@ export interface User {
   name: string;
   online: boolean;
   lastSeen: number;
+  lastSeenVisible: boolean;
 }
 
 export type AuthenticatedUser = User & {
@@ -229,6 +230,7 @@ export interface SocialPost {
   kind: SocialPostKind;
   content: string;
   visibility: SocialPostVisibility;
+  allowReposts: boolean;
   media: SocialMedia[];
   /** @nullable */
   linkUrl: string | null;
@@ -291,6 +293,7 @@ export interface SocialPostInput {
   content?: string;
   kind?: SocialPostInputKind;
   visibility?: SocialPostInputVisibility;
+  allowReposts?: boolean;
   /** @maxItems 8 */
   media?: SocialMedia[];
   linkUrl?: string;
@@ -542,10 +545,34 @@ export const StoryVisibility = {
   private: 'private',
 } as const;
 
+export type StoryMediaType = typeof StoryMediaType[keyof typeof StoryMediaType];
+
+
+export const StoryMediaType = {
+  image: 'image',
+  video: 'video',
+} as const;
+
+export type StoryMediaFit = typeof StoryMediaFit[keyof typeof StoryMediaFit];
+
+
+export const StoryMediaFit = {
+  contain: 'contain',
+  cover: 'cover',
+} as const;
+
 /**
  * @nullable
  */
-export type StoryMedia = { [key: string]: unknown } | null;
+export type StoryMedia = {
+  type: StoryMediaType;
+  objectPath: string;
+  mimeType: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  fit?: StoryMediaFit;
+} | null;
 
 /**
  * @nullable
@@ -604,10 +631,34 @@ export const StoryInputVisibility = {
   private: 'private',
 } as const;
 
+export type StoryInputMediaType = typeof StoryInputMediaType[keyof typeof StoryInputMediaType];
+
+
+export const StoryInputMediaType = {
+  image: 'image',
+  video: 'video',
+} as const;
+
+export type StoryInputMediaFit = typeof StoryInputMediaFit[keyof typeof StoryInputMediaFit];
+
+
+export const StoryInputMediaFit = {
+  contain: 'contain',
+  cover: 'cover',
+} as const;
+
 /**
  * @nullable
  */
-export type StoryInputMedia = { [key: string]: unknown } | null;
+export type StoryInputMedia = {
+  type: StoryInputMediaType;
+  objectPath: string;
+  mimeType: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  fit?: StoryInputMediaFit;
+} | null;
 
 /**
  * @nullable
@@ -704,6 +755,25 @@ export type ListUsersParams = {
  * @minimum 1
  */
 viewerId: ViewerIdParameter;
+};
+
+export type UpdatePresencePrivacyBody = {
+  lastSeenVisible: boolean;
+};
+
+export type UpdatePresencePrivacy200 = {
+  success: boolean;
+  lastSeenVisible: boolean;
+};
+
+export type UpdatePresenceBody = {
+  online: boolean;
+};
+
+export type UpdatePresence200 = {
+  success: boolean;
+  online: boolean;
+  lastSeen: number;
 };
 
 export type ListMessagesParams = {
