@@ -145,6 +145,61 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/User"
+  /users/{userId}/presence-privacy:
+    put:
+      operationId: updatePresencePrivacy
+      tags: [users]
+      summary: Update online and last-seen visibility
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lastSeenVisible: { type: boolean }
+              required: [lastSeenVisible]
+      responses:
+        "200":
+          description: Presence privacy updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  lastSeenVisible: { type: boolean }
+                required: [success, lastSeenVisible]
+  /users/{userId}/presence:
+    put:
+      operationId: updatePresence
+      tags: [users]
+      summary: Update the caller's online presence
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                online: { type: boolean }
+              required: [online]
+      responses:
+        "200":
+          description: Presence updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  online: { type: boolean }
+                  lastSeen: { type: number }
+                required: [success, online, lastSeen]
   /users/{userId}/inbox:
     get:
       operationId: getInbox
@@ -1170,7 +1225,9 @@ components:
           type: boolean
         lastSeen:
           type: number
-      required: [id, phone, name, online, lastSeen]
+        lastSeenVisible:
+          type: boolean
+      required: [id, phone, name, online, lastSeen, lastSeenVisible]
     AuthenticatedUser:
       allOf:
         - $ref: "#/components/schemas/User"
@@ -1417,6 +1474,9 @@ components:
           type: string
           enum: [public, friends, followers, private]
           default: friends
+        allowReposts:
+          type: boolean
+          default: false
         media:
           type: array
           items:
@@ -1443,7 +1503,7 @@ components:
           $ref: "#/components/schemas/SocialPostCounts"
         viewer:
           $ref: "#/components/schemas/SocialPostViewer"
-      required: [id, kind, content, visibility, media, linkUrl, linkTitle, linkDescription, linkImageUrl, news, createdAt, updatedAt, author, counts, viewer]
+      required: [id, kind, content, visibility, allowReposts, media, linkUrl, linkTitle, linkDescription, linkImageUrl, news, createdAt, updatedAt, author, counts, viewer]
     SocialFeedPage:
       type: object
       properties:
@@ -1479,6 +1539,9 @@ components:
           type: string
           enum: [public, friends, followers, private]
           default: friends
+        allowReposts:
+          type: boolean
+          default: false
         media:
           type: array
           maxItems: 8
