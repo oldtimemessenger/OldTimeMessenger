@@ -19,6 +19,7 @@ export const usersTable = pgTable("chat_users", {
   name: text("name").notNull(),
   online: boolean("online").notNull().default(false),
   lastSeen: pgBigint("last_seen", { mode: "number" }).notNull(),
+  lastSeenVisible: boolean("last_seen_visible").notNull().default(true),
 });
 
 export const chatsTable = pgTable("chat_chats", {
