@@ -7,6 +7,7 @@ import { Avatar } from '@/components/ui';
 import { SponsoredStory, type StoryViewerItem } from '@/components/story-viewer-content';
 import { VideoSurface } from '@/components/video-surface';
 import { socialMediaUrl, viewStory, type Story } from '@/lib/social-api';
+import { typography } from '@/constants/typography';
 
 type Props = {
   items: StoryViewerItem[];
@@ -108,10 +109,10 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
       {...panResponder.panHandlers}
     >
       {media?.type === 'image' ? (
-        <Image source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <Image source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={StyleSheet.absoluteFill} contentFit={media.fit ?? 'contain'} />
       ) : null}
       {media?.type === 'video' ? (
-        <VideoSurface source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={StyleSheet.absoluteFill} muted={muted} paused={paused} />
+        <VideoSurface source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={StyleSheet.absoluteFill} muted={muted} paused={paused} contentFit={media.fit ?? 'contain'} />
       ) : null}
       <View style={styles.shade} />
 
@@ -168,9 +169,9 @@ const styles = StyleSheet.create({
   header: { position: 'absolute', left: 15, right: 12, zIndex: 20, flexDirection: 'row', alignItems: 'center', gap: 9 },
   sponsoredIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   identity: { flex: 1 },
-  author: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  author: { ...typography.username, color: '#FFFFFF', fontSize: 14, lineHeight: 18 },
   contextRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  meta: { color: 'rgba(255,255,255,0.82)', fontSize: 11 },
+  meta: { ...typography.timestamp, color: 'rgba(255,255,255,0.82)', fontSize: 11, lineHeight: 15 },
   dot: { width: 3, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.68)', marginHorizontal: 6 },
   iconButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   leftTap: { position: 'absolute', left: 0, top: 92, bottom: 65, width: '32%', zIndex: 10 },
@@ -178,12 +179,12 @@ const styles = StyleSheet.create({
   content: { ...StyleSheet.absoluteFillObject, paddingHorizontal: 28 },
   contentCenter: { alignItems: 'center', justifyContent: 'center' },
   contentBottom: { justifyContent: 'flex-end', paddingBottom: 88 },
-  storyText: { color: '#FFFFFF', fontSize: 28, lineHeight: 35, textAlign: 'center', fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.38)', textShadowRadius: 8 },
+  storyText: { ...typography.storyTitle, color: '#FFFFFF', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.38)', textShadowRadius: 8 },
   mediaCaption: { fontSize: 18, lineHeight: 24, textAlign: 'left' },
   swipeHint: { position: 'absolute', alignSelf: 'center', alignItems: 'center' },
   swipeHandle: { width: 34, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.72)' },
   expired: { flex: 1, backgroundColor: '#1C3550', alignItems: 'center', justifyContent: 'center', gap: 12 },
-  expiredTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
+  expiredTitle: { ...typography.sectionTitle, color: '#FFFFFF', fontSize: 18 },
   expiredButton: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)', minHeight: 42, borderRadius: 21, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },
-  expiredButtonText: { color: '#FFFFFF', fontWeight: '800' },
+  expiredButtonText: { ...typography.button, color: '#FFFFFF' },
 });

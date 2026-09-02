@@ -99,7 +99,7 @@ export default function SocialMap({
         <Text style={[styles.promptTitle, { color: colors.foreground }]}>See what’s nearby</Text>
         <Pressable onPress={onLocate} style={[styles.locateButton, { backgroundColor: colors.primary }]}>
           <Ionicons name="locate" size={18} color={colors.primaryForeground} />
-          <Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Use my location</Text>
+          <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>Use my location</Text>
         </Pressable>
       </View>
     );
@@ -197,7 +197,7 @@ export default function SocialMap({
 const styles = StyleSheet.create({
   map: { flex: 1, overflow: 'hidden' },
   center: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  promptTitle: { fontSize: 18, fontWeight: '900', marginTop: 12, marginBottom: 16 },
+  promptTitle: { fontSize: 18, fontWeight: '600', marginTop: 12, marginBottom: 16 },
   locateButton: { minHeight: 44, borderRadius: 22, paddingHorizontal: 17, flexDirection: 'row', alignItems: 'center', gap: 8 },
   controls: { position: 'absolute', right: 14, top: 16, gap: 10 },
   control: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
@@ -205,5 +205,5 @@ const styles = StyleSheet.create({
   pinTail: { position: 'absolute', bottom: -7, width: 0, height: 0, borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent' },
   storyMarker: { shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   cluster: { minWidth: 46, height: 46, borderRadius: 23, borderWidth: 3, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, elevation: 6 },
-  clusterCount: { fontSize: 15, fontWeight: '900' },
+  clusterCount: { fontSize: 15, fontWeight: '600' },
 });

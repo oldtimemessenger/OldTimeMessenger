@@ -9,6 +9,7 @@ export function VideoSurface({
   paused = false,
   controls = false,
   loop = true,
+  contentFit = 'cover',
 }: {
   source: VideoSource;
   style: StyleProp<ViewStyle>;
@@ -16,6 +17,7 @@ export function VideoSurface({
   paused?: boolean;
   controls?: boolean;
   loop?: boolean;
+  contentFit?: 'contain' | 'cover' | 'fill';
 }) {
   const player = useVideoPlayer(source, (instance) => {
     instance.loop = loop;
@@ -40,7 +42,7 @@ export function VideoSurface({
       player={player}
       style={style}
       nativeControls={controls}
-      contentFit="cover"
+      contentFit={contentFit}
       allowsFullscreen={controls}
     />
   );

@@ -25,7 +25,7 @@ export default function SocialMap({
         <Text style={[styles.promptTitle, { color: colors.foreground }]}>See what’s nearby</Text>
         <Pressable onPress={onLocate} style={[styles.locateButton, { backgroundColor: colors.primary }]}>
           <Ionicons name="locate" size={18} color={colors.primaryForeground} />
-          <Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Use my location</Text>
+          <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>Use my location</Text>
         </Pressable>
       </View>
     );
@@ -73,7 +73,7 @@ export default function SocialMap({
 const styles = StyleSheet.create({
   map: { flex: 1, overflow: 'hidden' },
   center: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  promptTitle: { fontSize: 18, fontWeight: '900', marginTop: 12, marginBottom: 16 },
+  promptTitle: { fontSize: 18, fontWeight: '600', marginTop: 12, marginBottom: 16 },
   locateButton: { minHeight: 44, borderRadius: 22, paddingHorizontal: 17, flexDirection: 'row', alignItems: 'center', gap: 8 },
   roadA: { position: 'absolute', width: 700, height: 38, backgroundColor: 'rgba(255,255,255,0.58)', transform: [{ rotate: '-20deg' }], top: 245, left: -140 },
   roadB: { position: 'absolute', width: 620, height: 24, backgroundColor: 'rgba(255,255,255,0.46)', transform: [{ rotate: '58deg' }], top: 240, left: -115 },

@@ -1,256 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import * as Location from 'expo-location';
-import {
-  ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
-  FlatList, Dimensions, Platform, Share
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { Image } from 'expo-image';
-import { File } from 'expo-file-system';
-import { fetch as expoFetch } from 'expo/fetch';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Avatar, EmptyState, IconButton, Screen, SectionLabel, StoryAvatar } from '@/components/ui';
-import { useApp, type StatusItem, type UpdatePost } from '@/context/app-state';
-import { INTEREST_OPTIONS, rankForYou } from '@/lib/for-you';
-import { useColors } from '@/hooks/useColors';
-import { VideoSurface } from '@/components/video-surface';
-import { ServerStoryViewer } from '@/components/server-story-viewer';
-import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
-import { useCreateChat, useRequestUploadUrl } from '@workspace/api-client-react';
-import {
-  createStory,
-  createSocialPost,
-  getSocialFeed,
-  getSocialNotifications,
-  getSharingExclusions,
-  getStories,
-  getUserCard,
-  markSocialNotificationRead,
-  setFollowing,
-  setPostRelation,
-  setSharingExcluded,
-  socialMediaUrl,
-  viewStory,
-  type SocialNotification,
-  type SocialPost,
-  type Story,
-  type UserCard,
-} from '@/lib/social-api';
-
-const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
-
-const postColors = ['#3B8FD6', '#5F91B8', '#447AA4', '#6388A6', '#3E6D91', '#6A94B2'];
-const creatorTags = ['comedy', 'music', 'food', 'fitness', 'travel', 'technology', 'art', 'sports'];
-type FeedTab = 'for-you' | 'following' | 'interests';
-
-function timeAgo(createdAt: number) {
-  const hours = Math.floor((Date.now() - createdAt) / 3600000);
-  if (hours < 1) return 'Just now';
-  return `${hours}h ago`;
-}
-
-type StatusUserGroup = {
-  author: string;
-  items: StatusItem[];
-  seen: boolean;
-};
-
-export default function UpdatesScreen() {
-  const colors = useColors();
-  const router = useRouter();
-  const { mediaUri, mediaType } = useLocalSearchParams<{
-    mediaUri?: string;
-    mediaType?: 'photo' | 'video';
-  }>();
-  const { statuses, posts, interests, interestWeights, followedCreators, hiddenPostIds, markStatusViewed, togglePostLike, togglePostSaved, addPostComment, recordPostInteraction, toggleInterest, toggleFollow, hidePost: persistHiddenPost, session, settings, updateSettings } = useApp();
-  const createChat = useCreateChat();
-  const requestUploadUrl = useRequestUploadUrl();
-
-  const [viewMode, setViewMode] = useState<'landing' | 'feed' | 'status'>('landing');
-  const [tab, setTab] = useState<FeedTab>('for-you');
-  const [feedIndex, setFeedIndex] = useState(0);
-  const [storyGroupOpen, setStoryGroupOpen] = useState<StatusUserGroup | null>(null);
-  const [compose, setCompose] = useState<'status' | 'post' | null>(null);
-  const [commentPost, setCommentPost] = useState<UpdatePost | null>(null);
-  const [profileOpen, setProfileOpen] = useState<string | null>(null);
-  const [capturedStatusMedia, setCapturedStatusMedia] = useState<{
-    uri: string;
-    type: 'photo' | 'video';
-  } | null>(null);
-  const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
-  const [socialStories, setSocialStories] = useState<Story[]>([]);
-  const [socialLoading, setSocialLoading] = useState(true);
-  const [socialError, setSocialError] = useState<string | null>(null);
-  const [profileUserId, setProfileUserId] = useState<number | null>(null);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState<SocialNotification[]>([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
-  const [ownCard, setOwnCard] = useState<UserCard | null>(null);
-  const [serverStoryOpen, setServerStoryOpen] = useState<Story | null>(null);
-
-  const loadSocial = useCallback(async () => {
-    if (!session?.authToken) return;
-    setSocialLoading(true);
-    setSocialError(null);
-    try {
-      const [feed, storyPage, card, notificationPage, exclusions] = await Promise.all([
-        getSocialFeed(session.authToken, 'for-you'),
-        getStories(session.authToken),
-        getUserCard(session.authToken, session.id),
-        getSocialNotifications(session.authToken),
-        getSharingExclusions(session.authToken),
-      ]);
-      setSocialPosts(feed.items);
-      setSocialStories(storyPage.items);
-      setOwnCard(card);
-      setNotifications(notificationPage.items);
-      updateSettings({ excludedPeople: exclusions.items.map((item) => ({ id: item.id, name: item.name })) });
-    } catch (error) {
-      setSocialError(error instanceof Error ? error.message : 'Social updates are unavailable right now.');
-    } finally {
-      setSocialLoading(false);
-    }
-  }, [session?.authToken, session?.id]);
-
-  useEffect(() => {
-    void loadSocial();
-  }, [loadSocial]);
-
-  async function openNotifications() {
-    if (!session?.authToken) return;
-    setShowNotifications(true);
-    setNotificationsLoading(true);
-    try {
-      setNotifications((await getSocialNotifications(session.authToken)).items);
-    } catch {
-      setNotifications([]);
-    } finally {
-      setNotificationsLoading(false);
-    }
-  }
-
-  const unreadNotifications = notifications.filter((item) => !item.readAt).length;
-  const firstOtherStory = socialStories.find((story) => !story.viewer.isOwner);
-
-  function openStatusShortcut() {
-    if (firstOtherStory) {
-      setServerStoryOpen(firstOtherStory);
-      return;
-    }
-    const firstLocalGroup = otherGroups[0];
-    if (firstLocalGroup) {
-      setStoryGroupOpen(firstLocalGroup);
-      setViewMode('status');
-      return;
-    }
-    setCompose('status');
-  }
-
-  useEffect(() => {
-    if (!mediaUri) return;
-    setCapturedStatusMedia({
-      uri: mediaUri,
-      type: mediaType === 'video' ? 'video' : 'photo',
-    });
-    setCompose('status');
-    router.setParams({ mediaUri: undefined, mediaType: undefined });
-  }, [mediaUri]);
-
-  const now = Date.now();
-  const activeStatuses = statuses.filter(s => now - s.createdAt < 86400000);
-  const statusGroups = useMemo(() => {
-    const groups: Record<string, StatusUserGroup> = {};
-    activeStatuses.forEach(s => {
-      if (!groups[s.author]) {
-        groups[s.author] = { author: s.author, items: [], seen: true };
-      }
-      groups[s.author].items.push(s);
-      if (!s.viewed) groups[s.author].seen = false;
-    });
-
-    Object.values(groups).forEach(g => g.items.sort((a, b) => a.createdAt - b.createdAt));
-
-    return Object.values(groups).sort((a, b) => {
-      if (a.author === 'You') return -1;
-      if (b.author === 'You') return 1;
-      if (a.seen !== b.seen) return a.seen ? 1 : -1;
-      return b.items[b.items.length -1].createdAt - a.items[a.items.length -1].createdAt;
-    });
-  }, [activeStatuses]);
-
-  const myGroup = statusGroups.find(g => g.author === 'You');
-  const otherGroups = statusGroups.filter(g => g.author !== 'You');
-
-  const forYouPosts = useMemo(() => rankForYou(posts.filter((post) => !hiddenPostIds.includes(post.id)), interests, interestWeights), [posts, interests, interestWeights, hiddenPostIds]);
-  const followingPosts = useMemo(() => posts.filter((post) => followedCreators.includes(post.handle) && !hiddenPostIds.includes(post.id)), [posts, followedCreators, hiddenPostIds]);
-  const visiblePosts = tab === 'following' ? followingPosts : forYouPosts;
-
-  function hidePost(post: UpdatePost) {
-    persistHiddenPost(post.id);
-    recordPostInteraction(post.id, 'hide');
-  }
-
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
-      <Screen title="Updates" left={<IconButton name="albums-outline" label="Open stories" onPress={openStatusShortcut} />} right={
-        <View style={styles.socialHeaderActions}>
-          <Pressable onPress={() => session && setProfileUserId(session.id)} style={styles.headerAvatarButton} accessibilityRole="button" accessibilityLabel="Open profile">
-            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={34} color={colors.primary} />
-            {unreadNotifications > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
-          </Pressable>
-          <IconButton name="add" label="Add story" onPress={() => setCompose('status')} />
-        </View>
-      }>
-         <FlatList
-           testID="landing-grid"
-           data={tab === 'interests' ? [] : visiblePosts}
-           numColumns={3}
-           keyExtractor={item => item.id}
-           columnWrapperStyle={{ gap: 2 }}
-           ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
-           contentContainerStyle={{ paddingHorizontal: 2, paddingBottom: 100 }}
-           showsVerticalScrollIndicator={false}
-            ListHeaderComponent={<>
-               <SocialHubPanel
-                 posts={socialPosts}
-                 stories={socialStories}
-                 card={ownCard}
-                 loading={socialLoading}
-                 error={socialError}
-                 colors={colors}
-                 token={session?.authToken ?? ''}
-                 onRetry={() => void loadSocial()}
-                 onOpenProfile={setProfileUserId}
-                 onOpenStory={(story) => setServerStoryOpen(story)}
-                 onCreate={() => setCompose('status')}
-                 onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
-               />
-
-              <View style={[styles.feedTabs, { borderBottomColor: colors.border }]}>
-                {(['for-you', 'following', 'interests'] as FeedTab[]).map(item => (
-                  <Pressable key={item} testID={`tab-${item}`} onPress={() => setTab(item)} style={[styles.feedTab, tab === item && { borderBottomColor: colors.primary }]}>
-                    <Text style={[styles.feedTabText, { color: tab === item ? colors.primary : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : item === 'following' ? 'Following' : 'Interests'}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {tab === 'interests' && <InterestPanel interests={interests} interestWeights={interestWeights} onToggle={toggleInterest} onBack={() => setTab('for-you')} colors={colors} />}
-
-              {tab !== 'interests' && visiblePosts.length === 0 && (
-                <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '700' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
-              )}
-           </>}
-           renderItem={({ item, index }) => (
-             <Pressable testID={`grid-item-${item.id}`} onPress={() => { setFeedIndex(index); setViewMode('feed'); }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: item.color, justifyContent: 'flex-end', padding: 8 }}>
-               {(item as any).uri ? (
+.uri ? (
                  <Image source={{ uri: (item as any).uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
                ) : null}
                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.15)' }]} />
                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Ionicons name="play-outline" size={12} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{item.likes}</Text>
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{item.likes}</Text>
                </View>
              </Pressable>
            )}
@@ -300,6 +54,7 @@ export default function UpdatesScreen() {
              type={compose}
               initialMediaUri={capturedStatusMedia?.uri}
               initialMediaType={capturedStatusMedia?.type}
+              initialMediaFit={capturedStatusMedia?.fit}
                defaultAudience={settings.statusAudience}
              onClose={() => setCompose(null)}
              colors={colors}
@@ -315,7 +70,12 @@ export default function UpdatesScreen() {
                   const uploadUrl = upload.uploadURL.startsWith('/') ? `https://${process.env.EXPO_PUBLIC_DOMAIN}${upload.uploadURL}` : upload.uploadURL;
                   const uploaded = await expoFetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': mimeType, Authorization: `Bearer ${session.authToken}` }, body: file });
                   if (!uploaded.ok) throw new Error('The media upload did not finish.');
-                  media = { type: data.type === 'video' ? 'video' : 'image', objectPath: upload.objectPath, mimeType };
+                  media = {
+                    type: data.type === 'video' ? 'video' : 'image',
+                    objectPath: upload.objectPath,
+                    mimeType,
+                    fit: data.fit === 'cover' ? 'cover' : 'contain',
+                  };
                 }
                 if (compose === 'status') {
                   let storyLocation: { latitude: number; longitude: number } | null = null;
@@ -383,8 +143,13 @@ export default function UpdatesScreen() {
             }}
             onInbox={() => {
               setProfileUserId(null);
+              router.replace('/');
+            }}
+            onNotifications={() => {
+              setProfileUserId(null);
               void openNotifications();
             }}
+            unreadCount={unreadNotifications}
           />
         ) : null}
       </Modal>
@@ -535,7 +300,7 @@ function FeedPost({ post, active, followed, onLike, onSave, onComment, onShare, 
 
       <View style={{ position: 'absolute', left: 16, right: 80, bottom: 40 }}>
          <Pressable onPress={onOpenProfile}>
-           <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 8 }}>@{post.handle}</Text>
+           <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 8 }}>@{post.handle}</Text>
          </Pressable>
          <Text style={{ color: '#fff', fontSize: 15, lineHeight: 22, marginBottom: 8 }}>{post.caption}</Text>
          <Text style={{ color: '#FFD54A', fontSize: 14, fontWeight: '600', marginBottom: 12 }}>#{post.tag}</Text>
@@ -635,7 +400,7 @@ function StatusViewer({ initialGroup, allGroups, onClose, colors, onMarkViewed }
        <View style={{ flexDirection: 'row', alignItems: 'center', position: 'absolute', top: Math.max(insets.top, 20) + 24, left: 16, right: 16, zIndex: 10, gap: 10 }}>
          <Avatar name={group.author} size={36} color="rgba(255,255,255,0.2)" />
          <View style={{ flex: 1 }}>
-           <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>{group.author}</Text>
+           <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>{group.author}</Text>
            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>{timeAgo(item.createdAt)}</Text>
          </View>
          {group.author === 'You' && (
@@ -662,11 +427,11 @@ function StatusViewer({ initialGroup, allGroups, onClose, colors, onMarkViewed }
 
        {!item.uri || item.type === 'text' ? (
          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, pointerEvents: 'none' }}>
-           <Text style={{ color: '#fff', fontSize: 28, fontWeight: '800', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}>{item.caption}</Text>
+           <Text style={{ color: '#fff', fontSize: 28, fontWeight: '600', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}>{item.caption}</Text>
          </View>
        ) : (
          <View style={{ flex: 1, pointerEvents: 'none', justifyContent: 'flex-end', padding: 20, paddingBottom: 100 }}>
-           {item.caption ? <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}>{item.caption}</Text> : null}
+           {item.caption ? <Text style={{ color: '#fff', fontSize: 18, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}>{item.caption}</Text> : null}
          </View>
        )}
 
@@ -674,14 +439,15 @@ function StatusViewer({ initialGroup, allGroups, onClose, colors, onMarkViewed }
   );
 }
 
-function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initialMediaType, defaultAudience }: any) {
+function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initialMediaType, initialMediaFit, defaultAudience }: any) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [draft, setDraft] = useState('');
   const [selectedColor, setSelectedColor] = useState(postColors[0]);
   const [tag, setTag] = useState(creatorTags[0]);
-   const [audience, setAudience] = useState<SharingAudience>(defaultAudience === 'public' ? 'friends' : (defaultAudience ?? 'friends'));
+  const [audience, setAudience] = useState<SharingAudience>(defaultAudience === 'public' ? 'friends' : (defaultAudience ?? 'friends'));
   const [mediaUri, setMediaUri] = useState<string | null>(initialMediaUri ?? null);
+  const [mediaFit, setMediaFit] = useState<'contain' | 'cover'>(initialMediaFit ?? 'contain');
   const [selectedMediaType, setSelectedMediaType] = useState<'photo' | 'video'>(
     initialMediaType === 'video' ? 'video' : 'photo',
   );
@@ -692,7 +458,7 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
     const ImagePicker = await import('expo-image-picker');
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
-      allowsEditing: true,
+      allowsEditing: false,
       quality: 0.8,
     });
     if (!result.canceled && result.assets.length > 0) {
@@ -706,9 +472,9 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
      setPublishing(true);
      try {
        if (type === 'status') {
-          await onPublish({ caption: draft.trim(), color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, shareLocation });
+          await onPublish({ caption: draft.trim(), color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, shareLocation, fit: mediaFit });
        } else {
-          await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience });
+          await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, fit: mediaFit });
        }
        onClose();
      } catch (error) {
@@ -721,15 +487,15 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: selectedColor }} testID="compose-modal">
       {mediaUri && (
-        <Image source={{ uri: mediaUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <Image source={{ uri: mediaUri }} style={StyleSheet.absoluteFill} contentFit={mediaFit} />
       )}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: mediaUri ? 'rgba(0,0,0,0.4)' : 'transparent' }]} />
 
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Math.max(insets.top, 20) + 10 }}>
         <IconButton name="close" color="#fff" onPress={onClose} />
-        <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>{type === 'status' ? 'New Story' : 'New Post'}</Text>
+        <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{type === 'status' ? 'New Story' : 'New Post'}</Text>
         <Pressable disabled={publishing} onPress={() => void handlePublish()} style={{ backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, opacity: publishing ? 0.65 : 1 }}>
-          <Text style={{ color: '#000', fontWeight: '800', fontSize: 14 }}>{publishing ? 'Sharing…' : 'Share'}</Text>
+          <Text style={{ color: '#000', fontWeight: '600', fontSize: 14 }}>{publishing ? 'Sharing…' : 'Share'}</Text>
         </Pressable>
       </View>
 
@@ -741,20 +507,20 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
             placeholder="Add a caption"
            placeholderTextColor="rgba(255,255,255,0.7)"
            multiline
-           style={{ color: '#fff', fontSize: 28, fontWeight: '800', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}
+           style={{ color: '#fff', fontSize: 28, fontWeight: '600', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 10 }}
          />
       </View>
 
       <View style={{ paddingBottom: Math.max(insets.bottom, 20) + 20, paddingHorizontal: 16, gap: 20 }}>
           <View>
-            <Text style={{ color: 'rgba(255,255,255,0.85)', textAlign: 'center', fontSize: 12, fontWeight: '800', marginBottom: 8 }}>AUDIENCE</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.85)', textAlign: 'center', fontSize: 12, fontWeight: '600', marginBottom: 8 }}>AUDIENCE</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 4 }}>
               {((type === 'status'
                 ? ['public', 'friends', 'followers', 'close_friends', 'private']
                 : ['public', 'friends', 'followers', 'private']
               ) as SharingAudience[]).map((item) => (
                 <Pressable key={item} onPress={() => setAudience(item)} style={{ backgroundColor: audience === item ? '#fff' : 'rgba(255,255,255,0.2)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}>
-                  <Text style={{ color: audience === item ? '#000' : '#fff', fontWeight: '700', fontSize: 13 }}>{audienceLabel(item)}</Text>
+                  <Text style={{ color: audience === item ? '#000' : '#fff', fontWeight: '600', fontSize: 13 }}>{audienceLabel(item)}</Text>
                 </Pressable>
               ))}
             </ScrollView>
@@ -765,7 +531,7 @@ function ComposeModal({ type, onClose, onPublish, colors, initialMediaUri, initi
            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
              {creatorTags.map(item => (
                <Pressable key={item} onPress={() => setTag(item)} style={{ backgroundColor: tag === item ? '#fff' : 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }}>
-                 <Text style={{ color: tag === item ? '#000' : '#fff', fontWeight: '700', fontSize: 13 }}>#{item}</Text>
+                 <Text style={{ color: tag === item ? '#000' : '#fff', fontWeight: '600', fontSize: 13 }}>#{item}</Text>
                </Pressable>
              ))}
            </ScrollView>
@@ -806,7 +572,7 @@ function CommentSheet({ post, onClose, colors, onAdd }: any) {
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: WINDOW_HEIGHT * 0.7 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: '700' }}>{post?.comments.length || 0} comments</Text>
+          <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: '600' }}>{post?.comments.length || 0} comments</Text>
           <IconButton name="close" onPress={onClose} size={24} />
         </View>
         <ScrollView style={{ maxHeight: 300 }}>
@@ -897,7 +663,7 @@ function SocialHubPanel({
         <Pressable onPress={onRetry} style={[styles.socialState, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button">
           <Ionicons name="cloud-offline-outline" size={20} color={colors.destructive} />
           <Text style={{ color: colors.foreground, flex: 1 }}>{error}</Text>
-          <Text style={{ color: colors.primary, fontWeight: '800' }}>Retry</Text>
+          <Text style={{ color: colors.primary, fontWeight: '600' }}>Retry</Text>
         </Pressable>
       ) : posts.length > 0 ? (
         <View style={styles.socialPostList}>
@@ -982,7 +748,7 @@ function relativeSocialTime(timestamp: number) {
   return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
 }
 
-function SocialProfileSheet({ userId, own, token, colors, router, onClose, onMessage, onExclude, onInbox }: { userId: number; own: boolean; token: string; colors: any; router: any; onClose: () => void; onMessage: (userId: number) => void; onExclude: (person: { id: number; name: string }) => void; onInbox: () => void }) {
+function SocialProfileSheet({ userId, own, token, colors, router, onClose, onMessage, onExclude, onInbox, onNotifications, unreadCount }: { userId: number; own: boolean; token: string; colors: any; router: any; onClose: () => void; onMessage: (userId: number) => void; onExclude: (person: { id: number; name: string }) => void; onInbox: () => void; onNotifications: () => void; unreadCount: number }) {
   const [card, setCard] = useState<UserCard | null>(null);
   const [loading, setLoading] = useState(true);
   const [following, setFollowingState] = useState(false);
@@ -1026,12 +792,13 @@ function SocialProfileSheet({ userId, own, token, colors, router, onClose, onMes
               <View><Text style={[styles.profileStatValue, { color: colors.foreground }]}>{card.followingCount}</Text><Text style={[styles.profileStatLabel, { color: colors.mutedForeground }]}>Following</Text></View>
             </View>
             <View style={styles.socialProfileActions}>
-              {own ? <Pressable onPress={onInbox} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Open inbox"><Ionicons name="mail-outline" size={19} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '800' }}>Inbox</Text></Pressable> : null}
-              {!own ? <Pressable onPress={() => void toggleFollow()} style={[styles.profileAction, { backgroundColor: following ? colors.secondary : colors.primary }]}><Ionicons name={following ? 'checkmark' : 'person-add-outline'} size={17} color={following ? colors.foreground : '#fff'} /><Text style={{ color: following ? colors.foreground : '#fff', fontWeight: '800' }}>{following ? 'Following' : 'Follow'}</Text></Pressable> : null}
-              {!own && card.canMessage ? <Pressable onPress={() => onMessage(userId)} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={`Message ${card.name}`}><Ionicons name="mail-outline" size={19} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '800' }}>Message</Text></Pressable> : null}
+              {own ? <Pressable onPress={onInbox} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Open inbox"><Ionicons name="chatbubbles-outline" size={19} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '600' }}>Chats</Text></Pressable> : null}
+              {own ? <Pressable onPress={onNotifications} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Open notifications"><Ionicons name="notifications-outline" size={19} color={colors.primary} />{unreadCount > 0 ? <View style={{ position: 'absolute', top: -1, right: -1, width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.destructive }} /> : null}</Pressable> : null}
+              {!own ? <Pressable onPress={() => void toggleFollow()} style={[styles.profileAction, { backgroundColor: following ? colors.secondary : colors.primary }]}><Ionicons name={following ? 'checkmark' : 'person-add-outline'} size={17} color={following ? colors.foreground : '#fff'} /><Text style={{ color: following ? colors.foreground : '#fff', fontWeight: '600' }}>{following ? 'Following' : 'Follow'}</Text></Pressable> : null}
+              {!own && card.canMessage ? <Pressable onPress={() => onMessage(userId)} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={`Message ${card.name}`}><Ionicons name="chatbubbles-outline" size={19} color={colors.primary} /><Text style={{ color: colors.foreground, fontWeight: '600' }}>Message</Text></Pressable> : null}
             </View>
             {!own ? <Pressable onPress={() => { onExclude({ id: card.id, name: card.name }); Alert.alert('Sharing list updated', `${card.name} was added or removed from your excluded audience list.`); }} style={styles.excludeAction}><Ionicons name="eye-off-outline" size={17} color={colors.mutedForeground} /><Text style={{ color: colors.mutedForeground }}>Toggle excluded from sharing</Text></Pressable> : null}
-            <Pressable onPress={onClose} style={[styles.profileDone, { borderColor: colors.border }]}><Text style={{ color: colors.primary, fontWeight: '800' }}>Done</Text></Pressable>
+            <Pressable onPress={onClose} style={[styles.profileDone, { borderColor: colors.border }]}><Text style={{ color: colors.primary, fontWeight: '600' }}>Done</Text></Pressable>
           </>
         ) : null}
       </View>
@@ -1049,7 +816,7 @@ function NotificationsSheet({ notifications, loading, colors, token, onClose, on
           {notifications.length === 0 ? <View style={styles.notificationEmpty}><Ionicons name="notifications-off-outline" size={28} color={colors.primary} /><Text style={[styles.notificationEmptyTitle, { color: colors.foreground }]}>All caught up</Text><Text style={{ color: colors.mutedForeground, textAlign: 'center' }}>Reactions and replies from your circle will land here.</Text></View> : notifications.map((item) => (
             <Pressable key={item.id} onPress={() => onRead(item)} style={[styles.notificationRow, { borderBottomColor: colors.border, backgroundColor: item.readAt ? 'transparent' : colors.secondary }]}>
               <Avatar name={item.actor.name} size={40} color={colors.primary} />
-              <View style={{ flex: 1 }}><Text style={[styles.notificationText, { color: colors.foreground }]}><Text style={{ fontWeight: '800' }}>{item.actor.name}</Text>{` ${notificationCopy(item.type)}`}</Text><Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 4 }}>{relativeSocialTime(item.createdAt)}</Text></View>
+              <View style={{ flex: 1 }}><Text style={[styles.notificationText, { color: colors.foreground }]}><Text style={{ fontWeight: '600' }}>{item.actor.name}</Text>{` ${notificationCopy(item.type)}`}</Text><Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 4 }}>{relativeSocialTime(item.createdAt)}</Text></View>
               {!item.readAt ? <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} /> : null}
             </Pressable>
           ))}
@@ -1128,7 +895,7 @@ function InterestPanel({ interests, interestWeights, onToggle, onBack, colors }:
       </View>
       <Pressable onPress={onBack} style={[styles.backButton, { borderColor: colors.primary }]}>
         <Ionicons name="arrow-back" size={17} color={colors.primary} />
-        <Text style={{ color: colors.primary, fontWeight: '700' }}>Back to For You</Text>
+        <Text style={{ color: colors.primary, fontWeight: '600' }}>Back to For You</Text>
       </Pressable>
     </ScrollView>
   );
@@ -1138,46 +905,46 @@ const styles = StyleSheet.create({
   socialHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   mapStoryToggle: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'center', paddingHorizontal: 12 },
   mapStoryIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  mapStoryLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  mapStoryLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
   mapStorySwitch: { width: 42, height: 24, borderRadius: 12, padding: 3 },
   mapStoryThumb: { width: 18, height: 18, borderRadius: 9 },
   headerAvatarButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   headerUnreadDot: { position: 'absolute', top: 3, right: 3, width: 9, height: 9, borderRadius: 5, borderWidth: 2, borderColor: '#fff' },
   createPill: { minHeight: 36, borderRadius: 20, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  createPillText: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  createPillText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   bellButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   notificationBadge: { position: 'absolute', top: 4, right: 3, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center' },
-  notificationBadgeText: { color: '#fff', fontSize: 9, fontWeight: '900' },
+  notificationBadgeText: { color: '#fff', fontSize: 9, fontWeight: '600' },
   socialHub: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 8 },
   socialHubHeading: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  socialHubTitle: { fontSize: 21, fontWeight: '900', letterSpacing: -0.4 },
+  socialHubTitle: { fontSize: 21, fontWeight: '600', letterSpacing: -0.4 },
   socialHubSubtitle: { fontSize: 12, marginTop: 2 },
   mapPill: { minHeight: 38, borderRadius: 20, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  mapPillText: { fontSize: 13, fontWeight: '800' },
+  mapPillText: { fontSize: 13, fontWeight: '600' },
   socialIdentity: { minHeight: 74, borderWidth: 1, borderRadius: 24, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  socialIdentityName: { fontSize: 15, fontWeight: '900' },
+  socialIdentityName: { fontSize: 15, fontWeight: '600' },
   socialIdentityHandle: { fontSize: 11, marginTop: 3, lineHeight: 15 },
   statStack: { alignItems: 'center', minWidth: 46 },
-  statValue: { fontSize: 15, fontWeight: '900' },
+  statValue: { fontSize: 15, fontWeight: '600' },
   statLabel: { fontSize: 9, marginTop: 2 },
   socialStoryRail: { gap: 14, paddingVertical: 14, paddingHorizontal: 4 },
   socialStoryItem: { width: 64, alignItems: 'center' },
-  socialStoryName: { fontSize: 10.5, fontWeight: '700', width: 64, textAlign: 'center', marginTop: 5 },
+  socialStoryName: { fontSize: 10.5, fontWeight: '600', width: 64, textAlign: 'center', marginTop: 5 },
   socialStoryAudience: { fontSize: 8, marginTop: 1 },
   socialState: { minHeight: 68, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', gap: 10, alignItems: 'center' },
   socialPostList: { marginTop: 14, gap: 10 },
   socialSectionHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  socialSectionTitle: { fontSize: 16, fontWeight: '900' },
-  socialSectionHint: { fontSize: 11, fontWeight: '700' },
+  socialSectionTitle: { fontSize: 16, fontWeight: '600' },
+  socialSectionHint: { fontSize: 11, fontWeight: '600' },
   socialPostCard: { borderWidth: 1, borderRadius: 24, overflow: 'hidden', padding: 12 },
   socialPostHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   socialAuthor: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 },
-  socialAuthorName: { fontSize: 14, fontWeight: '900' },
+  socialAuthorName: { fontSize: 14, fontWeight: '600' },
   socialAuthorMeta: { fontSize: 10, marginTop: 2 },
   socialPostContent: { fontSize: 14, lineHeight: 20, marginTop: 11 },
   socialPostMedia: { width: '100%', height: 210, borderRadius: 12, marginTop: 11 },
   socialLinkCard: { borderRadius: 11, padding: 10, marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  socialLinkTitle: { fontSize: 12, fontWeight: '800' },
+  socialLinkTitle: { fontSize: 12, fontWeight: '600' },
   socialLinkUrl: { fontSize: 10, marginTop: 2 },
   socialPostActions: { flexDirection: 'row', alignItems: 'center', gap: 18, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, marginTop: 11 },
   socialAction: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -1186,55 +953,55 @@ const styles = StyleSheet.create({
   socialProfileSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, minHeight: 440, alignItems: 'center' },
   notificationsSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, minHeight: WINDOW_HEIGHT * 0.64, maxHeight: WINDOW_HEIGHT * 0.82, padding: 20 },
   sheetTop: { width: '100%', minHeight: 45, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sheetEyebrow: { fontSize: 10, fontWeight: '900', letterSpacing: 1.4 },
-  socialProfileName: { fontSize: 23, fontWeight: '900', marginTop: 13 },
+  sheetEyebrow: { fontSize: 10, fontWeight: '600', letterSpacing: 1.4 },
+  socialProfileName: { fontSize: 23, fontWeight: '600', marginTop: 13 },
   socialProfileHandle: { fontSize: 14, marginTop: 3 },
   socialProfileStats: { flexDirection: 'row', gap: 46, marginTop: 22, marginBottom: 22 },
-  profileStatValue: { textAlign: 'center', fontSize: 19, fontWeight: '900' },
+  profileStatValue: { textAlign: 'center', fontSize: 19, fontWeight: '600' },
   profileStatLabel: { fontSize: 11, marginTop: 2 },
   socialProfileActions: { flexDirection: 'row', gap: 9, width: '100%', justifyContent: 'center' },
   profileAction: { minHeight: 44, borderRadius: 22, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   profileIconAction: { minHeight: 44, borderRadius: 22, paddingHorizontal: 17, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   excludeAction: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12 },
   profileDone: { width: '100%', minHeight: 44, borderTopWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
-  notificationsTitle: { fontSize: 24, fontWeight: '900', marginTop: 2 },
+  notificationsTitle: { fontSize: 24, fontWeight: '600', marginTop: 2 },
   notificationRow: { minHeight: 68, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', gap: 10 },
   notificationText: { fontSize: 13, lineHeight: 18 },
   unreadDot: { width: 8, height: 8, borderRadius: 4 },
   notificationEmpty: { alignItems: 'center', paddingHorizontal: 30, paddingTop: 55, gap: 9 },
-  notificationEmptyTitle: { fontSize: 17, fontWeight: '900' },
+  notificationEmptyTitle: { fontSize: 17, fontWeight: '600' },
   serverStoryViewer: { flex: 1, justifyContent: 'space-between' },
   serverStoryShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.32)' },
   serverStoryTop: { paddingTop: 54, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  serverStoryAuthor: { color: '#fff', fontSize: 14, fontWeight: '900' },
+  serverStoryAuthor: { color: '#fff', fontSize: 14, fontWeight: '600' },
   serverStoryMeta: { color: 'rgba(255,255,255,0.78)', fontSize: 11, marginTop: 2 },
   serverStoryContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 30, paddingBottom: 70 },
-  serverStoryText: { color: '#fff', fontSize: 28, lineHeight: 36, textAlign: 'center', fontWeight: '900', textShadowColor: 'rgba(0,0,0,0.35)', textShadowRadius: 8 },
+  serverStoryText: { color: '#fff', fontSize: 28, lineHeight: 36, textAlign: 'center', fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.35)', textShadowRadius: 8 },
   feedTabs: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
   feedTab: { flex: 1, alignItems: 'center', paddingVertical: 11, borderBottomWidth: 2 },
-  feedTabText: { fontWeight: '700', fontSize: 14 },
+  feedTabText: { fontWeight: '600', fontSize: 14 },
   interestContent: { paddingBottom: 100 },
   interestHeading: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
-  interestTitle: { fontSize: 23, fontWeight: '800' },
+  interestTitle: { fontSize: 23, fontWeight: '600' },
   interestSubtitle: { fontSize: 13, lineHeight: 18, marginTop: 4 },
   interestGrid: { gap: 8 },
   interestChip: { borderWidth: 1, borderRadius: 11, minHeight: 62, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   check: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  interestLabel: { fontSize: 14, fontWeight: '700' },
+  interestLabel: { fontSize: 14, fontWeight: '600' },
   interestDescription: { fontSize: 11, marginTop: 3 },
   learningCard: { borderWidth: 1, borderRadius: 11, padding: 14, marginTop: 18 },
   learningHeader: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  learningTitle: { fontSize: 14, fontWeight: '800' },
+  learningTitle: { fontSize: 14, fontWeight: '600' },
   learningText: { fontSize: 12, lineHeight: 17, marginTop: 7 },
   weightRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 11 },
   weightPill: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 14 },
   noSignals: { fontSize: 11, marginTop: 10 },
   pipelineCard: { borderWidth: 1, borderRadius: 11, padding: 14, marginTop: 12 },
-  pipelineTitle: { fontSize: 14, fontWeight: '800', marginBottom: 8 },
+  pipelineTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
   pipelineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
   pipelineNumber: { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   pipelineStep: { fontSize: 12, flex: 1 },
-  pipelineStatus: { fontSize: 10, fontWeight: '700' },
+  pipelineStatus: { fontSize: 10, fontWeight: '600' },
   pipelineFootnote: { fontSize: 11, lineHeight: 16, marginTop: 8 },
   backButton: { minHeight: 44, borderWidth: 1, borderRadius: 10, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
 });
@@ -1249,10 +1016,10 @@ function ProfileSheet({ handle, onClose, colors, followed, onFollow }: any) {
         </View>
         <View style={{ alignItems: 'center', marginTop: -10 }}>
           <Avatar name={handle} size={80} color={colors.primary} />
-          <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: 'bold', marginTop: 12 }}>@{handle}</Text>
+          <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: '600', marginTop: 12 }}>@{handle}</Text>
           <Text style={{ color: colors.mutedForeground, fontSize: 14, marginTop: 4 }}>Creator on Old Time</Text>
           <Pressable onPress={onFollow} style={{ marginTop: 20, backgroundColor: followed ? colors.secondary : colors.primary, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20 }}>
-            <Text style={{ color: followed ? colors.foreground : '#fff', fontWeight: 'bold' }}>{followed ? 'Following' : 'Follow'}</Text>
+            <Text style={{ color: followed ? colors.foreground : '#fff', fontWeight: '600' }}>{followed ? 'Following' : 'Follow'}</Text>
           </Pressable>
         </View>
       </View>

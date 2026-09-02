@@ -6,6 +6,7 @@ import React, { type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { typography } from '@/constants/typography';
 
 export function initials(name: string) {
   return name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'OT';
@@ -90,26 +91,26 @@ export const styles = StyleSheet.create({
   header: { minHeight: 60, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   headerTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerRight: { flexDirection: 'row', alignItems: 'center' },
-  title: { fontSize: 24, fontWeight: '700', letterSpacing: -0.5 },
+  title: { ...typography.navigationTitle },
   scroll: { paddingHorizontal: 16, paddingTop: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loadingAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#ddd', marginBottom: 14, opacity: 0.8 },
   loadingBar: { height: 10, width: '48%', borderRadius: 5, marginBottom: 9, opacity: 0.8 },
   avatar: { alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontWeight: '700' },
+  avatarText: { color: '#fff', fontWeight: '600' },
   storyGradient: { padding: 2.5, alignItems: 'center', justifyContent: 'center' },
   storyInner: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
   storyAdd: { position: 'absolute', right: -2, bottom: -1, width: 21, height: 21, borderRadius: 11, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center' },
   iconButton: { width: 38, height: 38, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', shadowColor: '#18212B', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
   primaryButton: { minHeight: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, shadowColor: '#18212B', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
-  primaryLabel: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  primaryLabel: { ...typography.button, color: '#fff' },
   empty: { alignItems: 'center', justifyContent: 'center', padding: 28, gap: 8 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', marginTop: 6, letterSpacing: -0.2 },
-  emptyText: { textAlign: 'center', lineHeight: 20, maxWidth: 290 },
-  sectionLabel: { textTransform: 'uppercase', fontSize: 11, fontWeight: '700', letterSpacing: 1.1, marginHorizontal: 4, marginBottom: 8, marginTop: 18 },
+  emptyTitle: { ...typography.sectionTitle, marginTop: 6 },
+  emptyText: { ...typography.secondary, textAlign: 'center', maxWidth: 290, fontSize: 15, lineHeight: 21 },
+  sectionLabel: { ...typography.label, textTransform: 'uppercase', letterSpacing: 1.1, marginHorizontal: 4, marginBottom: 8, marginTop: 18 },
   row: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   rowIcon: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   rowBody: { flex: 1 },
-  rowLabel: { fontSize: 15 },
-  rowDetail: { fontSize: 12, marginTop: 2 },
+  rowLabel: { ...typography.bodyMedium },
+  rowDetail: { ...typography.secondary, marginTop: 2 },
 });

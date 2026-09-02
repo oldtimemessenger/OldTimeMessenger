@@ -95,6 +95,7 @@ const storyInput = z.object({
     width: z.number().int().positive().optional(),
     height: z.number().int().positive().optional(),
     duration: z.number().nonnegative().optional(),
+    fit: z.enum(["contain", "cover"]).optional(),
   }).nullable().optional(),
   location: z.object({
     latitude: z.number().finite().gte(-90).lte(90),

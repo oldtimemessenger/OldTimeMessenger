@@ -33,6 +33,7 @@ export default function CameraScreen() {
   const [captureMode, setCaptureMode] = useState<'picture' | 'video'>('picture');
 
   const [preview, setPreview] = useState<{ uri: string, type: 'photo' | 'video' } | null>(null);
+  const [contentFit, setContentFit] = useState<'contain' | 'cover'>('contain');
   const [shots, setShots] = useState<string[]>([]);
 
   const [isRecording, setIsRecording] = useState(false);
@@ -171,7 +172,7 @@ export default function CameraScreen() {
   async function openGallery() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images', 'videos'],
-      allowsEditing: true,
+      allowsEditing: false,
       quality: 0.9,
       selectionLimit: 1
     });
@@ -195,7 +196,7 @@ export default function CameraScreen() {
     return (
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
         <Ionicons name="camera-outline" size={52} color="rgba(255,255,255,0.7)" style={{ marginBottom: 18 }} />
-        <Text style={{ color: '#fff', fontSize: 18, marginBottom: 12, textAlign: 'center', fontWeight: 'bold' }}>
+        <Text style={{ color: '#fff', fontSize: 18, marginBottom: 12, textAlign: 'center', fontWeight: '600' }}>
           Camera access
         </Text>
         <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, marginBottom: 32, textAlign: 'center' }}>
@@ -214,7 +215,7 @@ export default function CameraScreen() {
             }
           }}
         >
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{permission.canAskAgain ? 'Continue' : 'Open Settings'}</Text>
+          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>{permission.canAskAgain ? 'Continue' : 'Open Settings'}</Text>
         </Pressable>
       </View>
     );
@@ -225,14 +226,18 @@ export default function CameraScreen() {
       <View style={styles.root}>
         <View style={[styles.viewfinder, { paddingTop: insets.top }]}>
           {preview.type === 'video' ? (
-             <VideoSurface source={preview.uri} style={styles.previewImage} controls loop />
+             <VideoSurface source={preview.uri} style={styles.previewImage} controls loop contentFit={contentFit} />
           ) : (
-             <Image source={{ uri: preview.uri }} style={styles.previewImage} />
+             <Image source={{ uri: preview.uri }} style={[styles.previewImage, { resizeMode: contentFit }]} />
           )}
         </View>
         <View style={[styles.previewControls, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <Pressable accessibilityLabel="Retake" testID="retake-button" onPress={() => setPreview(null)} style={styles.previewAction}>
               <Ionicons name="arrow-undo" size={24} color="#fff" />
+           </Pressable>
+           <Pressable onPress={() => setContentFit(f => f === 'cover' ? 'contain' : 'cover')} style={[styles.previewAction, { flexDirection: 'row', width: 'auto', paddingHorizontal: 16, gap: 6 }]}>
+              <Ionicons name={contentFit === 'cover' ? "contract" : "expand"} size={20} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>{contentFit === 'cover' ? 'Fill' : 'Fit'}</Text>
            </Pressable>
             <Pressable
               testID="use-button"
@@ -244,6 +249,7 @@ export default function CameraScreen() {
                       id: returnChatId,
                       mediaUri: preview.uri,
                       mediaType: preview.type === 'video' ? 'video' : 'image',
+                      mediaFit: contentFit,
                     },
                   });
                   return;
@@ -254,6 +260,7 @@ export default function CameraScreen() {
                      params: {
                        mediaUri: preview.uri,
                        mediaType: preview.type === 'video' ? 'video' : 'photo',
+                       mediaFit: contentFit,
                      },
                    });
                    return;
@@ -375,7 +382,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, zIndex: 10
   },
   topActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
-  autoFlashText: { position: 'absolute', bottom: -2, right: 4, color: '#FFD54A', fontSize: 10, fontWeight: 'bold' },
+  autoFlashText: { position: 'absolute', bottom: -2, right: 4, color: '#FFD54A', fontSize: 10, fontWeight: '600' },
 
   recordingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, gap: 6 },
   recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#F0537A' },
@@ -383,11 +390,11 @@ const styles = StyleSheet.create({
 
   zoomRail: { position: 'absolute', right: 16, top: '40%', gap: 12, alignItems: 'center', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.3)', paddingVertical: 12, borderRadius: 24 },
   zoomText: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '500' },
-  zoomActive: { color: '#FFD54A', fontWeight: '800', fontSize: 15 },
+  zoomActive: { color: '#FFD54A', fontWeight: '600', fontSize: 15 },
 
   bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 18, paddingHorizontal: 0, backgroundColor: 'rgba(0,0,0,0.28)' },
   modeRow: { gap: 30, paddingHorizontal: 30, paddingBottom: 24 },
-  mode: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
+  mode: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '600', letterSpacing: 0.5 },
   modeActive: { color: '#FFD54A' },
 
   captureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 40, paddingBottom: 20 },

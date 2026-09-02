@@ -1689,7 +1689,17 @@ components:
         kind: { type: string, enum: [text, image, video] }
         content: { type: string }
         visibility: { type: string, enum: [public, friends, followers, close_friends, private] }
-        media: { type: [object, "null"], additionalProperties: true }
+        media:
+          type: [object, "null"]
+          properties:
+            type: { type: string, enum: [image, video] }
+            objectPath: { type: string }
+            mimeType: { type: string }
+            width: { type: number }
+            height: { type: number }
+            duration: { type: number }
+            fit: { type: string, enum: [contain, cover], default: contain }
+          required: [type, objectPath, mimeType]
         location:
           type: [object, "null"]
           properties:
@@ -1711,7 +1721,17 @@ components:
       properties:
         content: { type: string, maxLength: 2000 }
         visibility: { type: string, enum: [public, friends, followers, close_friends, private] }
-        media: { type: [object, "null"], additionalProperties: true }
+        media:
+          type: [object, "null"]
+          properties:
+            type: { type: string, enum: [image, video] }
+            objectPath: { type: string }
+            mimeType: { type: string }
+            width: { type: number }
+            height: { type: number }
+            duration: { type: number }
+            fit: { type: string, enum: [contain, cover], default: contain }
+          required: [type, objectPath, mimeType]
         location:
           type: [object, "null"]
           properties:

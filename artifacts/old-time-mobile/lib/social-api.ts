@@ -66,7 +66,7 @@ export type SearchResults = {
 export type Story = {
   id: number; kind: 'text' | 'image' | 'video'; content: string;
   visibility: 'public' | 'friends' | 'followers' | 'close_friends' | 'private';
-  media: { type: 'image' | 'video'; objectPath: string; mimeType: string; width?: number; height?: number; duration?: number } | null;
+  media: { type: 'image' | 'video'; objectPath: string; mimeType: string; width?: number; height?: number; duration?: number; fit?: 'contain' | 'cover' } | null;
   createdAt: number; expiresAt: number; location: { latitude: number; longitude: number } | null; author: SocialUser;
   viewer: { viewed: boolean; isOwner: boolean }; counts: { views: number; reactions: number };
 };

@@ -208,6 +208,7 @@ export const socialStoriesTable = pgTable(
       width?: number;
       height?: number;
       duration?: number;
+      fit?: "contain" | "cover";
     } | null>(),
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),

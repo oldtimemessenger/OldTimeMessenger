@@ -6,6 +6,7 @@ import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, 
 import { Avatar, EmptyState, IconButton, LoadingState, Screen, StoryAvatar } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
+import { typography } from '@/constants/typography';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStories, type Story } from '@/lib/social-api';
 
@@ -92,11 +93,13 @@ export default function ChatsScreen() {
         </Pressable>
       ))}
     </ScrollView>
-    <View style={[styles.search, { backgroundColor: colors.muted }]}>
-      <Ionicons name="search" size={18} color={colors.mutedForeground} />
-      <TextInput value={search} onChangeText={setSearch} placeholder="Search chats" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
+    <View style={styles.searchContainer}>
+      <View style={[styles.search, { backgroundColor: colors.muted }]}>
+        <Ionicons name="search" size={16} color={colors.mutedForeground} />
+        <TextInput value={search} onChangeText={setSearch} placeholder="Search" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} clearButtonMode="while-editing" />
+      </View>
     </View>
-    {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '700' }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '700' }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100 }} renderItem={renderChatItem} />}
+    {inbox.isError ? <EmptyState icon="cloud-offline-outline" title="Could not load chats" description="Check your connection." action={<Pressable onPress={() => inbox.refetch()}><Text style={{ color: colors.primary, fontWeight: '600', fontSize: 16 }}>Try again</Text></Pressable>} /> : items.length === 0 ? <EmptyState icon="chatbubble-ellipses-outline" title="No chats yet" description="Start a conversation." action={<Pressable onPress={() => setShowNew(true)}><Text style={{ color: colors.primary, fontWeight: '600', fontSize: 16 }}>New message</Text></Pressable>} /> : <FlatList data={items} keyExtractor={(item) => String(item.chat.id)} contentContainerStyle={{ paddingBottom: 100 }} renderItem={renderChatItem} />}
     <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
       <View style={styles.modalShade}>
         <View style={[styles.sheet, { backgroundColor: colors.card }]}>
@@ -151,38 +154,39 @@ const styles = StyleSheet.create({
   storyDrawer: { maxHeight: 98, borderBottomWidth: StyleSheet.hairlineWidth },
   storyDrawerContent: { paddingHorizontal: 14, paddingVertical: 11, gap: 14 },
   storyItem: { width: 62, alignItems: 'center' },
-  storyName: { fontSize: 10.5, fontWeight: '700', marginTop: 5, width: 62, textAlign: 'center' },
-  search: { minHeight: 44, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13, marginBottom: 5 },
-  searchInput: { flex: 1, fontSize: 15 },
-  chatRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 2 },
+  storyName: { fontSize: 10.5, fontWeight: '600', marginTop: 5, width: 62, textAlign: 'center' },
+  searchContainer: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'transparent' },
+  search: { height: 36, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8 },
+  searchInput: { ...typography.body, flex: 1 },
+  chatRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingHorizontal: 16 },
   chatBody: { flex: 1 },
   chatTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  chatName: { fontSize: 15, fontWeight: '700', flex: 1 },
-  time: { fontSize: 11 },
+  chatName: { ...typography.username, flex: 1 },
+  time: { ...typography.timestamp, fontSize: 13 },
   chatBottom: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 },
-  preview: { fontSize: 13, flex: 1 },
+  preview: { ...typography.secondary, flex: 1 },
   badge: { minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  badgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  badgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   modalShade: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { maxHeight: '78%', borderTopLeftRadius: 14, borderTopRightRadius: 14, padding: 18 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  sheetTitle: { fontSize: 20, fontWeight: '800' },
+  sheetTitle: { ...typography.sheetTitle },
   person: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  personName: { fontSize: 15, fontWeight: '700' },
-  personPhone: { fontSize: 12, marginTop: 2 },
+  personName: { ...typography.username },
+  personPhone: { ...typography.secondary, marginTop: 2 },
   profileOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.28)' },
   profileCard: { width: '100%', maxWidth: 360, overflow: 'hidden', borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
   profileHero: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 28, paddingBottom: 24 },
   profileClose: { position: 'absolute', top: 10, right: 10, width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.14)' },
-  profileName: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 12 },
-  profilePhone: { color: 'rgba(255,255,255,0.82)', fontSize: 14, marginTop: 3 },
+  profileName: { color: '#fff', fontSize: 22, fontWeight: '600', marginTop: 12, letterSpacing: 0.2 },
+  profilePhone: { color: 'rgba(255,255,255,0.82)', fontSize: 15, marginTop: 3 },
   profileBody: { padding: 20 },
-  profileLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 10 },
+  profileLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 1, marginBottom: 10 },
   profileStatus: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 12 },
   profileStatusIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
   profileStatusCopy: { flex: 1 },
-  profileStatusTitle: { fontSize: 15, fontWeight: '700' },
-  profileStatusDetail: { fontSize: 12, marginTop: 2 },
+  profileStatusTitle: { fontSize: 16, fontWeight: '600', letterSpacing: -0.1 },
+  profileStatusDetail: { fontSize: 14, marginTop: 2 },
   profileLogout: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, borderRadius: 12 },
-  profileLogoutText: { fontSize: 15, fontWeight: '700' },
+  profileLogoutText: { fontSize: 16, fontWeight: '600' },
 });
