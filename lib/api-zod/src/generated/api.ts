@@ -68,7 +68,8 @@ export const VerifyOtpResponse = zod.object({
   "phone": zod.string(),
   "name": zod.string(),
   "online": zod.boolean(),
-  "lastSeen": zod.number()
+  "lastSeen": zod.number(),
+  "lastSeenVisible": zod.boolean()
 }).and(zod.object({
   "authToken": zod.string()
 }))
@@ -97,9 +98,51 @@ export const ListUsersResponseItem = zod.object({
   "phone": zod.string(),
   "name": zod.string(),
   "online": zod.boolean(),
-  "lastSeen": zod.number()
+  "lastSeen": zod.number(),
+  "lastSeenVisible": zod.boolean()
 })
 export const ListUsersResponse = zod.array(ListUsersResponseItem)
+
+
+/**
+ * @summary Update online and last-seen visibility
+ */
+
+
+
+export const UpdatePresencePrivacyParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const UpdatePresencePrivacyBody = zod.object({
+  "lastSeenVisible": zod.boolean()
+})
+
+export const UpdatePresencePrivacyResponse = zod.object({
+  "success": zod.boolean(),
+  "lastSeenVisible": zod.boolean()
+})
+
+
+/**
+ * @summary Update the caller's online presence
+ */
+
+
+
+export const UpdatePresenceParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const UpdatePresenceBody = zod.object({
+  "online": zod.boolean()
+})
+
+export const UpdatePresenceResponse = zod.object({
+  "success": zod.boolean(),
+  "online": zod.boolean(),
+  "lastSeen": zod.number()
+})
 
 
 /**
@@ -135,7 +178,8 @@ export const GetInboxResponseItem = zod.object({
   "phone": zod.string(),
   "name": zod.string(),
   "online": zod.boolean(),
-  "lastSeen": zod.number()
+  "lastSeen": zod.number(),
+  "lastSeenVisible": zod.boolean()
 }),
   "lastMessage": zod.union([zod.object({
   "id": zod.number(),
@@ -488,6 +532,7 @@ export const GetSocialFeedQueryParams = zod.object({
 })
 
 export const getSocialFeedResponseItemsItemVisibilityDefault = `friends`;
+export const getSocialFeedResponseItemsItemAllowRepostsDefault = false;
 
 export const GetSocialFeedResponse = zod.object({
   "mode": zod.enum(['for-you', 'following']),
@@ -496,6 +541,7 @@ export const GetSocialFeedResponse = zod.object({
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(getSocialFeedResponseItemsItemVisibilityDefault),
+  "allowReposts": zod.boolean().default(getSocialFeedResponseItemsItemAllowRepostsDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
@@ -544,6 +590,7 @@ export const createSocialPostBodyContentMax = 2000;
 
 export const createSocialPostBodyKindDefault = `text`;
 export const createSocialPostBodyVisibilityDefault = `friends`;
+export const createSocialPostBodyAllowRepostsDefault = false;
 export const createSocialPostBodyMediaMax = 8;
 
 export const createSocialPostBodyLinkTitleMax = 300;
@@ -556,6 +603,7 @@ export const CreateSocialPostBody = zod.object({
   "content": zod.string().max(createSocialPostBodyContentMax).optional(),
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']).default(createSocialPostBodyKindDefault),
   "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(createSocialPostBodyVisibilityDefault),
+  "allowReposts": zod.boolean().default(createSocialPostBodyAllowRepostsDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
@@ -571,12 +619,14 @@ export const CreateSocialPostBody = zod.object({
 })
 
 export const createSocialPostResponseVisibilityDefault = `friends`;
+export const createSocialPostResponseAllowRepostsDefault = false;
 
 export const CreateSocialPostResponse = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(createSocialPostResponseVisibilityDefault),
+  "allowReposts": zod.boolean().default(createSocialPostResponseAllowRepostsDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
@@ -857,6 +907,7 @@ export const SearchSocialQueryParams = zod.object({
 })
 
 export const searchSocialResponsePostsItemVisibilityDefault = `friends`;
+export const searchSocialResponsePostsItemAllowRepostsDefault = false;
 
 export const SearchSocialResponse = zod.object({
   "users": zod.array(zod.object({
@@ -869,6 +920,7 @@ export const SearchSocialResponse = zod.object({
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(searchSocialResponsePostsItemVisibilityDefault),
+  "allowReposts": zod.boolean().default(searchSocialResponsePostsItemAllowRepostsDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
@@ -1104,6 +1156,7 @@ export const ReportSocialContentResponse = zod.object({
  * @summary List posts saved by the authenticated user
  */
 export const getSavedSocialPostsResponseItemsItemVisibilityDefault = `friends`;
+export const getSavedSocialPostsResponseItemsItemAllowRepostsDefault = false;
 
 export const GetSavedSocialPostsResponse = zod.object({
   "items": zod.array(zod.object({
@@ -1111,6 +1164,7 @@ export const GetSavedSocialPostsResponse = zod.object({
   "kind": zod.enum(['text', 'photo', 'video', 'link', 'news']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'private']).default(getSavedSocialPostsResponseItemsItemVisibilityDefault),
+  "allowReposts": zod.boolean().default(getSavedSocialPostsResponseItemsItemAllowRepostsDefault),
   "media": zod.array(zod.object({
   "type": zod.enum(['image', 'video']),
   "objectPath": zod.string(),
@@ -1154,6 +1208,7 @@ export const GetSavedSocialPostsResponse = zod.object({
 /**
  * @summary List active stories visible to the caller
  */
+export const getStoriesResponseItemsItemMediaFitDefault = `contain`;
 export const getStoriesResponseItemsItemLocationLatitudeMin = -90;
 export const getStoriesResponseItemsItemLocationLatitudeMax = 90;
 
@@ -1168,7 +1223,15 @@ export const GetStoriesResponse = zod.object({
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
-  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "media": zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional(),
+  "fit": zod.enum(['contain', 'cover']).default(getStoriesResponseItemsItemMediaFitDefault)
+}).nullish(),
   "location": zod.object({
   "latitude": zod.number().min(getStoriesResponseItemsItemLocationLatitudeMin).max(getStoriesResponseItemsItemLocationLatitudeMax),
   "longitude": zod.number().min(getStoriesResponseItemsItemLocationLongitudeMin).max(getStoriesResponseItemsItemLocationLongitudeMax)
@@ -1197,6 +1260,7 @@ export const GetStoriesResponse = zod.object({
  */
 export const createStoryBodyContentMax = 2000;
 
+export const createStoryBodyMediaFitDefault = `contain`;
 export const createStoryBodyLocationLatitudeMin = -90;
 export const createStoryBodyLocationLatitudeMax = 90;
 
@@ -1208,7 +1272,15 @@ export const createStoryBodyLocationLongitudeMax = 180;
 export const CreateStoryBody = zod.object({
   "content": zod.string().max(createStoryBodyContentMax).optional(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']).optional(),
-  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "media": zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional(),
+  "fit": zod.enum(['contain', 'cover']).default(createStoryBodyMediaFitDefault)
+}).nullish(),
   "location": zod.object({
   "latitude": zod.number().min(createStoryBodyLocationLatitudeMin).max(createStoryBodyLocationLatitudeMax),
   "longitude": zod.number().min(createStoryBodyLocationLongitudeMin).max(createStoryBodyLocationLongitudeMax)
@@ -1216,6 +1288,7 @@ export const CreateStoryBody = zod.object({
   "expiresAt": zod.number().optional()
 })
 
+export const createStoryResponseMediaFitDefault = `contain`;
 export const createStoryResponseLocationLatitudeMin = -90;
 export const createStoryResponseLocationLatitudeMax = 90;
 
@@ -1229,7 +1302,15 @@ export const CreateStoryResponse = zod.object({
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
-  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "media": zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional(),
+  "fit": zod.enum(['contain', 'cover']).default(createStoryResponseMediaFitDefault)
+}).nullish(),
   "location": zod.object({
   "latitude": zod.number().min(createStoryResponseLocationLatitudeMin).max(createStoryResponseLocationLatitudeMax),
   "longitude": zod.number().min(createStoryResponseLocationLongitudeMin).max(createStoryResponseLocationLongitudeMax)
@@ -1277,6 +1358,7 @@ export const GetNearbyStoriesQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(getNearbyStoriesQueryLimitMax).default(getNearbyStoriesQueryLimitDefault)
 })
 
+export const getNearbyStoriesResponseItemsItemMediaFitDefault = `contain`;
 export const getNearbyStoriesResponseItemsItemLocationLatitudeMin = -90;
 export const getNearbyStoriesResponseItemsItemLocationLatitudeMax = 90;
 
@@ -1291,7 +1373,15 @@ export const GetNearbyStoriesResponse = zod.object({
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
-  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "media": zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional(),
+  "fit": zod.enum(['contain', 'cover']).default(getNearbyStoriesResponseItemsItemMediaFitDefault)
+}).nullish(),
   "location": zod.object({
   "latitude": zod.number().min(getNearbyStoriesResponseItemsItemLocationLatitudeMin).max(getNearbyStoriesResponseItemsItemLocationLatitudeMax),
   "longitude": zod.number().min(getNearbyStoriesResponseItemsItemLocationLongitudeMin).max(getNearbyStoriesResponseItemsItemLocationLongitudeMax)
@@ -1334,6 +1424,7 @@ export const GetStoryParams = zod.object({
   "storyId": zod.coerce.number().min(1)
 })
 
+export const getStoryResponseMediaFitDefault = `contain`;
 export const getStoryResponseLocationLatitudeMin = -90;
 export const getStoryResponseLocationLatitudeMax = 90;
 
@@ -1347,7 +1438,15 @@ export const GetStoryResponse = zod.object({
   "kind": zod.enum(['text', 'image', 'video']),
   "content": zod.string(),
   "visibility": zod.enum(['public', 'friends', 'followers', 'close_friends', 'private']),
-  "media": zod.record(zod.string(), zod.unknown()).nullish(),
+  "media": zod.object({
+  "type": zod.enum(['image', 'video']),
+  "objectPath": zod.string(),
+  "mimeType": zod.string(),
+  "width": zod.number().optional(),
+  "height": zod.number().optional(),
+  "duration": zod.number().optional(),
+  "fit": zod.enum(['contain', 'cover']).default(getStoryResponseMediaFitDefault)
+}).nullish(),
   "location": zod.object({
   "latitude": zod.number().min(getStoryResponseLocationLatitudeMin).max(getStoryResponseLocationLatitudeMax),
   "longitude": zod.number().min(getStoryResponseLocationLongitudeMin).max(getStoryResponseLocationLongitudeMax)
