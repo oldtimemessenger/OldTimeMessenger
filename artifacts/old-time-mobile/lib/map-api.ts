@@ -1,3 +1,5 @@
+import { apiBaseUrl } from '@/lib/api-base-url';
+
 export type MapVisibility = 'public' | 'friends' | 'followers' | 'private';
 
 export type MapComment = {
@@ -25,8 +27,7 @@ export type MapPin = {
 };
 
 function baseUrl() {
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  return domain ? `https://${domain}` : '';
+  return apiBaseUrl();
 }
 
 async function request<T>(token: string, path: string, init?: RequestInit): Promise<T> {

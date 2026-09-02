@@ -28,7 +28,7 @@ export function Screen({ children, title, left, right, scroll = false }: { child
 
 export function Avatar({ name, size = 48, color, uri }: { name: string; size?: number; color?: string; uri?: string }) {
   const colors = useColors();
-  const tones = ['#3B8FD6', '#D65A66', '#4C9B85', '#8A6BBE', '#D18A43', '#5B82AF'];
+  const tones = ['#2F63D0', '#7C2BBE', '#FF7800', '#3F7BE8', '#9A4DCC', '#E06C16'];
   const tone = color ?? tones[name.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0) % tones.length];
   return <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: tone, overflow: 'hidden' }]}>{uri ? <Image source={{ uri }} style={{ width: size, height: size }} contentFit="cover" /> : <Text style={[styles.avatarText, { fontSize: Math.max(12, size * 0.3) }]}>{initials(name)}</Text>}</View>;
 }
@@ -38,7 +38,7 @@ export function StoryAvatar({ name, size = 58, color, uri, viewed = false, add =
   return (
     <View style={{ width: size, height: size }}>
       <LinearGradient
-        colors={viewed ? [colors.border, colors.border] : [colors.accent, colors.primary]}
+        colors={viewed ? [colors.border, colors.border] : [colors.brandOrange, colors.brandPurple, colors.brandBlue]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.storyGradient, { width: size, height: size, borderRadius: size / 2 }]}

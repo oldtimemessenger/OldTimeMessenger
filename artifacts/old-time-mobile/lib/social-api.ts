@@ -102,7 +102,7 @@ function baseUrl(): string {
 }
 
 async function request<T>(
-  token: string,
+  token: string | null,
   path: string,
   init?: RequestInit,
 ): Promise<T> {
@@ -110,7 +110,7 @@ async function request<T>(
     ...init,
     headers: {
       Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
       ...init?.headers,
     },
@@ -246,7 +246,7 @@ export function getUserPosts(token: string, userId: number) {
 export function updateUserProfile(
   token: string,
   userId: number,
-  input: { name?: string; username?: string; bio?: string; contactPermission?: ContactPermission },
+  input: { name?: string; username?: string; bio?: string; birthday?: string; contactPermission?: ContactPermission },
 ) {
   return request<{
     id: number;
@@ -254,6 +254,7 @@ export function updateUserProfile(
     name: string;
     username: string;
     bio: string;
+    birthday: string | null;
     contactPermission: ContactPermission;
     online: boolean;
     lastSeen: number;
@@ -261,6 +262,25 @@ export function updateUserProfile(
   }>(token, `/api/users/${userId}/profile`, {
     method: 'PUT',
     body: JSON.stringify(input),
+  });
+}
+
+export function completeBirthday(challengeId: string, birthday: string) {
+  return request<{
+    id: number;
+    phone: string;
+    name: string;
+    username: string;
+    bio: string;
+    birthday: string | null;
+    contactPermission: ContactPermission;
+    online: boolean;
+    lastSeen: number;
+    lastSeenVisible: boolean;
+    authToken: string;
+  }>(null, '/api/auth/complete-birthday', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId, birthday }),
   });
 }
 

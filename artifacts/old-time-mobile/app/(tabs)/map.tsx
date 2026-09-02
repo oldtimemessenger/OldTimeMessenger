@@ -6,7 +6,8 @@ import { Avatar, Screen } from '@/components/ui';
 import SocialMap from '@/components/social-map';
 import type { SocialMapRegion } from '@/components/social-map.types';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
-import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
+import { userStoryViewerItemId } from '@/components/story-viewer-content';
+import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { createMapPin, createMapPinComment, deleteMapPin, getMapPinComments, getNearbyPins, reportMapPin, setMapPinRelation, type MapComment, type MapPin, type MapVisibility } from '@/lib/map-api';
@@ -214,7 +215,7 @@ export default function MapScreen() {
       <Modal visible={storyOpen !== null} transparent animationType="fade" onRequestClose={() => setStoryOpen(null)}>
         {storyOpen ? (
           <ServerStoryViewer
-            items={[...stories.filter((item) => item.id !== storyOpen.id), storyOpen].map(userStoryViewerItem)}
+            items={buildStoryViewerItems([...stories.filter((item) => item.id !== storyOpen.id), storyOpen])}
             initialItemId={userStoryViewerItemId(storyOpen.id)}
             token={session?.authToken ?? ''}
             onClose={() => setStoryOpen(null)}

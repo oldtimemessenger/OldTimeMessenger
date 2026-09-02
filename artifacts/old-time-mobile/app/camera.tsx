@@ -19,7 +19,7 @@ export default function CameraScreen() {
   const router = useRouter();
   const { returnChatId, returnTo } = useLocalSearchParams<{
     returnChatId?: string;
-    returnTo?: 'status';
+    returnTo?: 'status' | 'post' | 'chat';
   }>();
   const insets = useSafeAreaInsets();
   const colors = useColors();
@@ -254,17 +254,29 @@ export default function CameraScreen() {
                   });
                   return;
                 }
-                 if (returnTo === 'status') {
+                 if (returnTo === 'status' || returnTo === 'post') {
                    router.replace({
                      pathname: '/(tabs)/updates',
                      params: {
                        mediaUri: preview.uri,
                        mediaType: preview.type === 'video' ? 'video' : 'photo',
                        mediaFit: contentFit,
+                        composeType: returnTo,
                      },
                    });
                    return;
                  }
+                  if (returnTo === 'chat') {
+                    router.replace({
+                      pathname: '/(tabs)',
+                      params: {
+                        mediaUri: preview.uri,
+                        mediaType: preview.type === 'video' ? 'video' : 'image',
+                        mediaFit: contentFit,
+                      },
+                    });
+                    return;
+                  }
                 router.back();
               }}
                accessibilityLabel="Use media"

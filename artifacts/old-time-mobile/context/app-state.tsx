@@ -46,6 +46,7 @@ export type Profile = {
   username: string;
   bio: string;
   phone: string;
+  birthday?: string | null;
   avatarUri?: string;
 };
 
@@ -211,6 +212,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           username: user.username,
           bio: user.bio,
           phone: user.phone,
+          birthday: user.birthday,
         }));
         setSettings((current) => ({
           ...current,

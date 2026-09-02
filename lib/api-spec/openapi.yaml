@@ -102,9 +102,42 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthenticatedUser"
+                oneOf:
+                  - $ref: "#/components/schemas/AuthenticatedUser"
+                  - $ref: "#/components/schemas/BirthdayRequiredResponse"
         "400":
           description: Invalid OTP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/complete-birthday:
+    post:
+      security: []
+      operationId: completeBirthday
+      tags: [auth]
+      summary: Complete age verification after phone verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteBirthdayBody"
+      responses:
+        "200":
+          description: Age-verified user session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticatedUser"
+        "400":
+          description: Invalid or expired age-verification challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: User is under the minimum age
           content:
             application/json:
               schema:
@@ -226,6 +259,10 @@ paths:
                 bio:
                   type: string
                   maxLength: 150
+                birthday:
+                  type: string
+                  format: date
+                  description: Private date of birth; only returned to the signed-in user
                 contactPermission:
                   type: string
                   enum: [everyone, followers, nobody]
@@ -1342,6 +1379,24 @@ components:
         expiresAt:
           type: number
       required: [success, challengeId, expiresAt]
+    BirthdayRequiredResponse:
+      type: object
+      properties:
+        requiresBirthday:
+          type: boolean
+        challengeId:
+          type: string
+      required: [requiresBirthday, challengeId]
+    CompleteBirthdayBody:
+      type: object
+      properties:
+        challengeId:
+          type: string
+          minLength: 1
+        birthday:
+          type: string
+          format: date
+      required: [challengeId, birthday]
     LogoutResponse:
       type: object
       properties:
@@ -1361,6 +1416,10 @@ components:
           type: string
         bio:
           type: string
+        birthday:
+          type: [string, "null"]
+          format: date
+          description: Private date of birth; null for other users
         contactPermission:
           type: string
           enum: [everyone, followers, nobody]
@@ -1370,7 +1429,7 @@ components:
           type: number
         lastSeenVisible:
           type: boolean
-      required: [id, phone, name, username, bio, contactPermission, online, lastSeen, lastSeenVisible]
+      required: [id, phone, name, username, bio, birthday, contactPermission, online, lastSeen, lastSeenVisible]
     AuthenticatedUser:
       allOf:
         - $ref: "#/components/schemas/User"

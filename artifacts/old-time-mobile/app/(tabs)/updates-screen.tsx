@@ -14,12 +14,13 @@ import { fetch as expoFetch } from 'expo/fetch';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Avatar, EmptyState, IconButton, Screen, SectionLabel, StoryAvatar } from '@/components/ui';
 import { useApp, type StatusItem, type UpdatePost } from '@/context/app-state';
-import { INTEREST_OPTIONS, rankForYou } from '@/lib/for-you';
+import { INTEREST_OPTIONS, INTEREST_ROOTS, rankForYou, type InterestNode } from '@/lib/for-you';
 import { useColors } from '@/hooks/useColors';
 import { apiBaseUrl } from '@/lib/api-base-url';
 import { VideoSurface } from '@/components/video-surface';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
+import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
 import { useRequestUploadUrl } from '@workspace/api-client-react';
 import {
   createStory,
@@ -121,6 +122,7 @@ export default function UpdatesScreen() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [ownCard, setOwnCard] = useState<UserCard | null>(null);
   const [serverStoryOpen, setServerStoryOpen] = useState<Story | null>(null);
+  const [showMessagesInbox, setShowMessagesInbox] = useState(false);
   const [showMessageRequests, setShowMessageRequests] = useState(false);
   const [messageRequests, setMessageRequests] = useState<MessageRequest[]>([]);
   const [messageRequestsLoading, setMessageRequestsLoading] = useState(false);
@@ -212,9 +214,8 @@ export default function UpdatesScreen() {
     }
   }
 
-  async function openMessageRequests() {
+  async function refreshMessageRequests() {
     if (!session?.authToken) return;
-    setShowMessageRequests(true);
     setMessageRequestsLoading(true);
     try {
       setMessageRequests((await getMessageRequests(session.authToken)).items);
@@ -223,6 +224,16 @@ export default function UpdatesScreen() {
     } finally {
       setMessageRequestsLoading(false);
     }
+  }
+
+  function openMessagesInbox() {
+    setShowMessagesInbox(true);
+    void refreshMessageRequests();
+  }
+
+  function openMessageRequests() {
+    setShowMessageRequests(true);
+    void refreshMessageRequests();
   }
 
   const unreadNotifications = notifications.filter((item) => !item.readAt).length;
@@ -308,7 +319,7 @@ export default function UpdatesScreen() {
       <Screen title="Updates" left={<IconButton name="albums-outline" label="Open stories" onPress={openStatusShortcut} />} right={
         <View style={styles.socialHeaderActions}>
           <View>
-            <IconButton name="mail-outline" label="Open messages" onPress={() => router.push('/(tabs)')} />
+            <IconButton name="mail-outline" label="Open messages" onPress={openMessagesInbox} />
             {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
           </View>
           <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
@@ -586,6 +597,27 @@ export default function UpdatesScreen() {
         />
       </Modal>
 
+      <Modal visible={showMessagesInbox} transparent animationType="slide" onRequestClose={() => setShowMessagesInbox(false)}>
+        <MessagesInboxSheet
+          requestCount={messageRequests.filter((item) => item.status === 'pending').length}
+          loading={messageRequestsLoading}
+          username={ownCard?.username ?? session?.username ?? 'oldtime'}
+          displayName={ownCard?.name ?? session?.name ?? 'Old Time'}
+          stories={socialStories}
+          posts={socialPosts}
+          colors={colors}
+          onClose={() => setShowMessagesInbox(false)}
+          onOpenMessages={() => {
+            setShowMessagesInbox(false);
+            router.push('/(tabs)');
+          }}
+          onOpenRequests={() => {
+            setShowMessagesInbox(false);
+            openMessageRequests();
+          }}
+        />
+      </Modal>
+
       <Modal visible={showMessageRequests} transparent animationType="slide" onRequestClose={() => setShowMessageRequests(false)}>
         <MessageRequestsSheet
           requests={messageRequests}
@@ -633,7 +665,7 @@ export default function UpdatesScreen() {
       </Modal>
 
       <Modal visible={serverStoryOpen !== null} transparent animationType="fade" onRequestClose={() => setServerStoryOpen(null)}>
-        {serverStoryOpen ? <ServerStoryViewer items={socialStories.map(userStoryViewerItem)} initialItemId={userStoryViewerItemId(serverStoryOpen.id)} token={session?.authToken ?? ''} onClose={() => setServerStoryOpen(null)} /> : null}
+        {serverStoryOpen ? <ServerStoryViewer items={buildStoryViewerItems(socialStories)} initialItemId={userStoryViewerItemId(serverStoryOpen.id)} token={session?.authToken ?? ''} onClose={() => setServerStoryOpen(null)} /> : null}
       </Modal>
 
     </View>
@@ -1545,6 +1577,81 @@ function MessageRequestsSheet({ requests, loading, colors, onClose, onAccept, on
   );
 }
 
+function MessagesInboxSheet({ requestCount, loading, username, displayName, stories, posts, colors, onClose, onOpenMessages, onOpenRequests }: { requestCount: number; loading: boolean; username: string; displayName: string; stories: Story[]; posts: SocialPost[]; colors: any; onClose: () => void; onOpenMessages: () => void; onOpenRequests: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [query, setQuery] = useState('');
+  const storyAuthors = Array.from(new Map(stories.filter((story) => !story.viewer.isOwner).map((story) => [story.author.id, story.author])).values());
+  const messageAuthors = Array.from(new Map(posts.map((post) => [post.author.id, post.author])).values()).filter((author) => author.username !== username);
+  const visibleAuthors = messageAuthors.filter((author) => `${author.name} ${author.username}`.toLowerCase().includes(query.trim().toLowerCase()));
+  return (
+    <KeyboardAvoidingView behavior="padding" style={[styles.messagesInboxOverlay, { backgroundColor: colors.card }]}>
+      <View style={[styles.messagesInboxSheet, { backgroundColor: colors.card, paddingTop: insets.top + 8 }]}>
+        <View style={styles.messagesInboxHeader}>
+          <Text style={[styles.messagesInboxUsername, { color: colors.foreground }]}>{username}</Text>
+          <View style={styles.messagesInboxHeaderActions}>
+            <IconButton name="close" onPress={onClose} size={24} />
+            <IconButton name="create-outline" onPress={onOpenMessages} size={24} />
+          </View>
+        </View>
+        <View style={[styles.messagesSearch, { backgroundColor: colors.muted }]}>
+          <Ionicons name="search-outline" size={18} color={colors.mutedForeground} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search or ask Meta AI"
+            placeholderTextColor={colors.mutedForeground}
+            style={[styles.messagesSearchInput, { color: colors.foreground }]}
+            returnKeyType="search"
+          />
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesRail}>
+            <Pressable onPress={onOpenMessages} style={styles.noteItem} accessibilityRole="button" accessibilityLabel="Create a note">
+              <View style={[styles.noteBubble, { backgroundColor: colors.muted }]}><Text style={[styles.noteBubbleText, { color: colors.foreground }]}>Start your{'\n'}first note…</Text></View>
+              <Avatar name={displayName} size={56} color={colors.primary} />
+              <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>Your note</Text>
+              <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>Tap to add</Text>
+            </Pressable>
+            {storyAuthors.slice(0, 8).map((author, index) => (
+              <View key={author.id} style={styles.noteItem}>
+                <View style={[styles.noteBubble, { backgroundColor: colors.muted }]}><Text style={[styles.noteBubbleText, { color: colors.foreground }]} numberOfLines={2}>{stories.find((story) => story.author.id === author.id)?.content || ['It’s true, I’m relaxing', 'What are you up to?', 'New day, new energy'][index % 3]}</Text></View>
+                <Avatar name={author.name} size={56} color={colors.primary} />
+                <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>{author.name}</Text>
+                <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>Active recently</Text>
+              </View>
+            ))}
+          </ScrollView>
+          <View style={styles.messagesTabs}>
+            <Pressable onPress={onOpenMessages} style={styles.messagesTab} accessibilityRole="tab" accessibilityState={{ selected: true }}>
+              <Text style={[styles.messagesTabText, { color: colors.foreground }]}>Messages</Text>
+            </Pressable>
+            <Pressable onPress={onOpenRequests} style={styles.messagesTab} accessibilityRole="tab" accessibilityLabel="Requests">
+              <Text style={[styles.messagesTabText, { color: colors.mutedForeground }]}>Requests</Text>
+              {requestCount > 0 ? <View style={[styles.messagesTabBadge, { backgroundColor: colors.primary }]}><Text style={styles.messagesTabBadgeText}>{requestCount}</Text></View> : null}
+            </Pressable>
+          </View>
+          {loading && requestCount === 0 ? <ActivityIndicator color={colors.primary} style={{ margin: 20 }} /> : visibleAuthors.length === 0 ? (
+            <View style={styles.messagesEmpty}>
+              <Ionicons name="chatbubbles-outline" size={28} color={colors.primary} />
+              <Text style={[styles.messagesEmptyTitle, { color: colors.foreground }]}>No messages yet</Text>
+              <Text style={[styles.messagesEmptyText, { color: colors.mutedForeground }]}>Your conversations will appear here.</Text>
+            </View>
+          ) : visibleAuthors.slice(0, 12).map((author, index) => (
+            <Pressable key={author.id} onPress={onOpenMessages} style={({ pressed }) => [styles.messageContactRow, { opacity: pressed ? 0.7 : 1 }]} accessibilityRole="button" accessibilityLabel={`Open messages with ${author.name}`}>
+              <Avatar name={author.name} size={58} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.messageContactName, { color: colors.foreground }]} numberOfLines={1}>{author.name}</Text>
+                <Text style={[styles.messageContactPreview, { color: index % 3 === 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>{index % 3 === 0 ? '2 new messages' : index % 3 === 1 ? 'Seen recently' : 'Sent a message' } · {index + 2}h</Text>
+              </View>
+              {index % 3 === 0 ? <View style={[styles.messageUnreadDot, { backgroundColor: colors.primary }]} /> : null}
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
 function SearchPeopleSheet({ query, results, loading, error, colors, onChangeQuery, onClose, onOpenProfile }: { query: string; results: SocialUser[]; loading: boolean; error: string | null; colors: any; onChangeQuery: (query: string) => void; onClose: () => void; onOpenProfile: (userId: number) => void }) {
   return (
     <KeyboardAvoidingView behavior="padding" style={styles.sheetOverlay}>
@@ -1649,8 +1756,53 @@ function InterestPrompt({ topic, title, colors, onDismiss, onFeedback }: { topic
   );
 }
 
+function interestNodeMatches(node: InterestNode, query: string): boolean {
+  if (!query) return true;
+  if (node.name.toLowerCase().includes(query)) return true;
+  return Boolean(node.sub?.some((child) => interestNodeMatches(child, query)));
+}
+
+function countSelected(node: InterestNode, interests: string[]): number {
+  return (interests.includes(node.id) ? 1 : 0) + (node.sub?.reduce((total, child) => total + countSelected(child, interests), 0) ?? 0);
+}
+
+function InterestNodeRow({ node, depth, interests, query, expanded, onToggle, onToggleExpanded, onToggleNearby, colors }: { node: InterestNode; depth: number; interests: string[]; query: string; expanded: Set<string>; onToggle: (id: string) => void; onToggleExpanded: (id: string) => void; onToggleNearby: (id: string) => void; colors: any }) {
+  if (!interestNodeMatches(node, query)) return null;
+  const hasChildren = Boolean(node.sub?.length);
+  const selected = interests.includes(node.id);
+  const selectedChildren = hasChildren ? countSelected(node, interests) : 0;
+  const open = expanded.has(node.id) || Boolean(query);
+  const description = node.id === 'nearby' && !selected ? 'Enable location for nearby stories' : node.blurb;
+  return (
+    <View style={[styles.interestNodeGroup, depth > 0 && styles.interestNodeChildGroup]}>
+      <View style={[depth === 0 ? styles.interestChip : styles.interestChildChip, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+        <Pressable onPress={() => (node.id === 'nearby' ? onToggleNearby(node.id) : onToggle(node.id))} style={styles.interestNodeMain} accessibilityRole="checkbox" accessibilityState={{ checked: selected }} accessibilityLabel={`Toggle ${node.name}`}>
+          <View style={[styles.check, { backgroundColor: selected ? '#fff' : colors.muted }]}>{selected ? <Ionicons name="checkmark" size={13} color={colors.primary} /> : null}</View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.interestLabel, { color: selected ? '#fff' : colors.foreground }]}>{node.name}</Text>
+            {description ? <Text style={[styles.interestDescription, { color: selected ? 'rgba(255,255,255,0.8)' : colors.mutedForeground }]}>{description}</Text> : null}
+            {selectedChildren > 0 ? <Text style={[styles.interestSelectedCount, { color: selected ? 'rgba(255,255,255,0.82)' : colors.primary }]}>{selectedChildren} selected</Text> : null}
+          </View>
+        </Pressable>
+        {hasChildren ? (
+          <Pressable onPress={() => onToggleExpanded(node.id)} style={styles.interestExpandButton} accessibilityRole="button" accessibilityLabel={`${open ? 'Collapse' : 'Expand'} ${node.name}`}>
+            <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={19} color={selected ? '#fff' : colors.foreground} />
+          </Pressable>
+        ) : node.id === 'nearby' ? <Ionicons name="location-outline" size={17} color={selected ? '#fff' : colors.primary} style={{ marginRight: 12 }} /> : null}
+      </View>
+      {hasChildren && open ? (
+        <View style={styles.interestChildren}>
+          {node.sub?.map((child) => <InterestNodeRow key={child.id} node={child} depth={depth + 1} interests={interests} query={query} expanded={expanded} onToggle={onToggle} onToggleExpanded={onToggleExpanded} onToggleNearby={onToggleNearby} colors={colors} />)}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function InterestPanel({ interests, onToggle, languages, onToggleLanguage, onBack, colors }: any) {
   const [locationEnabled, setLocationEnabled] = useState(false);
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   useEffect(() => {
     Location.getForegroundPermissionsAsync().then((permission) => setLocationEnabled(permission.granted)).catch(() => setLocationEnabled(false));
   }, []);
@@ -1669,6 +1821,15 @@ function InterestPanel({ interests, onToggle, languages, onToggleLanguage, onBac
     onToggle(interest);
   }
 
+  function toggleExpanded(id: string) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.interestContent} showsVerticalScrollIndicator={false}>
       <View style={styles.interestHeading}>
@@ -1677,6 +1838,11 @@ function InterestPanel({ interests, onToggle, languages, onToggleLanguage, onBac
           <Text style={[styles.interestSubtitle, { color: colors.mutedForeground }]}>Choose what Old Time should prioritize in For You.</Text>
         </View>
         <Ionicons name="options-outline" size={25} color={colors.primary} />
+      </View>
+      <View style={[styles.interestSearch, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+        <Ionicons name="search-outline" size={18} color={colors.mutedForeground} />
+        <TextInput value={query} onChangeText={(value) => setQuery(value.toLowerCase())} placeholder="Search topics, teams, leagues…" placeholderTextColor={colors.mutedForeground} style={[styles.interestSearchInput, { color: colors.foreground }]} autoCapitalize="none" autoCorrect={false} />
+        {query ? <Pressable onPress={() => setQuery('')} accessibilityRole="button" accessibilityLabel="Clear interest search"><Ionicons name="close-circle" size={17} color={colors.mutedForeground} /></Pressable> : null}
       </View>
       <View style={[styles.languageSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.languageSectionTitle, { color: colors.foreground }]}>Content languages</Text>
@@ -1693,20 +1859,10 @@ function InterestPanel({ interests, onToggle, languages, onToggleLanguage, onBac
           })}
         </View>
       </View>
-      <View style={styles.interestGrid}>{INTEREST_OPTIONS.map((interest) => {
-        const selected = interests.includes(interest.id);
-        const description = interest.id === 'nearby' && !locationEnabled ? 'Enable location for nearby stories when permission is not granted' : interest.description;
-        return (
-          <Pressable key={interest.id} onPress={() => void handleToggle(interest.id)} style={[styles.interestChip, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
-            <View style={[styles.check, { backgroundColor: selected ? '#fff' : colors.muted }]}>{selected ? <Ionicons name="checkmark" size={13} color={colors.primary} /> : null}</View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.interestLabel, { color: selected ? '#fff' : colors.foreground }]}>{interest.label}</Text>
-              <Text style={[styles.interestDescription, { color: selected ? 'rgba(255,255,255,0.8)' : colors.mutedForeground }]}>{description}</Text>
-            </View>
-            {interest.id === 'nearby' ? <Ionicons name="location-outline" size={17} color={selected ? '#fff' : colors.primary} /> : null}
-          </Pressable>
-        );
-      })}</View>
+      <View style={styles.interestGrid}>
+        {INTEREST_ROOTS.map((node) => <InterestNodeRow key={node.id} node={node} depth={0} interests={interests} query={query} expanded={expanded} onToggle={onToggle} onToggleExpanded={toggleExpanded} onToggleNearby={(id) => void handleToggle(id)} colors={colors} />)}
+        {INTEREST_ROOTS.every((node) => !interestNodeMatches(node, query)) ? <Text style={[styles.interestNoResults, { color: colors.mutedForeground }]}>No topics match “{query}”.</Text> : null}
+      </View>
       <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to For You" style={styles.backButton}>
         <Ionicons name="arrow-back" size={17} color={colors.primary} />
       </Pressable>
@@ -1789,6 +1945,31 @@ const styles = StyleSheet.create({
   peopleSearchHint: { fontSize: 11, marginTop: 8, marginBottom: 10 },
   peopleSearchRow: { minHeight: 70, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 5, flexDirection: 'row', alignItems: 'center', gap: 11 },
   notificationsSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, minHeight: WINDOW_HEIGHT * 0.64, maxHeight: WINDOW_HEIGHT * 0.82, padding: 20 },
+  messagesInboxOverlay: { flex: 1 },
+  messagesInboxSheet: { flex: 1, paddingHorizontal: 16 },
+  messagesInboxHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  messagesInboxUsername: { fontSize: 21, fontWeight: '800', letterSpacing: -0.5 },
+  messagesInboxHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  messagesSearch: { minHeight: 45, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, marginTop: 4 },
+  messagesSearchInput: { flex: 1, fontSize: 16, paddingVertical: 9 },
+  notesRail: { gap: 12, paddingTop: 22, paddingBottom: 18 },
+  noteItem: { width: 76, alignItems: 'center' },
+  noteBubble: { minHeight: 48, width: 76, borderRadius: 12, paddingHorizontal: 6, paddingVertical: 6, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  noteBubbleText: { fontSize: 10, lineHeight: 12, textAlign: 'center' },
+  noteName: { width: 76, fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: 6 },
+  noteMeta: { width: 76, fontSize: 9, textAlign: 'center', marginTop: 2 },
+  messagesTabs: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(128,128,128,0.28)' },
+  messagesTab: { minHeight: 48, minWidth: 92, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  messagesTabText: { fontSize: 16, fontWeight: '700' },
+  messagesTabBadge: { minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  messagesTabBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  messagesEmpty: { alignItems: 'center', paddingTop: 60, gap: 8 },
+  messagesEmptyTitle: { fontSize: 17, fontWeight: '700' },
+  messagesEmptyText: { fontSize: 13 },
+  messageContactRow: { minHeight: 80, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  messageContactName: { fontSize: 15, fontWeight: '700' },
+  messageContactPreview: { fontSize: 13, marginTop: 4 },
+  messageUnreadDot: { width: 9, height: 9, borderRadius: 5, marginRight: 4 },
   commentsSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, minHeight: WINDOW_HEIGHT * 0.48, maxHeight: WINDOW_HEIGHT * 0.78, padding: 20 },
   sheetTop: { width: '100%', minHeight: 45, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetEyebrow: { fontSize: 10, fontWeight: '600', letterSpacing: 1.4 },
@@ -1828,11 +2009,21 @@ const styles = StyleSheet.create({
   interestHeading: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
   interestTitle: { fontSize: 23, fontWeight: '600' },
   interestSubtitle: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  interestSearch: { minHeight: 44, borderWidth: 1, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13, marginBottom: 14 },
+  interestSearchInput: { flex: 1, fontSize: 15, paddingVertical: 8 },
   interestGrid: { gap: 8 },
   interestChip: { borderWidth: 1, borderRadius: 11, minHeight: 62, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  interestChildChip: { borderWidth: 1, borderRadius: 11, minHeight: 54, marginLeft: 14, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  interestNodeGroup: { gap: 6 },
+  interestNodeChildGroup: { gap: 6 },
+  interestNodeMain: { flex: 1, minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  interestExpandButton: { width: 38, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
+  interestChildren: { gap: 6 },
   check: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   interestLabel: { fontSize: 14, fontWeight: '600' },
   interestDescription: { fontSize: 11, marginTop: 3 },
+  interestSelectedCount: { fontSize: 10, fontWeight: '600', marginTop: 3 },
+  interestNoResults: { textAlign: 'center', paddingVertical: 28, fontSize: 13 },
   languageSection: { borderWidth: 1, borderRadius: 16, padding: 13, marginBottom: 14 },
   languageSectionTitle: { fontSize: 15, fontWeight: '700' },
   languageSectionHint: { fontSize: 12, lineHeight: 17, marginTop: 3, marginBottom: 10 },

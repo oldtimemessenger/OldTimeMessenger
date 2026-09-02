@@ -21,5 +21,7 @@ export type UpdateUserProfileBody = {
   username?: string;
   /** @maxLength 150 */
   bio?: string;
+  /** Private date of birth; only returned to the signed-in user */
+  birthday?: Date;
   contactPermission?: UpdateUserProfileBodyContactPermission;
 };

@@ -12,13 +12,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useApp } from '@/context/app-state';
 import { setPresence } from '@/lib/social-api';
+import { apiBaseUrl } from '@/lib/api-base-url';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-setBaseUrl(process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : null);
+setBaseUrl(apiBaseUrl() || null);
 setAuthTokenGetter(async () => {
   const raw = await AsyncStorage.getItem('old-time-mobile-state');
   if (!raw) return null;

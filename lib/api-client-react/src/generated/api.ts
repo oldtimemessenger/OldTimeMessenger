@@ -23,21 +23,25 @@ import type {
   ActionResult,
   ActiveActionResult,
   AuthenticatedUser,
+  BirthdayRequiredResponse,
   BlockActionResult,
   Chat,
   ChatInput,
   CleanupResult,
+  CompleteBirthdayBody,
   DirectChat,
   ErrorResponse,
   FollowActionResult,
   GetNearbyMapPinsParams,
   GetNearbyStoriesParams,
   GetSocialFeedParams,
+  GetSocialUserPostsParams,
   HealthStatus,
   Highlight,
   HighlightInput,
   HighlightList,
   InboxItem,
+  ListMessageRequestsParams,
   ListMessagesParams,
   ListUsersParams,
   LogoutResponse,
@@ -51,6 +55,9 @@ import type {
   Message,
   MessageActionInput,
   MessageInput,
+  MessageRequest,
+  MessageRequestAcceptResult,
+  MessageRequestList,
   MuteActionResult,
   NotificationList,
   OtpRequest,
@@ -80,6 +87,7 @@ import type {
   UpdatePresenceBody,
   UpdatePresencePrivacy200,
   UpdatePresencePrivacyBody,
+  UpdateUserProfileBody,
   UploadUrlRequest,
   UploadUrlResponse,
   User
@@ -350,9 +358,9 @@ export const getVerifyOtpUrl = () => {
 /**
  * @summary Verify a phone code and create a session
  */
-export const verifyOtp = async (otpVerification: OtpVerification, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser> => {
+export const verifyOtp = async (otpVerification: OtpVerification, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser | BirthdayRequiredResponse> => {
 
-  return customFetch<AuthenticatedUser>(getVerifyOtpUrl(),
+  return customFetch<AuthenticatedUser | BirthdayRequiredResponse>(getVerifyOtpUrl(),
   {
     ...options,
     method: 'POST',
@@ -408,6 +416,77 @@ export const useVerifyOtp = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getVerifyOtpMutationOptions(options));
+    }
+
+export const getCompleteBirthdayUrl = () => {
+
+
+
+
+  return `/api/auth/complete-birthday`
+}
+
+/**
+ * @summary Complete age verification after phone verification
+ */
+export const completeBirthday = async (completeBirthdayBody: CompleteBirthdayBody, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser> => {
+
+  return customFetch<AuthenticatedUser>(getCompleteBirthdayUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(completeBirthdayBody)
+  }
+);}
+
+
+
+
+
+export const getCompleteBirthdayMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeBirthday>>, TError,{data: BodyType<CompleteBirthdayBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeBirthday>>, TError,{data: BodyType<CompleteBirthdayBody>}, TContext> => {
+
+const mutationKey = ['completeBirthday'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeBirthday>>, {data: BodyType<CompleteBirthdayBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  completeBirthday(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteBirthdayMutationResult = NonNullable<Awaited<ReturnType<typeof completeBirthday>>>
+    export type CompleteBirthdayMutationBody = BodyType<CompleteBirthdayBody>
+    export type CompleteBirthdayMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Complete age verification after phone verification
+ */
+export const useCompleteBirthday = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeBirthday>>, TError,{data: BodyType<CompleteBirthdayBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeBirthday>>,
+        TError,
+        {data: BodyType<CompleteBirthdayBody>},
+        TContext
+      > => {
+      return useMutation(getCompleteBirthdayMutationOptions(options));
     }
 
 export const getLogoutUrl = () => {
@@ -707,6 +786,78 @@ export const useUpdatePresence = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdatePresenceMutationOptions(options));
+    }
+
+export const getUpdateUserProfileUrl = (userId: number,) => {
+
+
+
+
+  return `/api/users/${userId}/profile`
+}
+
+/**
+ * @summary Update the signed-in user's identity and contact settings
+ */
+export const updateUserProfile = async (userId: number,
+    updateUserProfileBody: UpdateUserProfileBody, options?: Parameters<typeof customFetch>[1]): Promise<User> => {
+
+  return customFetch<User>(getUpdateUserProfileUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateUserProfileBody)
+  }
+);}
+
+
+
+
+
+export const getUpdateUserProfileMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUserProfile>>, TError,{userId: number;data: BodyType<UpdateUserProfileBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateUserProfile>>, TError,{userId: number;data: BodyType<UpdateUserProfileBody>}, TContext> => {
+
+const mutationKey = ['updateUserProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateUserProfile>>, {userId: number;data: BodyType<UpdateUserProfileBody>}> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  updateUserProfile(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateUserProfileMutationResult = NonNullable<Awaited<ReturnType<typeof updateUserProfile>>>
+    export type UpdateUserProfileMutationBody = BodyType<UpdateUserProfileBody>
+    export type UpdateUserProfileMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update the signed-in user's identity and contact settings
+ */
+export const useUpdateUserProfile = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUserProfile>>, TError,{userId: number;data: BodyType<UpdateUserProfileBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateUserProfile>>,
+        TError,
+        {userId: number;data: BodyType<UpdateUserProfileBody>},
+        TContext
+      > => {
+      return useMutation(getUpdateUserProfileMutationOptions(options));
     }
 
 export const getGetInboxUrl = (userId: number,) => {
@@ -2491,6 +2642,95 @@ export function useGetSocialUserCard<TData = Awaited<ReturnType<typeof getSocial
 
 
 
+export const getGetSocialUserPostsUrl = (userId: number,
+    params?: GetSocialUserPostsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/social/users/${userId}/posts?${stringifiedParams}` : `/api/social/users/${userId}/posts`
+}
+
+/**
+ * @summary List visible posts from a social user's profile
+ */
+export const getSocialUserPosts = async (userId: number,
+    params?: GetSocialUserPostsParams, options?: Parameters<typeof customFetch>[1]): Promise<SocialPostList> => {
+
+  return customFetch<SocialPostList>(getGetSocialUserPostsUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSocialUserPostsQueryKey = (userId: number,
+    params?: GetSocialUserPostsParams,) => {
+    return [
+    `/api/social/users/${userId}/posts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSocialUserPostsQueryOptions = <TData = Awaited<ReturnType<typeof getSocialUserPosts>>, TError = ErrorType<unknown>>(userId: number,
+    params?: GetSocialUserPostsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSocialUserPosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSocialUserPostsQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSocialUserPosts>>> = ({ signal }) => getSocialUserPosts(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSocialUserPosts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSocialUserPostsQueryResult = NonNullable<Awaited<ReturnType<typeof getSocialUserPosts>>>
+export type GetSocialUserPostsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List visible posts from a social user's profile
+ */
+
+export function useGetSocialUserPosts<TData = Awaited<ReturnType<typeof getSocialUserPosts>>, TError = ErrorType<unknown>>(
+ userId: number,
+    params?: GetSocialUserPostsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSocialUserPosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSocialUserPostsQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getFollowSocialUserUrl = (userId: number,) => {
 
 
@@ -2631,6 +2871,303 @@ export const useUnfollowSocialUser = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUnfollowSocialUserMutationOptions(options));
+    }
+
+export const getListMessageRequestsUrl = (params?: ListMessageRequestsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/social/message-requests?${stringifiedParams}` : `/api/social/message-requests`
+}
+
+/**
+ * @summary List pending incoming or outgoing social message requests
+ */
+export const listMessageRequests = async (params?: ListMessageRequestsParams, options?: Parameters<typeof customFetch>[1]): Promise<MessageRequestList> => {
+
+  return customFetch<MessageRequestList>(getListMessageRequestsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMessageRequestsQueryKey = (params?: ListMessageRequestsParams,) => {
+    return [
+    `/api/social/message-requests`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListMessageRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listMessageRequests>>, TError = ErrorType<unknown>>(params?: ListMessageRequestsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMessageRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMessageRequestsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMessageRequests>>> = ({ signal }) => listMessageRequests(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMessageRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMessageRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof listMessageRequests>>>
+export type ListMessageRequestsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List pending incoming or outgoing social message requests
+ */
+
+export function useListMessageRequests<TData = Awaited<ReturnType<typeof listMessageRequests>>, TError = ErrorType<unknown>>(
+ params?: ListMessageRequestsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMessageRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMessageRequestsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateMessageRequestUrl = (userId: number,) => {
+
+
+
+
+  return `/api/social/message-requests/to/${userId}`
+}
+
+/**
+ * @summary Request a conversation with a social user
+ */
+export const createMessageRequest = async (userId: number, options?: Parameters<typeof customFetch>[1]): Promise<MessageRequest> => {
+
+  return customFetch<MessageRequest>(getCreateMessageRequestUrl(userId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateMessageRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMessageRequest>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMessageRequest>>, TError,{userId: number}, TContext> => {
+
+const mutationKey = ['createMessageRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMessageRequest>>, {userId: number}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  createMessageRequest(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMessageRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createMessageRequest>>>
+
+    export type CreateMessageRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Request a conversation with a social user
+ */
+export const useCreateMessageRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMessageRequest>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createMessageRequest>>,
+        TError,
+        {userId: number},
+        TContext
+      > => {
+      return useMutation(getCreateMessageRequestMutationOptions(options));
+    }
+
+export const getAcceptMessageRequestUrl = (requestId: number,) => {
+
+
+
+
+  return `/api/social/message-requests/${requestId}/accept`
+}
+
+/**
+ * @summary Accept a message request and create the main chat
+ */
+export const acceptMessageRequest = async (requestId: number, options?: Parameters<typeof customFetch>[1]): Promise<MessageRequestAcceptResult> => {
+
+  return customFetch<MessageRequestAcceptResult>(getAcceptMessageRequestUrl(requestId),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+);}
+
+
+
+
+
+export const getAcceptMessageRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptMessageRequest>>, TError,{requestId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptMessageRequest>>, TError,{requestId: number}, TContext> => {
+
+const mutationKey = ['acceptMessageRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptMessageRequest>>, {requestId: number}> = (props) => {
+          const {requestId} = props ?? {};
+
+          return  acceptMessageRequest(requestId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptMessageRequestMutationResult = NonNullable<Awaited<ReturnType<typeof acceptMessageRequest>>>
+
+    export type AcceptMessageRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Accept a message request and create the main chat
+ */
+export const useAcceptMessageRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptMessageRequest>>, TError,{requestId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptMessageRequest>>,
+        TError,
+        {requestId: number},
+        TContext
+      > => {
+      return useMutation(getAcceptMessageRequestMutationOptions(options));
+    }
+
+export const getDeclineMessageRequestUrl = (requestId: number,) => {
+
+
+
+
+  return `/api/social/message-requests/${requestId}`
+}
+
+/**
+ * @summary Decline a pending message request
+ */
+export const declineMessageRequest = async (requestId: number, options?: Parameters<typeof customFetch>[1]): Promise<ActionResult> => {
+
+  return customFetch<ActionResult>(getDeclineMessageRequestUrl(requestId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeclineMessageRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof declineMessageRequest>>, TError,{requestId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof declineMessageRequest>>, TError,{requestId: number}, TContext> => {
+
+const mutationKey = ['declineMessageRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof declineMessageRequest>>, {requestId: number}> = (props) => {
+          const {requestId} = props ?? {};
+
+          return  declineMessageRequest(requestId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeclineMessageRequestMutationResult = NonNullable<Awaited<ReturnType<typeof declineMessageRequest>>>
+
+    export type DeclineMessageRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Decline a pending message request
+ */
+export const useDeclineMessageRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof declineMessageRequest>>, TError,{requestId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof declineMessageRequest>>,
+        TError,
+        {requestId: number},
+        TContext
+      > => {
+      return useMutation(getDeclineMessageRequestMutationOptions(options));
     }
 
 export const getGetSocialPrivacyExclusionsUrl = () => {

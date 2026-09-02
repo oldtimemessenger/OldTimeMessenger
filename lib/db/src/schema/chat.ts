@@ -1,6 +1,7 @@
 import {
   bigint as pgBigint,
   boolean,
+  date,
   integer,
   jsonb,
   pgTable,
@@ -19,6 +20,7 @@ export const usersTable = pgTable("chat_users", {
   name: text("name").notNull(),
   username: text("username").notNull().unique(),
   bio: text("bio").notNull().default(""),
+  birthday: date("birthday", { mode: "string" }),
   contactPermission: text("contact_permission").notNull().default("everyone"),
   online: boolean("online").notNull().default(false),
   lastSeen: pgBigint("last_seen", { mode: "number" }).notNull(),

@@ -13,6 +13,11 @@ export interface User {
   name: string;
   username: string;
   bio: string;
+  /**
+     * Private date of birth; null for other users
+     * @nullable
+     */
+  birthday: Date | null;
   contactPermission: UserContactPermission;
   online: boolean;
   lastSeen: number;

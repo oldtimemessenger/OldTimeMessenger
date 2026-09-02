@@ -32,7 +32,8 @@ function id(value: unknown) {
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : null;
 }
-function nameFor(user: { id: number; name: string }) {
+function nameFor(user: { id: number; name: string; username?: string | null }) {
+  if (user.username) return user.username;
   return user.name.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 18) || `user${user.id}`;
 }
 async function blockedIds(viewerId: number) {
@@ -63,7 +64,7 @@ async function serialize(pins: Array<typeof mapPinsTable.$inferSelect>, viewerId
   const ids = pins.map((pin) => pin.id);
   const authorIds = [...new Set(pins.map((pin) => pin.authorId))];
   const [authors, reactions, saves, comments, viewerReactions, viewerSaves] = await Promise.all([
-    db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, authorIds)),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username }).from(usersTable).where(inArray(usersTable.id, authorIds)),
     db.select({ pinId: mapPinReactionsTable.pinId, count: sql<number>`count(*)` }).from(mapPinReactionsTable).where(inArray(mapPinReactionsTable.pinId, ids)).groupBy(mapPinReactionsTable.pinId),
     db.select({ pinId: mapPinSavesTable.pinId, count: sql<number>`count(*)` }).from(mapPinSavesTable).where(inArray(mapPinSavesTable.pinId, ids)).groupBy(mapPinSavesTable.pinId),
     db.select({ pinId: mapPinCommentsTable.pinId, count: sql<number>`count(*)` }).from(mapPinCommentsTable).where(and(inArray(mapPinCommentsTable.pinId, ids), eq(mapPinCommentsTable.deleted, false))).groupBy(mapPinCommentsTable.pinId),
@@ -144,8 +145,8 @@ router.get("/map/pins/:pinId/comments", async (req, res): Promise<void> => {
   const pinId = id(req.params.pinId); if (pinId === null) { res.status(400).json({ error: "A valid pin ID is required." }); return; }
   const pin = await activePin(pinId); const following = await followingIds(viewerId), blocked = await blockedIds(viewerId);
   if (!pin || !await canSee(viewerId, pin, following, blocked)) { res.status(404).json({ error: "Pin not found." }); return; }
-  const rows = await db.select({ id: mapPinCommentsTable.id, pinId: mapPinCommentsTable.pinId, authorId: mapPinCommentsTable.authorId, content: mapPinCommentsTable.content, createdAt: mapPinCommentsTable.createdAt, name: usersTable.name }).from(mapPinCommentsTable).innerJoin(usersTable, eq(usersTable.id, mapPinCommentsTable.authorId)).where(and(eq(mapPinCommentsTable.pinId, pinId), eq(mapPinCommentsTable.deleted, false))).orderBy(asc(mapPinCommentsTable.createdAt));
-  res.json(rows.filter((row) => !blocked.has(row.authorId)).map((row) => ({ id: row.id, pinId: row.pinId, author: { id: row.authorId, name: row.name, username: nameFor({ id: row.authorId, name: row.name }) }, content: row.content, createdAt: row.createdAt })));
+  const rows = await db.select({ id: mapPinCommentsTable.id, pinId: mapPinCommentsTable.pinId, authorId: mapPinCommentsTable.authorId, content: mapPinCommentsTable.content, createdAt: mapPinCommentsTable.createdAt, name: usersTable.name, username: usersTable.username }).from(mapPinCommentsTable).innerJoin(usersTable, eq(usersTable.id, mapPinCommentsTable.authorId)).where(and(eq(mapPinCommentsTable.pinId, pinId), eq(mapPinCommentsTable.deleted, false))).orderBy(asc(mapPinCommentsTable.createdAt));
+  res.json(rows.filter((row) => !blocked.has(row.authorId)).map((row) => ({ id: row.id, pinId: row.pinId, author: { id: row.authorId, name: row.name, username: nameFor({ id: row.authorId, name: row.name, username: row.username }) }, content: row.content, createdAt: row.createdAt })));
 });
 router.post("/map/pins/:pinId/comments", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
@@ -155,7 +156,7 @@ router.post("/map/pins/:pinId/comments", async (req, res): Promise<void> => {
   const pin = await activePin(pinId); const following = await followingIds(viewerId), blocked = await blockedIds(viewerId);
   if (!pin || !await canSee(viewerId, pin, following, blocked)) { res.status(404).json({ error: "Pin not found." }); return; }
   const [comment] = await db.insert(mapPinCommentsTable).values({ pinId, authorId: viewerId, content: parsed.data.content, createdAt: Date.now() }).returning();
-  const [user] = await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, viewerId));
+  const [user] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, viewerId));
   res.status(201).json({ id: comment.id, pinId: comment.pinId, author: { id: user.id, name: user.name, username: nameFor(user) }, content: comment.content, createdAt: comment.createdAt });
 });
 router.post("/map/pins/:pinId/report", async (req, res): Promise<void> => {

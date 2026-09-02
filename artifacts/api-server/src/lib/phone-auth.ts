@@ -4,9 +4,9 @@ const TWILIO_VERIFY_BASE = "https://verify.twilio.com/v2/Services";
 const TEST_BYPASS_PHONE = "+11234567890";
 const TEST_BYPASS_CODE_PATTERN = /^\d{6}$/;
 
-function isTestOtpBypassPhone(phone: string): boolean {
+export function isTestOtpBypassPhone(phone: string): boolean {
   // TEMPORARY TESTFLIGHT BYPASS: remove after production login testing.
-  return phone === TEST_BYPASS_PHONE;
+  return process.env.NODE_ENV !== "production" && phone === TEST_BYPASS_PHONE;
 }
 
 function requiredSessionSecret(): string {

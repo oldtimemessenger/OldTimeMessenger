@@ -42,6 +42,17 @@ export interface OtpResponse {
   expiresAt: number;
 }
 
+export interface BirthdayRequiredResponse {
+  requiresBirthday: boolean;
+  challengeId: string;
+}
+
+export interface CompleteBirthdayBody {
+  /** @minLength 1 */
+  challengeId: string;
+  birthday: string;
+}
+
 export interface LogoutResponse {
   success: boolean;
 }
@@ -61,6 +72,11 @@ export interface User {
   name: string;
   username: string;
   bio: string;
+  /**
+     * Private date of birth; null for other users
+     * @nullable
+     */
+  birthday: string | null;
   contactPermission: UserContactPermission;
   online: boolean;
   lastSeen: number;
@@ -841,6 +857,8 @@ export type UpdateUserProfileBody = {
   username?: string;
   /** @maxLength 150 */
   bio?: string;
+  /** Private date of birth; only returned to the signed-in user */
+  birthday?: string;
   contactPermission?: UpdateUserProfileBodyContactPermission;
 };
 

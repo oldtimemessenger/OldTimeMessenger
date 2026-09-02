@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { authSessionsTable, db } from "@workspace/db";
+import { authSessionsTable, db, usersTable } from "@workspace/db";
+import { meetsMinimumAge } from "./age-gate";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -61,6 +62,15 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
   const userId = await authenticateToken(token);
   if (userId === null) {
     res.status(401).json({ error: "Invalid, expired, or revoked bearer token." });
+    return null;
+  }
+  const [user] = await db
+    .select({ birthday: usersTable.birthday })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  if (!user?.birthday || !meetsMinimumAge(user.birthday)) {
+    res.status(401).json({ error: "Age verification is required before using Old Time." });
     return null;
   }
   return userId;

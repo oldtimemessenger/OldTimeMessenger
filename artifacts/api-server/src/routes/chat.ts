@@ -8,6 +8,8 @@ import {
   CreateMessageBody,
   CreateMessageParams,
   CreateMessageResponse,
+  CompleteBirthdayBody,
+  CompleteBirthdayResponse,
   GetDirectChatParams,
   GetDirectChatResponse,
   GetInboxParams,
@@ -67,6 +69,7 @@ import {
   fileForObjectPath,
   MAX_UPLOAD_BYTES,
 } from "../lib/chat-storage";
+import { isValidBirthday, meetsMinimumAge } from "../lib/age-gate";
 
 const router: IRouter = Router();
 
@@ -93,6 +96,7 @@ function parseUser(user: ChatUser, viewerId = user.id) {
     name: user.name,
     username: user.username,
     bio: user.bio,
+    birthday: viewerId === user.id ? user.birthday : null,
     contactPermission: user.contactPermission,
     online: revealPresence && user.online,
     lastSeen: revealPresence ? user.lastSeen : 0,
@@ -446,23 +450,43 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
     res.status(400).json({ error: "That code is invalid or has expired." });
     return;
   }
+  const timestamp = verificationTime;
+  let [user] = await db.select().from(usersTable).where(eq(usersTable.phone, phone));
+  if (user?.birthday && !meetsMinimumAge(user.birthday)) {
+    await db
+      .update(authChallengesTable)
+      .set({ status: "age_rejected" })
+      .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "verifying")));
+    res.status(403).json({ error: "Old Time is for people age 13 and older." });
+    return;
+  }
+  if (!user?.birthday) {
+    const [pending] = await db
+      .update(authChallengesTable)
+      .set({ status: "birthday_pending" })
+      .where(
+        and(
+          eq(authChallengesTable.id, challenge.id),
+          eq(authChallengesTable.status, "verifying"),
+        ),
+      )
+      .returning({ id: authChallengesTable.id });
+    if (!pending) {
+      res.status(409).json({ error: "This verification code was already used." });
+      return;
+    }
+    res.json({ requiresBirthday: true, challengeId: challenge.id });
+    return;
+  }
   const [consumed] = await db
     .update(authChallengesTable)
     .set({ status: "consumed" })
-    .where(
-      and(
-        eq(authChallengesTable.id, challenge.id),
-        eq(authChallengesTable.status, "verifying"),
-      ),
-    )
+    .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "verifying")))
     .returning({ id: authChallengesTable.id });
   if (!consumed) {
     res.status(409).json({ error: "This verification code was already used." });
     return;
   }
-
-  const timestamp = verificationTime;
-  let [user] = await db.select().from(usersTable).where(eq(usersTable.phone, phone));
   if (!user) {
     const [created] = await db
       .insert(usersTable)
@@ -486,6 +510,77 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
 
   const authToken = await createAuthToken(user.id);
   res.json(VerifyOtpResponse.parse({ ...parseUser(user), authToken }));
+});
+
+router.post("/auth/complete-birthday", async (req, res): Promise<void> => {
+  const parsed = CompleteBirthdayBody.safeParse(req.body);
+  const birthday = parsed.success ? parsed.data.birthday.toISOString().slice(0, 10) : "";
+  if (!parsed.success || !isValidBirthday(birthday)) {
+    res.status(400).json({ error: "Enter a real birthday in YYYY-MM-DD format." });
+    return;
+  }
+  const [challenge] = await db
+    .select()
+    .from(authChallengesTable)
+    .where(
+      and(
+        eq(authChallengesTable.id, parsed.data.challengeId),
+        eq(authChallengesTable.status, "birthday_pending"),
+        gt(authChallengesTable.expiresAt, now()),
+      ),
+    )
+    .limit(1);
+  if (!challenge) {
+    res.status(400).json({ error: "This age-verification step has expired. Start sign-in again." });
+    return;
+  }
+  if (!meetsMinimumAge(birthday)) {
+    await db
+      .update(authChallengesTable)
+      .set({ status: "age_rejected" })
+      .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "birthday_pending")));
+    res.status(403).json({ error: "Old Time is for people age 13 and older." });
+    return;
+  }
+  const [claimed] = await db
+    .update(authChallengesTable)
+    .set({ status: "verifying" })
+    .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "birthday_pending")))
+    .returning({ id: authChallengesTable.id });
+  if (!claimed) {
+    res.status(409).json({ error: "Age verification is already in progress. Try again." });
+    return;
+  }
+
+  const timestamp = now();
+  let [user] = await db.select().from(usersTable).where(eq(usersTable.phone, challenge.phone));
+  if (!user) {
+    const [created] = await db
+      .insert(usersTable)
+      .values({
+        phone: challenge.phone,
+        birthday,
+        name: `User ${challenge.phone.slice(-4)}`,
+        username: defaultUsernameForPhone(challenge.phone),
+        online: true,
+        lastSeen: timestamp,
+      })
+      .returning();
+    user = created;
+  } else {
+    const [updated] = await db
+      .update(usersTable)
+      .set({ birthday, online: true, lastSeen: timestamp })
+      .where(eq(usersTable.id, user.id))
+      .returning();
+    user = updated;
+  }
+  await db
+    .update(authChallengesTable)
+    .set({ status: "consumed" })
+    .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "verifying")));
+  const authToken = await createAuthToken(user.id);
+  res.json(CompleteBirthdayResponse.parse({ ...parseUser(user), authToken }));
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {
@@ -554,18 +649,21 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : undefined;
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
   const bio = typeof body.bio === "string" ? body.bio.trim() : undefined;
+  const birthday = typeof body.birthday === "string" ? body.birthday : undefined;
   const contactPermission = body.contactPermission;
+  const validBirthday = birthday === undefined || isValidBirthday(birthday);
   if (
     !Number.isInteger(userId) ||
     userId <= 0 ||
-    (name === undefined && username === undefined && bio === undefined && contactPermission === undefined) ||
+    (name === undefined && username === undefined && bio === undefined && birthday === undefined && contactPermission === undefined) ||
     (name !== undefined && (name.length < 1 || name.length > 80)) ||
     (username !== undefined && !/^[a-z0-9_]{3,24}$/.test(username)) ||
     (bio !== undefined && bio.length > 150) ||
+    !validBirthday ||
     (contactPermission !== undefined &&
       !["everyone", "followers", "nobody"].includes(contactPermission))
   ) {
-    res.status(400).json({ error: "Enter a valid name, username, bio, or contact permission." });
+    res.status(400).json({ error: "Enter a valid profile value, including a real birthday that is not in the future." });
     return;
   }
   if (!(await callerMatches(req, res, userId))) return;
@@ -586,6 +684,7 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
       ...(name !== undefined ? { name } : {}),
       ...(username !== undefined ? { username } : {}),
       ...(bio !== undefined ? { bio } : {}),
+      ...(birthday !== undefined ? { birthday } : {}),
       ...(contactPermission !== undefined ? { contactPermission } : {}),
     })
     .where(eq(usersTable.id, userId))

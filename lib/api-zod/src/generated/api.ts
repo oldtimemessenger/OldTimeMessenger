@@ -63,12 +63,43 @@ export const VerifyOtpBody = zod.object({
   "challengeId": zod.string().min(1)
 })
 
-export const VerifyOtpResponse = zod.object({
+export const VerifyOtpResponse = zod.union([zod.object({
   "id": zod.number(),
   "phone": zod.string(),
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
+  "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
+  "online": zod.boolean(),
+  "lastSeen": zod.number(),
+  "lastSeenVisible": zod.boolean()
+}).and(zod.object({
+  "authToken": zod.string()
+})),zod.object({
+  "requiresBirthday": zod.boolean(),
+  "challengeId": zod.string()
+})])
+
+
+/**
+ * @summary Complete age verification after phone verification
+ */
+
+
+
+export const CompleteBirthdayBody = zod.object({
+  "challengeId": zod.string().min(1),
+  "birthday": zod.coerce.date()
+})
+
+export const CompleteBirthdayResponse = zod.object({
+  "id": zod.number(),
+  "phone": zod.string(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string(),
+  "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
   "lastSeen": zod.number(),
@@ -102,6 +133,7 @@ export const ListUsersResponseItem = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
   "lastSeen": zod.number(),
@@ -176,6 +208,7 @@ export const UpdateUserProfileBody = zod.object({
   "name": zod.string().min(1).max(updateUserProfileBodyNameMax).optional(),
   "username": zod.string().min(updateUserProfileBodyUsernameMin).max(updateUserProfileBodyUsernameMax).regex(updateUserProfileBodyUsernameRegExp).optional(),
   "bio": zod.string().max(updateUserProfileBodyBioMax).optional(),
+  "birthday": zod.coerce.date().optional().describe('Private date of birth; only returned to the signed-in user'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']).optional()
 })
 
@@ -185,6 +218,7 @@ export const UpdateUserProfileResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
   "lastSeen": zod.number(),
@@ -226,6 +260,7 @@ export const GetInboxResponseItem = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
   "lastSeen": zod.number(),
