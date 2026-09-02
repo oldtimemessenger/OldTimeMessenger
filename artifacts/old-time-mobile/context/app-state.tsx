@@ -193,7 +193,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     interestWeights,
     followedCreators,
     hiddenPostIds,
-    setSession: (user) => setSessionState(user),
+    setSession: (user) => {
+      setSessionState(user);
+      if (user) setSettings((current) => ({ ...current, lastSeen: user.lastSeenVisible }));
+    },
     addStatus: (caption, color, type = 'text', uri, audience = 'friends') => setStatuses((items) => [{ id: `${Date.now()}`, author: 'You', caption, color, type, uri, audience, viewers: [], viewed: false, createdAt: Date.now() }, ...items]),
     markStatusViewed: (id, viewer) => setStatuses((items) => items.map((item) => {
       if (item.id !== id) return item;
