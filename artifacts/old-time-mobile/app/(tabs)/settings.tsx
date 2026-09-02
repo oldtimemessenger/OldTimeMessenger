@@ -11,7 +11,7 @@ import { useColors } from '@/hooks/useColors';
 import { useLogout } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { setSharingExcluded } from '@/lib/social-api';
+import { setPresencePrivacy, setSharingExcluded } from '@/lib/social-api';
 
 type Panel = 'profile' | 'socialPrivacy' | 'storage' | 'appearance' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
 
@@ -41,6 +41,18 @@ export default function SettingsScreen() {
 
   function toggle(key: keyof typeof settings) {
     updateSettings({ [key]: !settings[key] } as Partial<typeof settings>);
+  }
+
+  async function toggleLastSeen() {
+    const next = !settings.lastSeen;
+    updateSettings({ lastSeen: next });
+    if (!session?.authToken) return;
+    try {
+      await setPresencePrivacy(session.authToken, session.id, next);
+    } catch (error) {
+      updateSettings({ lastSeen: !next });
+      Alert.alert('Privacy setting not saved', error instanceof Error ? error.message : 'Please try again.');
+    }
   }
 
   function signOut() {
@@ -91,9 +103,9 @@ export default function SettingsScreen() {
   }
 
   const groups = useMemo(() => ([
-    { items: [
+      { items: [
       { key: "profile", icon: "person", bg: "#FF7A59", label: "My Profile", value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setPanel('profile'); } },
-      { key: "socialPrivacy", icon: "shield-checkmark", bg: "#5B6EF5", label: "Status and Location Privacy", value: "Friends", onPress: () => setPanel('socialPrivacy') },
+      { key: "socialPrivacy", icon: "shield-checkmark", bg: "#5B6EF5", label: "Privacy", value: "Status, location, presence", onPress: () => setPanel('socialPrivacy') },
     ]},
     { items: [
       { key: "saved", icon: "bookmark", bg: "#4C9CF5", label: "Saved Messages", value: String(savedMessages.length), onPress: () => setPanel('saved') },
@@ -201,6 +213,15 @@ export default function SettingsScreen() {
               <Ionicons name="lock-closed-outline" size={20} color={colors.primary} />
               <Text style={[styles.privacyNoticeText, { color: colors.foreground }]}>These are your starting choices. Public sharing still requires you to choose Public before each post.</Text>
             </View>
+            <PanelSection title="Presence">
+              <PanelToggleRow
+                label="Show online and last seen"
+                sub="Let contacts see when you are online and the last time you were active."
+                value={settings.lastSeen}
+                onChange={() => void toggleLastSeen()}
+                isLast
+              />
+            </PanelSection>
             <PanelSection title="Default status audience">
               {(['public', 'friends', 'followers', 'close_friends', 'private'] as const).map((audience, index, items) => (
                 <AudienceRow key={audience} label={audience === 'public' ? 'Public (choose per update)' : sharingLabel(audience)} value={audience !== 'public' && settings.statusAudience === audience} onPress={() => audience === 'public' ? Alert.alert('Public is always a fresh choice', 'For safety, Public cannot be saved as your default. Choose Public while composing each update.') : updateSettings({ statusAudience: audience })} isLast={index === items.length - 1} />
