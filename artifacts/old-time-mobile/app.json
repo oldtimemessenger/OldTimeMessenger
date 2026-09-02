@@ -6,12 +6,12 @@
     "version": "1.0.0",
     "description": "Old Time is a private messenger for chats, updates, calls, and shared moments.",
     "orientation": "portrait",
-    "icon": "./assets/images/telegram-icon.png",
+    "icon": "./assets/images/old-time-icon.png",
     "scheme": "old-time-mobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/telegram-icon.png",
+      "image": "./assets/images/old-time-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#F2F2F7"
     },
@@ -28,12 +28,12 @@
     "android": {
       "package": "com.oldtime.messenger",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/telegram-icon.png",
+        "foregroundImage": "./assets/images/old-time-icon.png",
         "backgroundColor": "#F2F2F7"
       }
     },
     "web": {
-      "favicon": "./assets/images/telegram-icon.png"
+      "favicon": "./assets/images/old-time-icon.png"
     },
     "plugins": [
       "expo-router",
