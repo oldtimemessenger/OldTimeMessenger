@@ -63,7 +63,7 @@ export default function AuthScreen() {
   return <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior="padding">
     <LinearGradient colors={['#63BFFB', '#3B8FD6']} style={[styles.hero, { paddingTop: insets.top + 40 }]}>
       <View style={styles.orbit} />
-      <Image source={require('../assets/images/telegram-icon.png')} style={styles.logo} />
+      <Image source={require('../assets/images/old-time-icon.png')} style={styles.logo} />
       <Text style={styles.brand}>Old Time<Text style={styles.brandDot}>.</Text></Text>
       <Text style={styles.tagline}>Private conversations. Real connections.</Text>
     </LinearGradient>
