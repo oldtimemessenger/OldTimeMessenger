@@ -56,14 +56,11 @@ export default function SettingsScreen() {
   }
 
   function signOut() {
-    logout.mutate(undefined, {
-      onSettled: () => {
-        setSession(null);
-        resetLocalData();
-        queryClient.clear();
-        router.replace('/');
-      },
-    });
+    logout.mutate(undefined);
+    setSession(null);
+    resetLocalData();
+    queryClient.clear();
+    router.replace('/');
   }
 
   async function chooseProfilePhoto() {
@@ -120,7 +117,7 @@ export default function SettingsScreen() {
       { key: "faq", icon: "help-circle", bg: "#26A69A", label: "Old Time FAQ", onPress: () => setPanel('faq') },
     ]},
     { items: [
-      { key: "logout", icon: "log-out", bg: "#F0537A", label: "Log Out", danger: true, onPress: () => Alert.alert('Log out?', 'You can sign back in with the same phone number.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: signOut }]) },
+      { key: "logout", icon: "log-out", bg: "#F0537A", label: "Log Out", danger: true, onPress: signOut },
     ]},
   ] as const), [profile, savedMessages.length, settings, logout]);
 
