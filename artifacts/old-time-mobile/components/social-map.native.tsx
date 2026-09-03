@@ -86,7 +86,7 @@ function buildHeatPoints(
       clusters.push({ id: `heat-${clusters.length}`, ...point });
     }
   }
-  return clusters.slice(0, 70);
+  return clusters.sort((left, right) => right.weight - left.weight).slice(0, 24);
 }
 
 export default function SocialMap({
@@ -166,9 +166,7 @@ export default function SocialMap({
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         region={region as Region}
-        mapType="standard"
-        showsPointsOfInterest
-        showsUserLocation
+        showsUserLocation={center !== null}
         showsMyLocationButton={false}
         showsCompass
         showsScale
@@ -195,9 +193,9 @@ export default function SocialMap({
               ? 'rgba(249, 115, 22, 0.3)'
               : 'rgba(250, 204, 21, 0.25)';
           return [
-            <Circle key={`${point.id}-outer`} center={point} radius={heatRadius * 1.4} fillColor="rgba(34, 211, 238, 0.10)" strokeWidth={0} />,
-            <Circle key={`${point.id}-middle`} center={point} radius={heatRadius * 0.82} fillColor="rgba(52, 211, 153, 0.14)" strokeWidth={0} />,
-            <Circle key={`${point.id}-inner`} center={point} radius={heatRadius * 0.42} fillColor={hotColor} strokeWidth={0} />,
+            <Circle key={`${point.id}-outer`} center={{ latitude: point.latitude, longitude: point.longitude }} radius={heatRadius * 1.4} fillColor="rgba(34, 211, 238, 0.10)" strokeWidth={0} />,
+            <Circle key={`${point.id}-middle`} center={{ latitude: point.latitude, longitude: point.longitude }} radius={heatRadius * 0.82} fillColor="rgba(52, 211, 153, 0.14)" strokeWidth={0} />,
+            <Circle key={`${point.id}-inner`} center={{ latitude: point.latitude, longitude: point.longitude }} radius={heatRadius * 0.42} fillColor={hotColor} strokeWidth={0} />,
           ];
         }) : null}
         {pins.slice(0, 80).map((pin) => (

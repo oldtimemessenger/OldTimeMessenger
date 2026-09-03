@@ -21,10 +21,10 @@ import CurrentEventsHome from '@/components/current-events-home';
 type Coordinate = { latitude: number; longitude: number };
 
 const WORLD_REGION: SocialMapRegion = {
-  latitude: 20,
+  latitude: 24,
   longitude: 0,
-  latitudeDelta: 105,
-  longitudeDelta: 170,
+  latitudeDelta: 70,
+  longitudeDelta: 120,
 };
 
 export default function MapScreen() {
@@ -74,8 +74,9 @@ export default function MapScreen() {
 
   const loadRegion = useCallback(async (nextRegion: SocialMapRegion, force = false) => {
     if (!session?.authToken) return;
-    const radiusKm = radiusForRegion(nextRegion);
-    const cacheKey = `${nextRegion.latitude.toFixed(2)}:${nextRegion.longitude.toFixed(2)}:${Math.round(radiusKm)}`;
+    const safeRegion = normalizeRegion(nextRegion);
+    const radiusKm = radiusForRegion(safeRegion);
+    const cacheKey = `${safeRegion.latitude.toFixed(2)}:${safeRegion.longitude.toFixed(2)}:${Math.round(radiusKm)}`;
     const cached = regionCache.current.get(cacheKey);
     if (!force && cached && Date.now() - cached.loadedAt < 60_000) {
       setPins(cached.pins);
@@ -87,9 +88,9 @@ export default function MapScreen() {
     setError(null);
     try {
       const [pinPage, storyPage, discoveryPage] = await Promise.all([
-        getNearbyPins(session.authToken, nextRegion.latitude, nextRegion.longitude, radiusKm),
-        getNearbyStories(session.authToken, nextRegion.latitude, nextRegion.longitude, radiusKm, 30),
-        getNearbyDiscoveryItems(session.authToken, nextRegion.latitude, nextRegion.longitude, radiusKm),
+        getNearbyPins(session.authToken, safeRegion.latitude, safeRegion.longitude, radiusKm),
+        getNearbyStories(session.authToken, safeRegion.latitude, safeRegion.longitude, radiusKm, 30),
+        getNearbyDiscoveryItems(session.authToken, safeRegion.latitude, safeRegion.longitude, radiusKm),
       ]);
       setPins(pinPage.items);
       setStories(storyPage.items);
@@ -104,13 +105,14 @@ export default function MapScreen() {
 
   const discoverArea = useCallback(async (coordinate: Coordinate) => {
     if (!session?.authToken) return;
-    setDiscoveryCoordinate(coordinate);
+    const safeCoordinate = normalizeCoordinate(coordinate);
+    setDiscoveryCoordinate(safeCoordinate);
     setDiscoveryLoading(true);
     try {
       const [pinPage, storyPage, discoveryPage] = await Promise.all([
-        getNearbyPins(session.authToken, coordinate.latitude, coordinate.longitude, 5),
-        getNearbyStories(session.authToken, coordinate.latitude, coordinate.longitude, 5, 20),
-        getNearbyDiscoveryItems(session.authToken, coordinate.latitude, coordinate.longitude, 5),
+        getNearbyPins(session.authToken, safeCoordinate.latitude, safeCoordinate.longitude, 5),
+        getNearbyStories(session.authToken, safeCoordinate.latitude, safeCoordinate.longitude, 5, 20),
+        getNearbyDiscoveryItems(session.authToken, safeCoordinate.latitude, safeCoordinate.longitude, 5),
       ]);
       setDiscoveryPins(pinPage.items);
       setDiscoveryStories(storyPage.items);
@@ -155,7 +157,7 @@ export default function MapScreen() {
         }
       }
       const result = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const coordinate = { latitude: result.coords.latitude, longitude: result.coords.longitude };
+      const coordinate = normalizeCoordinate({ latitude: result.coords.latitude, longitude: result.coords.longitude });
       const nextRegion = { ...coordinate, latitudeDelta: 0.055, longitudeDelta: 0.07 };
       setLocation(coordinate);
       setRegion(nextRegion);
@@ -174,7 +176,7 @@ export default function MapScreen() {
   }
 
   function startPinPlacement() {
-    setPinCoordinate({ latitude: region.latitude, longitude: region.longitude });
+    setPinCoordinate(normalizeCoordinate(region));
     setPlacingPin(true);
     setSelectedPin(null);
     setStoryPreview(null);
@@ -195,7 +197,7 @@ export default function MapScreen() {
         Alert.alert('Place not found', 'Try a city, landmark, venue, or full address.');
         return;
       }
-      const coordinate = { latitude: first.latitude, longitude: first.longitude };
+      const coordinate = normalizeCoordinate({ latitude: first.latitude, longitude: first.longitude });
       setPinCoordinate(coordinate);
       setRegion({ ...coordinate, latitudeDelta: 0.08, longitudeDelta: 0.1 });
     } catch {
@@ -206,9 +208,10 @@ export default function MapScreen() {
   }
 
   const changeRegion = useCallback((nextRegion: SocialMapRegion) => {
-    setRegion(nextRegion);
+    const safeRegion = normalizeRegion(nextRegion);
+    setRegion(safeRegion);
     if (regionTimer.current) clearTimeout(regionTimer.current);
-    regionTimer.current = setTimeout(() => void loadRegion(nextRegion), 420);
+    regionTimer.current = setTimeout(() => void loadRegion(safeRegion), 420);
   }, [loadRegion]);
 
   useEffect(() => () => {
@@ -296,7 +299,7 @@ export default function MapScreen() {
           onLocate={() => void refreshLocation()}
           onCreate={startPinPlacement}
           onToggleHeat={() => setHeatEnabled((enabled) => !enabled)}
-          onPlacementChange={setPinCoordinate}
+          onPlacementChange={(coordinate) => setPinCoordinate(normalizeCoordinate(coordinate))}
           onSelectPin={selectPin}
           onSelectStory={previewMapStory}
           onSelectDiscoveryItem={(item) => void openDiscoveryItem(item)}
@@ -381,6 +384,26 @@ export default function MapScreen() {
 
 function radiusForRegion(region: SocialMapRegion) {
   return Math.min(25, Math.max(1, region.latitudeDelta * 111 * 0.75));
+}
+
+function normalizeCoordinate(coordinate: Coordinate): Coordinate {
+  const latitude = Number.isFinite(coordinate.latitude)
+    ? Math.max(-85, Math.min(85, coordinate.latitude))
+    : 0;
+  const rawLongitude = Number.isFinite(coordinate.longitude) ? coordinate.longitude : 0;
+  const longitude = ((rawLongitude + 180) % 360 + 360) % 360 - 180;
+  return { latitude, longitude };
+}
+
+function normalizeRegion(region: SocialMapRegion): SocialMapRegion {
+  const coordinate = normalizeCoordinate(region);
+  const latitudeDelta = Number.isFinite(region.latitudeDelta)
+    ? Math.max(0.002, Math.min(85, Math.abs(region.latitudeDelta)))
+    : WORLD_REGION.latitudeDelta;
+  const longitudeDelta = Number.isFinite(region.longitudeDelta)
+    ? Math.max(0.002, Math.min(170, Math.abs(region.longitudeDelta)))
+    : WORLD_REGION.longitudeDelta;
+  return { ...coordinate, latitudeDelta, longitudeDelta };
 }
 
 function timeAgo(timestamp: number) {

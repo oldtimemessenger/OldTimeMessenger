@@ -22,7 +22,7 @@ export default function SocialMap({
   onSelectCurrentEventRoom,
   onAreaPress,
 }: SocialMapProps) {
-  if (!region || !center) {
+  if (!region) {
     return (
       <View style={[styles.map, styles.center, { backgroundColor: colors.muted }]}>
         <Ionicons name="map-outline" size={38} color={colors.primary} />
