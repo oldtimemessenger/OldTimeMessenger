@@ -24,6 +24,9 @@
       "distribution": "store",
       "node": "20.18.0",
       "autoIncrement": true,
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.2"
+      },
       "env": {
         "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0.apps.googleusercontent.com",
