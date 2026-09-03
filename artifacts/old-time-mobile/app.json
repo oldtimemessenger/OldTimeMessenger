@@ -19,6 +19,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.oldtime.messenger",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
