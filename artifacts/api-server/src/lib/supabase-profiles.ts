@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 type FirebaseProfile = {
   uid: string;
   email: string;
+  name?: string;
+  username?: string;
 };
 
 function supabaseConfiguration(): { url: string; serviceRoleKey: string } {
@@ -35,13 +37,19 @@ export async function syncFirebaseProfile(profile: FirebaseProfile): Promise<voi
 
   const matches = (await lookup.json()) as Array<{ id: string }>;
   const now = new Date().toISOString();
+  const identityFields = {
+    email: profile.email,
+    updated_at: now,
+    ...(profile.name?.trim() ? { display_name: profile.name.trim().slice(0, 80) } : {}),
+    ...(profile.username?.trim() ? { username: profile.username.trim().toLowerCase().slice(0, 24) } : {}),
+  };
   if (matches[0]) {
     const update = await fetch(
       `${url}/rest/v1/profiles?firebase_uid=eq.${filter}`,
       {
         method: "PATCH",
         headers: headers(serviceRoleKey),
-        body: JSON.stringify({ email: profile.email, updated_at: now }),
+        body: JSON.stringify(identityFields),
       },
     );
     if (!update.ok) {
@@ -56,11 +64,10 @@ export async function syncFirebaseProfile(profile: FirebaseProfile): Promise<voi
     body: JSON.stringify({
       id: randomUUID(),
       firebase_uid: profile.uid,
-      email: profile.email,
+      ...identityFields,
       phone: null,
       phone_hash: null,
       created_at: now,
-      updated_at: now,
     }),
   });
   if (!create.ok) {

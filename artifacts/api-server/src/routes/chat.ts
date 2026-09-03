@@ -388,7 +388,11 @@ router.post("/auth/firebase", async (req, res): Promise<void> => {
       return;
     }
 
-    await syncFirebaseProfile({ uid: identity.uid, email });
+    await syncFirebaseProfile({
+      uid: identity.uid,
+      email,
+      name: typeof identity.name === "string" ? identity.name : undefined,
+    });
     const timestamp = now();
     let [user] = await db
       .select()
@@ -778,6 +782,20 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   if (!updated) {
     res.status(404).json({ error: "User not found." });
     return;
+  }
+  if (updated.firebaseUid && updated.email) {
+    try {
+      await syncFirebaseProfile({
+        uid: updated.firebaseUid,
+        email: updated.email,
+        name: updated.name,
+        username: updated.username,
+      });
+    } catch (error) {
+      req.log.error({ err: error, userId: updated.id }, "Supabase profile synchronization failed");
+      res.status(503).json({ error: "Your profile was saved, but account setup could not be completed. Please try again." });
+      return;
+    }
   }
   res.json(parseUser(updated));
 });
