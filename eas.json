@@ -4,7 +4,16 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "production": {}
+    "production": {
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.2"
+      }
+    },
+    "preview": {
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.2"
+      }
+    }
   },
   "submit": {
     "production": {
