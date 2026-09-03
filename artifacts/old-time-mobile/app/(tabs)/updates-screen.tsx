@@ -23,6 +23,8 @@ import { VideoSurface } from '@/components/video-surface';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
+import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
+import { adManager } from '@/lib/ad-manager';
 import { createChat, listUsers, useRequestUploadUrl, type User } from '@workspace/api-client-react';
 import {
   createStory,
@@ -150,6 +152,11 @@ export default function UpdatesScreen() {
   const [noteEditor, setNoteEditor] = useState<Note | 'new' | null>(null);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const promptedContent = useRef(new Set<string>());
+
+  useEffect(() => {
+    const surface = showCommunity ? 'community-feed' : viewMode === 'creator-feed' ? 'creator-feed' : 'updates';
+    adManager.setActiveSurface(surface);
+  }, [showCommunity, viewMode]);
 
   const loadSocial = useCallback(async (mode: 'for-you' | 'following' | 'community' = 'for-you', filter: CommunityFilter = communityFilter) => {
     if (!session?.authToken) return;
@@ -527,14 +534,20 @@ export default function UpdatesScreen() {
           />}
       </Screen>
 
-      <Modal visible={viewMode === 'creator-feed'} transparent animationType="slide" onRequestClose={() => setViewMode('landing')}>
+      <Modal visible={viewMode === 'creator-feed'} transparent animationType="slide" onRequestClose={() => {
+        setViewMode('landing');
+        void adManager.showInterstitialAtTransition('creator-feed');
+      }}>
         {viewMode === 'creator-feed' ? (
           <CreatorFeedPager
             posts={creatorPosts}
             initialIndex={feedIndex}
             token={session?.authToken ?? ''}
             colors={colors}
-            onClose={() => setViewMode('landing')}
+            onClose={() => {
+              setViewMode('landing');
+              void adManager.showInterstitialAtTransition('creator-feed');
+            }}
             onComment={setSocialCommentPost}
             onShare={(post) => void shareSocialPost(post)}
             onOpenProfile={(userId) => { setViewMode('landing'); setProfileUserId(userId); }}
@@ -965,10 +978,17 @@ function CreatorFeedPager({ posts, initialIndex, token, colors, onClose, onComme
   onChanged: (post: SocialPost) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const feedItems = useMemo(() => adManager.blendNativeAds('creator-feed', posts, (post) => String(post.id)), [posts]);
+  const initialPostId = posts[Math.min(initialIndex, Math.max(posts.length - 1, 0))]?.id;
+  const initialFeedIndex = Math.max(0, feedItems.findIndex((item) => item.kind === 'content' && item.content.id === initialPostId));
+  const [currentIndex, setCurrentIndex] = useState(initialFeedIndex);
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    const firstVisible = viewableItems.find((entry: any) => entry?.item?.id);
-    if (firstVisible) setCurrentIndex(firstVisible.index ?? 0);
+    const firstVisible = viewableItems.find((entry: any) => entry?.item?.key);
+    if (!firstVisible) return;
+    setCurrentIndex(firstVisible.index ?? 0);
+    if (firstVisible.item.kind === 'content') {
+      adManager.recordContentView('creator-feed', String(firstVisible.item.content.id));
+    }
   }).current;
 
   return (
@@ -977,25 +997,29 @@ function CreatorFeedPager({ posts, initialIndex, token, colors, onClose, onComme
         <Ionicons name="chevron-back" size={30} color="#fff" />
       </Pressable>
       <FlatList
-        data={posts}
-        keyExtractor={(item) => String(item.id)}
+        data={feedItems}
+        keyExtractor={(item) => item.key}
         pagingEnabled
         snapToInterval={WINDOW_HEIGHT}
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
-        initialScrollIndex={Math.min(initialIndex, Math.max(posts.length - 1, 0))}
+        initialScrollIndex={initialFeedIndex}
         getItemLayout={(_, index) => ({ length: WINDOW_HEIGHT, offset: WINDOW_HEIGHT * index, index })}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
-        renderItem={({ item, index }) => (
+        renderItem={({ item, index }) => item.kind === 'native-ad' ? (
+          <View style={styles.creatorFeedPage}>
+            <AdMobNativeFeedAd surface="creator-feed" placement={item.placement} fullScreen />
+          </View>
+        ) : (
           <CreatorFeedPost
-            post={item}
+            post={item.content}
             active={index === currentIndex}
             token={token}
             colors={colors}
-            onComment={() => onComment(item)}
-            onShare={() => onShare(item)}
-            onOpenProfile={() => onOpenProfile(item.author.id)}
+            onComment={() => onComment(item.content)}
+            onShare={() => onShare(item.content)}
+            onOpenProfile={() => onOpenProfile(item.content.author.id)}
             onChanged={onChanged}
           />
         )}
@@ -1791,11 +1815,12 @@ function CommunityFeed({
   onShare: (post: SocialPost) => void;
   onChanged: (post: SocialPost) => void;
 }) {
+  const feedItems = useMemo(() => adManager.blendNativeAds('community-feed', posts, (post) => String(post.id)), [posts]);
   return (
     <FlatList
       testID="community-feed"
-      data={posts}
-      keyExtractor={(item) => String(item.id)}
+      data={feedItems}
+      keyExtractor={(item) => item.key}
       contentContainerStyle={styles.communityFeedContent}
       showsVerticalScrollIndicator={false}
       onEndReached={onEndReached}
@@ -1850,14 +1875,16 @@ function CommunityFeed({
             </View>
           )
       }
-      renderItem={({ item }) => (
+      renderItem={({ item }) => item.kind === 'native-ad' ? (
+        <AdMobNativeFeedAd surface="community-feed" placement={item.placement} />
+      ) : (
         <SocialPostCard
-          post={item}
+          post={item.content}
           colors={colors}
           token={token}
-          onOpenProfile={() => onOpenProfile(item.author.id)}
-          onShare={() => onShare(item)}
-          onComment={() => onComment(item)}
+          onOpenProfile={() => onOpenProfile(item.content.author.id)}
+          onShare={() => onShare(item.content)}
+          onComment={() => onComment(item.content)}
           onChanged={onChanged}
         />
       )}

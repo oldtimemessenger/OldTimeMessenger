@@ -62,7 +62,18 @@
         }
       ],
       "expo-contacts",
-      "expo-video"
+      "expo-video",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+          "iosAppId": "ca-app-pub-7063228070009280~4198410047",
+          "delayAppMeasurementInit": true,
+          "userTrackingUsageDescription": "Old Time may use this device identifier to measure and improve advertising.",
+          "optimizeInitialization": true,
+          "optimizeAdLoading": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -40,8 +40,8 @@ type AdSlotProps = {
 };
 
 /**
- * Deliberately has no ad-network dependency. A future AdMob adapter can be
- * supplied through renderAd without changing the Story viewer or its sequence.
+ * Keeps Story sponsorship explicit so feed/banner advertising cannot leak into
+ * Story playback without a deliberate placement.
  */
 export function AdSlot({ slotId, renderAd }: AdSlotProps) {
   return (

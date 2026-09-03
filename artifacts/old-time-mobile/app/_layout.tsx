@@ -14,6 +14,7 @@ import { useApp } from '@/context/app-state';
 import { setPresence } from '@/lib/social-api';
 import { apiBaseUrl } from '@/lib/api-base-url';
 import { RevenueCatProvider } from '@/lib/revenuecat';
+import { AdMobInitializer } from '@/components/admob-initializer';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -83,6 +84,7 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <AppProvider>
           <RevenueCatProvider>
+            <AdMobInitializer />
             <PresenceHeartbeat />
             <ErrorBoundary>
               <GestureHandlerRootView style={{ flex: 1 }}>

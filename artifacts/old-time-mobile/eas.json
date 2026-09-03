@@ -6,7 +6,10 @@
     "development": {
       "pnpm": "10.26.1",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
+      }
     },
     "development-simulator": {
       "pnpm": "10.26.1",
@@ -19,13 +22,17 @@
     "preview": {
       "pnpm": "10.26.1",
       "distribution": "store",
-      "node": "20.18.0"
+      "node": "20.18.0",
+      "env": {
+        "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
+      }
     },
     "production": {
       "pnpm": "10.26.1",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app"
+        "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
+        "EXPO_PUBLIC_ADMOB_TEST_MODE": "false"
       },
       "ios": {
         "image": "macos-sequoia-15.6-xcode-26.2"

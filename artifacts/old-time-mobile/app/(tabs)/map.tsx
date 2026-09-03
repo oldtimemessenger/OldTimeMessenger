@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as WebBrowser from 'expo-web-browser';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, Screen, StoryAvatar } from '@/components/ui';
 import { useRouter } from 'expo-router';
@@ -17,6 +17,8 @@ import { useColors } from '@/hooks/useColors';
 import { createMapPin, createMapPinComment, deleteMapPin, discoveryEmbedUrl, getMapPinComments, getNearbyDiscoveryItems, getNearbyPins, reportMapPin, setMapPinRelation, type DiscoveryItem, type MapComment, type MapPin, type MapVisibility } from '@/lib/map-api';
 import { getNearbyStories, setUserBlocked, type Story } from '@/lib/social-api';
 import CurrentEventsHome from '@/components/current-events-home';
+import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
+import { adManager } from '@/lib/ad-manager';
 
 type Coordinate = { latitude: number; longitude: number };
 
@@ -62,6 +64,10 @@ export default function MapScreen() {
   const [currentEventRooms, setCurrentEventRooms] = useState<CurrentEventRoom[]>([]);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[] }>());
+
+  useEffect(() => {
+    adManager.setActiveSurface('map');
+  }, []);
 
   useEffect(() => {
     setVisibility(settings.locationAudience === 'public' ? 'friends' : settings.locationAudience);
@@ -523,10 +529,21 @@ function MapStoryTray({ stories, colors, onSelect }: { stories: Story[]; colors:
   );
 }
 
+type MapActivity =
+  | { kind: 'discovery'; id: string; item: DiscoveryItem }
+  | { kind: 'story'; id: string; story: Story }
+  | { kind: 'pin'; id: string; pin: MapPin };
+
 function DiscoveryPanel({ pins, stories, discoveryItems, loading, colors, onClose, onSelectPin, onSelectStory, onSelectDiscoveryItem }: { pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[]; loading: boolean; colors: any; onClose: () => void; onSelectPin: (pin: MapPin) => void; onSelectStory: (story: Story) => void; onSelectDiscoveryItem: (item: DiscoveryItem) => void }) {
   const recentPins = [...pins].sort((left, right) => right.createdAt - left.createdAt);
   const popularPins = [...pins].filter((pin) => pin.counts.reactions + pin.counts.comments + pin.counts.saves > 0).sort((left, right) => (right.counts.reactions + right.counts.comments + right.counts.saves) - (left.counts.reactions + left.counts.comments + left.counts.saves));
   const people = new Set([...pins.map((pin) => pin.author.id), ...stories.map((story) => story.author.id)]).size;
+  const activity = useMemo<MapActivity[]>(() => [
+    ...discoveryItems.slice(0, 2).map((item) => ({ kind: 'discovery' as const, id: `discovery-${item.id}`, item })),
+    ...stories.slice(0, 2).map((story) => ({ kind: 'story' as const, id: `story-${story.id}`, story })),
+    ...(stories.length === 0 && (popularPins[0] ?? recentPins[0]) ? [{ kind: 'pin' as const, id: `pin-${(popularPins[0] ?? recentPins[0]).id}`, pin: popularPins[0] ?? recentPins[0] }] : []),
+  ], [discoveryItems, popularPins, recentPins, stories]);
+  const activityFeed = useMemo(() => adManager.blendNativeAds('map', activity, (item) => item.id), [activity]);
   return (
     <View style={[styles.discoveryPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.discoveryHeader}>
@@ -537,24 +554,29 @@ function DiscoveryPanel({ pins, stories, discoveryItems, loading, colors, onClos
         {loading ? <ActivityIndicator color={colors.primary} /> : <Pressable accessibilityLabel="Close location discovery" onPress={onClose} hitSlop={10}><Ionicons name="close" size={20} color={colors.mutedForeground} /></Pressable>}
       </View>
       {!loading && discoveryItems.length === 0 && stories.length === 0 && recentPins.length === 0 ? <Text style={[styles.discoveryEmpty, { color: colors.mutedForeground }]}>Nothing posted here yet.</Text> : null}
-      {!loading && discoveryItems.slice(0, 2).map((item) => <Pressable key={`discovery-${item.id}`} onPress={() => onSelectDiscoveryItem(item)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
-        <View style={styles.discoveryFlame}><Ionicons name="flame" size={16} color="#fff" /></View>
-        <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{item.title}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{item.creator.handle || item.creator.name} · {item.platform === 'x' ? 'X' : item.platform[0].toUpperCase() + item.platform.slice(1)}</Text></View>
-        <Ionicons name="play" size={15} color={colors.primary} />
-      </Pressable>)}
-      {!loading && stories.slice(0, 2).map((story) => <Pressable key={`story-${story.id}`} onPress={() => onSelectStory(story)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
-        <Avatar name={story.author.name} size={28} color={colors.primary} />
-        <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{story.author.name}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{story.content || 'Active Story'} · {timeAgo(story.createdAt)}</Text></View>
-        <Ionicons name="play" size={15} color={colors.primary} />
-      </Pressable>)}
-      {!loading && stories.length === 0 && (popularPins[0] ?? recentPins[0]) ? (() => {
-        const pin = popularPins[0] ?? recentPins[0];
-        return <Pressable onPress={() => onSelectPin(pin)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
-          <Avatar name={pin.author.name} size={28} color={colors.primary} />
-          <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{pin.author.name}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{pin.caption || 'Shared a location'} · {timeAgo(pin.createdAt)}</Text></View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.discoveryList}>
+      {!loading && activityFeed.map((entry) => entry.kind === 'native-ad' ? (
+        <AdMobNativeFeedAd key={entry.key} surface="map" placement={entry.placement} />
+      ) : entry.content.kind === 'discovery' ? (
+        <Pressable key={entry.key} onPress={() => onSelectDiscoveryItem((entry.content as Extract<MapActivity, { kind: 'discovery' }>).item)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
+          <View style={styles.discoveryFlame}><Ionicons name="flame" size={16} color="#fff" /></View>
+          <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{(entry.content as Extract<MapActivity, { kind: 'discovery' }>).item.title}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{(entry.content as Extract<MapActivity, { kind: 'discovery' }>).item.creator.handle || (entry.content as Extract<MapActivity, { kind: 'discovery' }>).item.creator.name} · {(entry.content as Extract<MapActivity, { kind: 'discovery' }>).item.platform === 'x' ? 'X' : (entry.content as Extract<MapActivity, { kind: 'discovery' }>).item.platform[0].toUpperCase() + (entry.content as Extract<MapActivity, { kind: 'discovery' }>).item.platform.slice(1)}</Text></View>
+          <Ionicons name="play" size={15} color={colors.primary} />
+        </Pressable>
+      ) : entry.content.kind === 'story' ? (
+        <Pressable key={entry.key} onPress={() => onSelectStory((entry.content as Extract<MapActivity, { kind: 'story' }>).story)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
+          <Avatar name={(entry.content as Extract<MapActivity, { kind: 'story' }>).story.author.name} size={28} color={colors.primary} />
+          <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{(entry.content as Extract<MapActivity, { kind: 'story' }>).story.author.name}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{(entry.content as Extract<MapActivity, { kind: 'story' }>).story.content || 'Active Story'} · {timeAgo((entry.content as Extract<MapActivity, { kind: 'story' }>).story.createdAt)}</Text></View>
+          <Ionicons name="play" size={15} color={colors.primary} />
+        </Pressable>
+      ) : (
+        <Pressable key={entry.key} onPress={() => onSelectPin((entry.content as Extract<MapActivity, { kind: 'pin' }>).pin)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
+          <Avatar name={(entry.content as Extract<MapActivity, { kind: 'pin' }>).pin.author.name} size={28} color={colors.primary} />
+          <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{(entry.content as Extract<MapActivity, { kind: 'pin' }>).pin.author.name}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{(entry.content as Extract<MapActivity, { kind: 'pin' }>).pin.caption || 'Shared a location'} · {timeAgo((entry.content as Extract<MapActivity, { kind: 'pin' }>).pin.createdAt)}</Text></View>
           <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
-        </Pressable>;
-      })() : null}
+        </Pressable>
+      ))}
+      </ScrollView>
     </View>
   );
 }
@@ -652,7 +674,8 @@ const styles = StyleSheet.create({
   mapPrompt: { position: 'absolute', left: 18, right: 18, bottom: 18, borderRadius: 24, borderWidth: 1, padding: 16 },
   mapPromptTitle: { fontSize: 18, fontWeight: '900' }, mapPromptText: { fontSize: 12, marginVertical: 5 },
    selectedPin: { position: 'absolute', left: 14, right: 14, bottom: 14, minHeight: 68, borderRadius: 24, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
-   discoveryPanel: { position: 'absolute', left: 12, right: 12, bottom: 12, borderRadius: 22, borderWidth: 1, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, shadowColor: '#000', shadowOpacity: .12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+    discoveryPanel: { position: 'absolute', left: 12, right: 12, bottom: 12, maxHeight: '72%', borderRadius: 22, borderWidth: 1, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, shadowColor: '#000', shadowOpacity: .12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+    discoveryList: { paddingBottom: 6 },
   discoveryFlame: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F97316' },
    discoveryHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
    discoveryTitle: { fontSize: 15, fontWeight: '900' },
