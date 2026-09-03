@@ -24,7 +24,8 @@ WebBrowser.maybeCompleteAuthSession();
 type AuthResult = AuthenticatedUser | BirthdayRequiredResponse;
 
 type Props = {
-  onAuthenticated: (result: AuthResult) => void;
+  onAuthenticated: (result: AuthResult, newProfile?: { name: string; username: string }) => void;
+  onModeChange?: (creatingAccount: boolean) => void;
 };
 
 const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
@@ -41,8 +42,10 @@ function readableFirebaseError(error: unknown): string {
   return 'Sign-in is temporarily unavailable. Please try again.';
 }
 
-export function FirebaseAuthPanel({ onAuthenticated }: Props) {
+export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
   const colors = useColors();
+  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [createAccount, setCreateAccount] = useState(false);
@@ -61,10 +64,10 @@ export function FirebaseAuthPanel({ onAuthenticated }: Props) {
     },
   );
 
-  const finishFirebaseSignIn = useCallback(async (user: User) => {
+  const finishFirebaseSignIn = useCallback(async (user: User, newProfile?: { name: string; username: string }) => {
     const idToken = await user.getIdToken(true);
     const result = await exchangeFirebaseToken.mutateAsync({ data: { idToken } });
-    onAuthenticated(result);
+    onAuthenticated(result, newProfile);
   }, [exchangeFirebaseToken, onAuthenticated]);
 
   useEffect(() => {
@@ -83,13 +86,19 @@ export function FirebaseAuthPanel({ onAuthenticated }: Props) {
   }, [finishFirebaseSignIn, googleResponse]);
 
   async function submitEmail() {
+    const cleanName = name.trim();
+    const cleanUsername = username.trim().toLowerCase().replace(/^@/, '');
     if (!email.trim() || password.length < 6) return;
+    if (createAccount && (!cleanName || !/^[a-z0-9_]{3,24}$/.test(cleanUsername))) return;
     setBusy(true);
     try {
       const credential = createAccount
         ? await createUserWithEmailAndPassword(auth, email.trim(), password)
         : await signInWithEmailAndPassword(auth, email.trim(), password);
-      await finishFirebaseSignIn(credential.user);
+      await finishFirebaseSignIn(
+        credential.user,
+        createAccount ? { name: cleanName, username: cleanUsername } : undefined,
+      );
     } catch (error) {
       await signOut(auth).catch(() => undefined);
       Alert.alert(createAccount ? 'Could not create account' : 'Could not sign in', readableFirebaseError(error));
@@ -98,11 +107,51 @@ export function FirebaseAuthPanel({ onAuthenticated }: Props) {
     }
   }
 
-  const canSubmit = email.trim().length > 3 && password.length >= 6 && !busy;
+  const cleanUsername = username.trim().toLowerCase().replace(/^@/, '');
+  const canSubmit = email.trim().length > 3
+    && password.length >= 6
+    && (!createAccount || (name.trim().length > 0 && /^[a-z0-9_]{3,24}$/.test(cleanUsername)))
+    && !busy;
   const googleAvailable = Platform.OS === 'ios' && Boolean(GOOGLE_IOS_CLIENT_ID && GOOGLE_REVERSED_CLIENT_ID);
 
   return (
     <View>
+      {createAccount ? (
+        <>
+          <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Ionicons name="person-outline" size={19} color={colors.primary} />
+            <TextInput
+              testID="input-name"
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+              textContentType="name"
+              placeholder="Name"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.input, { color: colors.foreground }]}
+              maxLength={80}
+            />
+          </View>
+          <View style={[styles.inputWrap, styles.stackedInput, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Text style={[styles.atSign, { color: colors.primary }]}>@</Text>
+            <TextInput
+              testID="input-username"
+              value={username}
+              onChangeText={(value) => setUsername(value.toLowerCase().replace(/[^a-z0-9_@]/g, ''))}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="username"
+              placeholder="username"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.input, { color: colors.foreground }]}
+              maxLength={25}
+            />
+          </View>
+          {username.length > 0 && !/^[a-z0-9_]{3,24}$/.test(cleanUsername) ? (
+            <Text style={[styles.fieldHint, { color: colors.mutedForeground }]}>Use 3–24 letters, numbers, or underscores.</Text>
+          ) : null}
+        </>
+      ) : null}
       <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
         <Ionicons name="mail-outline" size={19} color={colors.primary} />
         <TextInput
@@ -118,7 +167,7 @@ export function FirebaseAuthPanel({ onAuthenticated }: Props) {
           style={[styles.input, { color: colors.foreground }]}
         />
       </View>
-      <View style={[styles.inputWrap, styles.passwordInput, { borderColor: colors.border, backgroundColor: colors.card }]}>
+      <View style={[styles.inputWrap, styles.stackedInput, { borderColor: colors.border, backgroundColor: colors.card }]}>
         <Ionicons name="lock-closed-outline" size={19} color={colors.primary} />
         <TextInput
           testID="input-password"
@@ -148,7 +197,11 @@ export function FirebaseAuthPanel({ onAuthenticated }: Props) {
       <Pressable
         testID="button-toggle-email-mode"
         disabled={busy}
-        onPress={() => setCreateAccount((current) => !current)}
+        onPress={() => setCreateAccount((current) => {
+          const next = !current;
+          onModeChange?.(next);
+          return next;
+        })}
         style={styles.linkButton}
       >
         <Text style={{ color: colors.primary }}>
@@ -183,8 +236,10 @@ export function FirebaseAuthPanel({ onAuthenticated }: Props) {
 
 const styles = StyleSheet.create({
   inputWrap: { borderWidth: 1, borderRadius: 10, minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
-  passwordInput: { marginTop: 12 },
+  stackedInput: { marginTop: 12 },
   input: { flex: 1, fontSize: 16 },
+  atSign: { fontSize: 18, fontWeight: '800' },
+  fieldHint: { fontSize: 12, marginTop: 7, marginLeft: 3 },
   primaryButton: { minHeight: 54, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 22 },
   primaryText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   secondaryButton: { minHeight: 54, borderRadius: 10, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },

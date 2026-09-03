@@ -1,4 +1,4 @@
-import type { MapPin } from '@/lib/map-api';
+import type { DiscoveryItem, MapPin } from '@/lib/map-api';
 import type { Story } from '@/lib/social-api';
 import type { CurrentEventRoom } from '@workspace/api-client-react';
 
@@ -17,6 +17,7 @@ export type SocialMapProps = {
   region: SocialMapRegion | null;
   pins: MapPin[];
   stories: Story[];
+  discoveryItems?: DiscoveryItem[];
   currentEventRooms?: CurrentEventRoom[];
   selectedPinId: number | null;
   loading: boolean;
@@ -35,6 +36,7 @@ export type SocialMapProps = {
   onCreate: () => void;
   onSelectPin: (pin: MapPin) => void;
   onSelectStory: (story: Story) => void;
+  onSelectDiscoveryItem?: (item: DiscoveryItem) => void;
   onSelectCurrentEventRoom?: (room: CurrentEventRoom) => void;
   onAreaPress: (coordinate: SocialMapCoordinate) => void;
   onRegionChange: (region: SocialMapRegion) => void;

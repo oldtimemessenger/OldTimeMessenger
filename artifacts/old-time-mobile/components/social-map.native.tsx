@@ -54,6 +54,7 @@ export default function SocialMap({
   region,
   pins,
   stories,
+  discoveryItems = [],
   selectedPinId,
   loading,
   colors,
@@ -61,6 +62,7 @@ export default function SocialMap({
   onCreate,
   onSelectPin,
   onSelectStory,
+  onSelectDiscoveryItem,
   onAreaPress,
   onRegionChange,
 }: SocialMapProps) {
@@ -174,6 +176,18 @@ export default function SocialMap({
             </View>
           </Marker>
         ))}
+        {discoveryItems.filter((item) => item.latitude !== null && item.longitude !== null).slice(0, 40).map((item) => (
+          <Marker
+            key={`discovery-${item.id}`}
+            coordinate={{ latitude: item.latitude!, longitude: item.longitude! }}
+            onPress={() => onSelectDiscoveryItem?.(item)}
+            tracksViewChanges={false}
+          >
+            <View style={styles.discoveryMarker}>
+              <Ionicons name="flame" size={18} color="#fff" />
+            </View>
+          </Marker>
+        ))}
       </MapView>
       <View style={styles.controls}>
         <Pressable accessibilityLabel="Recenter map" onPress={recenter} style={[styles.control, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -189,6 +203,7 @@ export default function SocialMap({
 
 const styles = StyleSheet.create({
   map: { flex: 1, overflow: 'hidden' },
+  discoveryMarker: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F97316', borderWidth: 2, borderColor: '#fff' },
   center: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   promptTitle: { fontSize: 18, fontWeight: '600', marginTop: 12, marginBottom: 16 },
   locateButton: { minHeight: 44, borderRadius: 22, paddingHorizontal: 17, flexDirection: 'row', alignItems: 'center', gap: 8 },

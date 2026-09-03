@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Avatar, Screen } from '@/components/ui';
@@ -12,7 +13,7 @@ import { userStoryViewerItemId } from '@/components/story-viewer-content';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
-import { createMapPin, createMapPinComment, deleteMapPin, getMapPinComments, getNearbyPins, reportMapPin, setMapPinRelation, type MapComment, type MapPin, type MapVisibility } from '@/lib/map-api';
+import { createMapPin, createMapPinComment, deleteMapPin, discoveryEmbedUrl, getMapPinComments, getNearbyDiscoveryItems, getNearbyPins, reportMapPin, setMapPinRelation, type DiscoveryItem, type MapComment, type MapPin, type MapVisibility } from '@/lib/map-api';
 import { getNearbyStories, setUserBlocked, type Story } from '@/lib/social-api';
 import CurrentEventsHome from '@/components/current-events-home';
 
@@ -27,6 +28,7 @@ export default function MapScreen() {
   const [region, setRegion] = useState<SocialMapRegion | null>(null);
   const [pins, setPins] = useState<MapPin[]>([]);
   const [stories, setStories] = useState<Story[]>([]);
+  const [mapDiscoveryItems, setMapDiscoveryItems] = useState<DiscoveryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -38,12 +40,13 @@ export default function MapScreen() {
   const [discoveryCoordinate, setDiscoveryCoordinate] = useState<Coordinate | null>(null);
   const [discoveryPins, setDiscoveryPins] = useState<MapPin[] | null>(null);
   const [discoveryStories, setDiscoveryStories] = useState<Story[] | null>(null);
+  const [areaDiscoveryItems, setAreaDiscoveryItems] = useState<DiscoveryItem[] | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [storyOpen, setStoryOpen] = useState<Story | null>(null);
   const [currentEventsMode, setCurrentEventsMode] = useState(false);
   const [currentEventRooms, setCurrentEventRooms] = useState<CurrentEventRoom[]>([]);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[] }>());
+  const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[] }>());
 
   useEffect(() => {
     setVisibility(settings.locationAudience === 'public' ? 'friends' : settings.locationAudience);
@@ -62,18 +65,21 @@ export default function MapScreen() {
     if (!force && cached && Date.now() - cached.loadedAt < 60_000) {
       setPins(cached.pins);
       setStories(cached.stories);
+      setMapDiscoveryItems(cached.discoveryItems);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const [pinPage, storyPage] = await Promise.all([
+      const [pinPage, storyPage, discoveryPage] = await Promise.all([
         getNearbyPins(session.authToken, nextRegion.latitude, nextRegion.longitude, radiusKm),
         getNearbyStories(session.authToken, nextRegion.latitude, nextRegion.longitude, radiusKm, 30),
+        getNearbyDiscoveryItems(session.authToken, nextRegion.latitude, nextRegion.longitude, radiusKm),
       ]);
       setPins(pinPage.items);
       setStories(storyPage.items);
-      regionCache.current.set(cacheKey, { loadedAt: Date.now(), pins: pinPage.items, stories: storyPage.items });
+      setMapDiscoveryItems(discoveryPage.items);
+      regionCache.current.set(cacheKey, { loadedAt: Date.now(), pins: pinPage.items, stories: storyPage.items, discoveryItems: discoveryPage.items });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Could not load this area.');
     } finally {
@@ -86,15 +92,18 @@ export default function MapScreen() {
     setDiscoveryCoordinate(coordinate);
     setDiscoveryLoading(true);
     try {
-      const [pinPage, storyPage] = await Promise.all([
+      const [pinPage, storyPage, discoveryPage] = await Promise.all([
         getNearbyPins(session.authToken, coordinate.latitude, coordinate.longitude, 5),
         getNearbyStories(session.authToken, coordinate.latitude, coordinate.longitude, 5, 20),
+        getNearbyDiscoveryItems(session.authToken, coordinate.latitude, coordinate.longitude, 5),
       ]);
       setDiscoveryPins(pinPage.items);
       setDiscoveryStories(storyPage.items);
+      setAreaDiscoveryItems(discoveryPage.items);
     } catch {
       setDiscoveryPins([]);
       setDiscoveryStories([]);
+      setAreaDiscoveryItems([]);
     } finally {
       setDiscoveryLoading(false);
     }
@@ -105,6 +114,7 @@ export default function MapScreen() {
     setDiscoveryCoordinate(null);
     setDiscoveryPins(null);
     setDiscoveryStories(null);
+    setAreaDiscoveryItems(null);
   }
 
   async function refreshLocation() {
@@ -128,6 +138,7 @@ export default function MapScreen() {
       setDiscoveryCoordinate(null);
       setDiscoveryPins(null);
       setDiscoveryStories(null);
+      setAreaDiscoveryItems(null);
       await loadRegion(nextRegion, true);
     } catch {
       Alert.alert('Location unavailable', 'Old Time could not read your current location. Try again outdoors or check device location services.');
@@ -149,6 +160,13 @@ export default function MapScreen() {
   async function openInMaps(pin: Coordinate) {
     const url = `https://maps.google.com/?q=${pin.latitude},${pin.longitude}`;
     if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+  }
+
+  async function openDiscoveryItem(item: DiscoveryItem) {
+    await WebBrowser.openBrowserAsync(discoveryEmbedUrl(item.id), {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      controlsColor: colors.primary,
+    });
   }
 
   async function publishPin() {
@@ -208,6 +226,7 @@ export default function MapScreen() {
           region={region}
           pins={pins}
           stories={stories}
+          discoveryItems={mapDiscoveryItems}
           currentEventRooms={currentEventRooms}
           selectedPinId={selectedPin?.id ?? null}
           loading={loading}
@@ -225,6 +244,7 @@ export default function MapScreen() {
           }}
           onSelectPin={selectPin}
           onSelectStory={(story) => setStoryOpen(story)}
+          onSelectDiscoveryItem={(item) => void openDiscoveryItem(item)}
           onSelectCurrentEventRoom={(room) => router.push({ pathname: '/current-event/[id]', params: { id: String(room.id), returnTo: 'map' } })}
           onAreaPress={(coordinate) => {
             setSelectedPin(null);
@@ -238,15 +258,18 @@ export default function MapScreen() {
           <DiscoveryPanel
             pins={discoveryPins ?? []}
             stories={discoveryStories ?? []}
+            discoveryItems={areaDiscoveryItems ?? []}
             loading={discoveryLoading}
             colors={colors}
             onClose={() => {
               setDiscoveryCoordinate(null);
               setDiscoveryPins(null);
               setDiscoveryStories(null);
+              setAreaDiscoveryItems(null);
             }}
             onSelectPin={selectPin}
             onSelectStory={(story) => setStoryOpen(story)}
+            onSelectDiscoveryItem={(item) => void openDiscoveryItem(item)}
           />
         ) : null}
         {selectedPin ? <View style={styles.selectedPinPanel}><PinCard pin={selectedPin} own={selectedPin.authorId === session?.id} colors={colors} onOpen={() => void openInMaps(selectedPin)} onComment={() => setCommentPin(selectedPin)} onChanged={(pin) => { setSelectedPin(pin); setPins((all) => all.map((current) => current.id === pin.id ? pin : current)); }} onDelete={() => { setPins((all) => all.filter((pin) => pin.id !== selectedPin.id)); setSelectedPin(null); }} token={session?.authToken ?? ''} /></View> : null}
@@ -279,7 +302,7 @@ function timeAgo(timestamp: number) {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function DiscoveryPanel({ pins, stories, loading, colors, onClose, onSelectPin, onSelectStory }: { pins: MapPin[]; stories: Story[]; loading: boolean; colors: any; onClose: () => void; onSelectPin: (pin: MapPin) => void; onSelectStory: (story: Story) => void }) {
+function DiscoveryPanel({ pins, stories, discoveryItems, loading, colors, onClose, onSelectPin, onSelectStory, onSelectDiscoveryItem }: { pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[]; loading: boolean; colors: any; onClose: () => void; onSelectPin: (pin: MapPin) => void; onSelectStory: (story: Story) => void; onSelectDiscoveryItem: (item: DiscoveryItem) => void }) {
   const recentPins = [...pins].sort((left, right) => right.createdAt - left.createdAt);
   const popularPins = [...pins].filter((pin) => pin.counts.reactions + pin.counts.comments + pin.counts.saves > 0).sort((left, right) => (right.counts.reactions + right.counts.comments + right.counts.saves) - (left.counts.reactions + left.counts.comments + left.counts.saves));
   const people = new Set([...pins.map((pin) => pin.author.id), ...stories.map((story) => story.author.id)]).size;
@@ -288,11 +311,16 @@ function DiscoveryPanel({ pins, stories, loading, colors, onClose, onSelectPin, 
       <View style={styles.discoveryHeader}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.discoveryTitle, { color: colors.foreground }]}>What’s happening here?</Text>
-          <Text style={[styles.discoveryMeta, { color: colors.mutedForeground }]}>{loading ? 'Looking nearby' : `${stories.length} Stories · ${recentPins.length} locations · ${people} people`}</Text>
+          <Text style={[styles.discoveryMeta, { color: colors.mutedForeground }]}>{loading ? 'Looking nearby' : `${discoveryItems.length} trending · ${stories.length} Stories · ${recentPins.length} locations`}</Text>
         </View>
         {loading ? <ActivityIndicator color={colors.primary} /> : <Pressable accessibilityLabel="Close location discovery" onPress={onClose} hitSlop={10}><Ionicons name="close" size={20} color={colors.mutedForeground} /></Pressable>}
       </View>
-      {!loading && stories.length === 0 && recentPins.length === 0 ? <Text style={[styles.discoveryEmpty, { color: colors.mutedForeground }]}>Nothing posted here yet.</Text> : null}
+      {!loading && discoveryItems.length === 0 && stories.length === 0 && recentPins.length === 0 ? <Text style={[styles.discoveryEmpty, { color: colors.mutedForeground }]}>Nothing posted here yet.</Text> : null}
+      {!loading && discoveryItems.slice(0, 2).map((item) => <Pressable key={`discovery-${item.id}`} onPress={() => onSelectDiscoveryItem(item)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
+        <View style={styles.discoveryFlame}><Ionicons name="flame" size={16} color="#fff" /></View>
+        <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{item.title}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{item.creator.handle || item.creator.name} · {item.platform === 'x' ? 'X' : item.platform[0].toUpperCase() + item.platform.slice(1)}</Text></View>
+        <Ionicons name="play" size={15} color={colors.primary} />
+      </Pressable>)}
       {!loading && stories.slice(0, 2).map((story) => <Pressable key={`story-${story.id}`} onPress={() => onSelectStory(story)} style={[styles.discoveryItem, { borderTopColor: colors.border }]}>
         <Avatar name={story.author.name} size={28} color={colors.primary} />
         <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.discoveryItemTitle, { color: colors.foreground }]}>{story.author.name}</Text><Text numberOfLines={1} style={[styles.discoveryItemText, { color: colors.mutedForeground }]}>{story.content || 'Active Story'} · {timeAgo(story.createdAt)}</Text></View>
@@ -378,6 +406,7 @@ const styles = StyleSheet.create({
   mapPromptTitle: { fontSize: 18, fontWeight: '900' }, mapPromptText: { fontSize: 12, marginVertical: 5 },
    selectedPin: { position: 'absolute', left: 14, right: 14, bottom: 14, minHeight: 68, borderRadius: 24, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
    discoveryPanel: { position: 'absolute', left: 12, right: 12, bottom: 12, borderRadius: 22, borderWidth: 1, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, shadowColor: '#000', shadowOpacity: .12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  discoveryFlame: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F97316' },
    discoveryHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
    discoveryTitle: { fontSize: 15, fontWeight: '900' },
    discoveryMeta: { fontSize: 11, marginTop: 3 },

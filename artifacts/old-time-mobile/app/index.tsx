@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
-import { completeBirthday } from '@/lib/social-api';
+import { completeBirthday, updateUserProfile } from '@/lib/social-api';
 import { FirebaseAuthPanel } from '@/components/firebase-auth-panel';
 
 function formatBirthday(value: string) {
@@ -34,6 +34,11 @@ export default function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [birthday, setBirthday] = useState('');
   const [birthdayChallenge, setBirthdayChallenge] = useState<BirthdayRequiredResponse | null>(null);
+  const [creatingAccount, setCreatingAccount] = useState(false);
+  const [pendingProfile, setPendingProfile] = useState<{ name: string; username: string } | null>(null);
+  const [profileSetupUser, setProfileSetupUser] = useState<AuthenticatedUser | null>(null);
+  const [setupName, setSetupName] = useState('');
+  const [setupUsername, setSetupUsername] = useState('');
   const [showWelcome, setShowWelcome] = useState(true);
   const [reduceMotion, setReduceMotion] = useState(false);
   const introProgress = useRef(new Animated.Value(0)).current;
@@ -108,14 +113,22 @@ export default function AuthScreen() {
     return null;
   }
 
-  function handleVerifiedUser(user: AuthenticatedUser | BirthdayRequiredResponse) {
+  function handleVerifiedUser(user: AuthenticatedUser | BirthdayRequiredResponse, newProfile?: { name: string; username: string }) {
+    if (newProfile) {
+      setPendingProfile(newProfile);
+      setSetupName(newProfile.name);
+      setSetupUsername(newProfile.username);
+    }
     if ('requiresBirthday' in user) {
       setBirthday('');
       setBirthdayChallenge(user);
       return;
     }
+    if (newProfile) {
+      setProfileSetupUser(user);
+      return;
+    }
     setSession(user);
-    router.replace('/(tabs)');
   }
 
   async function saveBirthday() {
@@ -129,10 +142,31 @@ export default function AuthScreen() {
     try {
       const updated = await completeBirthday(birthdayUser.challengeId, isoBirthday);
       setBirthdayChallenge(null);
-      setSession(updated);
-      router.replace('/(tabs)');
+      if (pendingProfile) {
+        setProfileSetupUser(updated);
+      } else {
+        setSession(updated);
+      }
     } catch (error) {
       Alert.alert('Birthday not saved', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function finishProfileSetup() {
+    if (!profileSetupUser) return;
+    const name = setupName.trim();
+    const username = setupUsername.trim().toLowerCase().replace(/^@/, '');
+    if (!name || !/^[a-z0-9_]{3,24}$/.test(username)) return;
+    setBusy(true);
+    try {
+      const updated = await updateUserProfile(profileSetupUser.authToken, profileSetupUser.id, { name, username });
+      setPendingProfile(null);
+      setProfileSetupUser(null);
+      setSession({ ...profileSetupUser, ...updated });
+    } catch (error) {
+      Alert.alert('Choose another username', error instanceof Error ? error.message : 'Please try another username.');
     } finally {
       setBusy(false);
     }
@@ -223,7 +257,22 @@ export default function AuthScreen() {
         <Text style={styles.tagline}>Private conversations. Real connections.</Text>
       </LinearGradient>
       <View style={[styles.form, { paddingBottom: insets.bottom + 24 }]}>
-        {birthdayUser ? <>
+        {profileSetupUser ? <>
+          <Text style={[styles.kicker, { color: colors.mutedForeground }]}>MAKE IT YOURS</Text>
+          <Text style={[styles.heading, { color: colors.foreground }]}>Choose how people find you.</Text>
+          <Text style={[styles.birthdayHint, { color: colors.mutedForeground }]}>You can change these later in Settings.</Text>
+          <Text style={[styles.label, { color: colors.foreground }]}>Name</Text>
+          <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Ionicons name="person-outline" size={19} color={colors.primary} />
+            <TextInput testID="input-setup-name" value={setupName} onChangeText={setSetupName} placeholder="Your name" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} maxLength={80} />
+          </View>
+          <Text style={[styles.label, styles.setupLabel, { color: colors.foreground }]}>Username</Text>
+          <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Text style={{ color: colors.primary, fontSize: 18, fontWeight: '800' }}>@</Text>
+            <TextInput testID="input-setup-username" value={setupUsername} onChangeText={(value) => setSetupUsername(value.toLowerCase().replace(/[^a-z0-9_@]/g, ''))} autoCapitalize="none" autoCorrect={false} placeholder="username" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} maxLength={25} />
+          </View>
+          <Pressable testID="button-finish-profile" disabled={busy || !setupName.trim() || !/^[a-z0-9_]{3,24}$/.test(setupUsername.replace(/^@/, ''))} onPress={() => void finishProfileSetup()} style={({ pressed }) => [styles.continueButton, { backgroundColor: colors.launchButton, opacity: busy || !setupName.trim() || !/^[a-z0-9_]{3,24}$/.test(setupUsername.replace(/^@/, '')) ? 0.45 : pressed ? 0.75 : 1 }]}><Text style={styles.continueText}>{busy ? 'Creating your account...' : 'Join Old Time'}</Text><Ionicons name="arrow-forward" size={18} color="#fff" /></Pressable>
+        </> : birthdayUser ? <>
           <Text style={[styles.kicker, { color: colors.mutedForeground }]}>ONE LAST STEP</Text>
           <Text style={[styles.heading, { color: colors.foreground }]}>Add your birthday.</Text>
           <Text style={[styles.birthdayHint, { color: colors.mutedForeground }]}>Your birthday helps keep your account age-appropriate. It stays private and is never shown on your profile.</Text>
@@ -234,9 +283,9 @@ export default function AuthScreen() {
           </View>
           <Pressable testID="button-save-birthday" disabled={busy || !birthdayToIso(birthday)} onPress={() => void saveBirthday()} style={({ pressed }) => [styles.continueButton, { backgroundColor: colors.launchButton, opacity: busy || !birthdayToIso(birthday) ? 0.45 : pressed ? 0.75 : 1 }]}><Text style={styles.continueText}>{busy ? 'Saving...' : 'Continue'}</Text><Ionicons name="arrow-forward" size={18} color="#fff" /></Pressable>
         </> : <>
-          <Text style={[styles.kicker, { color: colors.mutedForeground }]}>WELCOME BACK</Text>
-          <Text style={[styles.heading, { color: colors.foreground }]}>Sign in to chat.</Text>
-          <FirebaseAuthPanel onAuthenticated={handleVerifiedUser} />
+          <Text style={[styles.kicker, { color: colors.mutedForeground }]}>{creatingAccount ? 'HELLO, WELCOME' : 'GOOD TO SEE YOU'}</Text>
+          <Text style={[styles.heading, { color: colors.foreground }]}>{creatingAccount ? 'Create your Old Time.' : 'Sign in and pick up where you left off.'}</Text>
+          <FirebaseAuthPanel onAuthenticated={handleVerifiedUser} onModeChange={setCreatingAccount} />
         </>}
       </View>
     </KeyboardAvoidingView>
@@ -279,6 +328,7 @@ const styles = StyleSheet.create({
   heading: { fontSize: 29, fontWeight: '800', letterSpacing: -0.8, marginTop: 8, marginBottom: 28 },
   birthdayHint: { fontSize: 14, lineHeight: 20, marginTop: -14, marginBottom: 26 },
   label: { fontSize: 14, fontWeight: '700', marginBottom: 8 },
+  setupLabel: { marginTop: 18 },
   inputWrap: { borderWidth: 1, borderRadius: 10, minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
   input: { flex: 1, fontSize: 16 },
   continueButton: { minHeight: 54, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 22 },

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
+import * as WebBrowser from 'expo-web-browser';
 import {
   ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
   FlatList, Dimensions, Platform, Share, PanResponder
@@ -17,6 +18,7 @@ import { useApp, type StatusItem, type UpdatePost } from '@/context/app-state';
 import { INTEREST_OPTIONS, INTEREST_ROOTS, rankForYou, type InterestNode } from '@/lib/for-you';
 import { useColors } from '@/hooks/useColors';
 import { apiBaseUrl } from '@/lib/api-base-url';
+import { discoveryEmbedUrl, getDiscoveryFeed, type DiscoveryItem } from '@/lib/map-api';
 import { VideoSurface } from '@/components/video-surface';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
@@ -122,6 +124,7 @@ export default function UpdatesScreen() {
     fit?: 'contain' | 'cover';
   } | null>(null);
   const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
+  const [discoveryItems, setDiscoveryItems] = useState<DiscoveryItem[]>([]);
   const [socialStories, setSocialStories] = useState<Story[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [socialLoading, setSocialLoading] = useState(true);
@@ -156,14 +159,18 @@ export default function UpdatesScreen() {
       .then((notePage) => setNotes(notePage.items))
       .catch(() => undefined);
     try {
-      const [feed, storyPage, card, notificationPage, exclusions] = await Promise.all([
+      const [feed, storyPage, card, notificationPage, exclusions, discoveryPage] = await Promise.all([
         getSocialFeed(session.authToken, mode, null, filter, interests, mode !== 'community'),
         getStories(session.authToken),
         getUserCard(session.authToken, session.id),
         getSocialNotifications(session.authToken),
         getSharingExclusions(session.authToken),
+        mode === 'for-you'
+          ? getDiscoveryFeed(session.authToken).catch(() => ({ items: [] as DiscoveryItem[] }))
+          : Promise.resolve({ items: [] as DiscoveryItem[] }),
       ]);
       setSocialPosts(feed.items);
+      setDiscoveryItems(mode === 'for-you' ? discoveryPage.items : []);
       setCommunityCursor(mode === 'community' ? feed.nextCursor : null);
       setSocialStories(storyPage.items);
       setOwnCard(card);
@@ -317,6 +324,17 @@ export default function UpdatesScreen() {
     () => socialPosts.filter((post) => post.media?.some((media) => media.type === 'image' || media.type === 'video')),
     [socialPosts],
   );
+  const creatorGridItems = useMemo(
+    () => blendCreatorDiscovery(creatorPosts, discoveryItems),
+    [creatorPosts, discoveryItems],
+  );
+
+  async function openDiscoveryItem(item: DiscoveryItem) {
+    await WebBrowser.openBrowserAsync(discoveryEmbedUrl(item.id), {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      controlsColor: colors.primary,
+    });
+  }
 
   function hidePost(post: UpdatePost) {
     persistHiddenPost(post.id);
@@ -424,7 +442,7 @@ export default function UpdatesScreen() {
            />
           ) : <FlatList
            testID="landing-grid"
-            data={tab === 'interests' ? [] : creatorPosts}
+             data={tab === 'interests' ? [] : creatorGridItems}
            numColumns={3}
             keyExtractor={item => String(item.id)}
            columnWrapperStyle={{ gap: 2 }}
@@ -471,20 +489,39 @@ export default function UpdatesScreen() {
 
               {tab === 'interests' && <InterestPanel interests={interests} onToggle={toggleInterest} languages={settings.feedLanguages} onToggleLanguage={chooseFeedLanguage} onBack={() => setTab('for-you')} colors={colors} />}
 
-              {tab !== 'interests' && creatorPosts.length === 0 && (
+               {tab !== 'interests' && creatorGridItems.length === 0 && (
                 <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '600' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
               )}
            </>}
            renderItem={({ item, index }) => (
-              <Pressable testID={`grid-item-${item.id}`} onPress={() => { setFeedIndex(index); setViewMode('creator-feed'); }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: colors.card, justifyContent: 'flex-end', padding: 8 }}>
-                {item.media?.[0] ? (
+               <Pressable testID={`grid-item-${'platform' in item ? `discovery-${item.id}` : 'starterAction' in item ? `starter-${item.id}` : item.id}`} onPress={() => {
+                 if ('platform' in item) {
+                   void openDiscoveryItem(item);
+                   return;
+                 }
+                 if ('starterAction' in item) {
+                   if (item.starterAction === 'map') router.push('/(tabs)/map');
+                   else if (item.starterAction === 'story') setCompose('status');
+                   else if (item.starterAction === 'interests') setTab('interests');
+                   else openCommunity();
+                   return;
+                 }
+                 const nativeIndex = creatorPosts.findIndex((post) => post.id === item.id);
+                 setFeedIndex(Math.max(0, nativeIndex));
+                 setViewMode('creator-feed');
+               }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: colors.card, justifyContent: 'flex-end', padding: 8 }}>
+                 {'platform' in item ? (
+                   <DiscoveryGridCard item={item} />
+                 ) : 'starterAction' in item ? (
+                   <StarterGridCard item={item} />
+                 ) : item.media?.[0] ? (
                   <Image source={{ uri: socialMediaUrl(item.media[0].objectPath) }} style={StyleSheet.absoluteFill} contentFit="cover" />
                 ) : null}
-               <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.15)' }]} />
-               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                   <Ionicons name={item.media?.[0]?.type === 'video' ? 'play' : 'image-outline'} size={12} color="#fff" />
-                   <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{item.counts.likes}</Text>
-               </View>
+                {'platform' in item || 'starterAction' in item ? null : <><View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.15)' }]} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Ionicons name={item.media?.[0]?.type === 'video' ? 'play' : 'image-outline'} size={12} color="#fff" />
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{item.counts.likes}</Text>
+                  </View></>}
              </Pressable>
            )}
           />}
@@ -833,6 +870,86 @@ export default function UpdatesScreen() {
       </Modal>
 
     </View>
+  );
+}
+
+type StarterCard = {
+  id: string;
+  starterAction: 'map' | 'story' | 'interests' | 'community';
+  eyebrow: string;
+  title: string;
+  detail: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  colors: readonly [string, string];
+};
+
+const FOR_YOU_STARTERS: StarterCard[] = [
+  { id: 'whats-happening', starterAction: 'map', eyebrow: 'NEAR YOU', title: 'See what’s happening', detail: 'Explore Stories, live rooms, and trending moments on the Map.', icon: 'map', colors: ['#172554', '#2563EB'] },
+  { id: 'create-story', starterAction: 'story', eyebrow: 'YOUR MOMENT', title: 'Share your first Story', detail: 'Post a photo or video that disappears after 24 hours.', icon: 'camera', colors: ['#4C1D95', '#C026D3'] },
+  { id: 'choose-interests', starterAction: 'interests', eyebrow: 'FOR YOU', title: 'Choose what you enjoy', detail: 'Pick topics so Old Time can personalize your feed.', icon: 'sparkles', colors: ['#7C2D12', '#F97316'] },
+  { id: 'open-community', starterAction: 'community', eyebrow: 'COMMUNITY', title: 'Join the conversation', detail: 'Find posts from friends, people you follow, and shared interests.', icon: 'people', colors: ['#064E3B', '#10B981'] },
+];
+
+type CreatorGridItem = SocialPost | DiscoveryItem | StarterCard;
+
+function blendCreatorDiscovery(nativePosts: SocialPost[], externalItems: DiscoveryItem[]): CreatorGridItem[] {
+  if (!externalItems.length) return nativePosts.length ? nativePosts : FOR_YOU_STARTERS;
+  if (!nativePosts.length) return externalItems;
+  const externalBudget = nativePosts.length >= 12
+    ? Math.max(1, Math.ceil(externalItems.length * 0.35))
+    : externalItems.length;
+  const available = externalItems.slice(0, externalBudget);
+  const blended: CreatorGridItem[] = [];
+  let externalIndex = 0;
+  nativePosts.forEach((post, index) => {
+    blended.push(post);
+    if ((index + 1) % 3 === 0 && externalIndex < available.length) {
+      blended.push(available[externalIndex]);
+      externalIndex += 1;
+    }
+  });
+  while (externalIndex < available.length) {
+    blended.push(available[externalIndex]);
+    externalIndex += 1;
+  }
+  return blended;
+}
+
+function StarterGridCard({ item }: { item: StarterCard }) {
+  return (
+    <LinearGradient colors={[...item.colors]} style={StyleSheet.absoluteFill}>
+      <View style={{ flex: 1, padding: 10, justifyContent: 'space-between' }}>
+        <View style={{ width: 31, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.16)' }}>
+          <Ionicons name={item.icon} size={17} color="#fff" />
+        </View>
+        <View>
+          <Text style={{ color: 'rgba(255,255,255,.72)', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 }}>{item.eyebrow}</Text>
+          <Text numberOfLines={3} style={{ color: '#fff', fontSize: 14, lineHeight: 17, fontWeight: '900', marginTop: 4 }}>{item.title}</Text>
+          <Text numberOfLines={3} style={{ color: 'rgba(255,255,255,.72)', fontSize: 10, lineHeight: 13, marginTop: 5 }}>{item.detail}</Text>
+        </View>
+      </View>
+    </LinearGradient>
+  );
+}
+
+function DiscoveryGridCard({ item }: { item: DiscoveryItem }) {
+  const platformLabel = item.platform === 'x' ? 'X' : item.platform[0].toUpperCase() + item.platform.slice(1);
+  return (
+    <LinearGradient
+      colors={item.platform === 'youtube' ? ['#1f0e12', '#7f1d1d'] : item.platform === 'tiktok' ? ['#071923', '#164e63'] : ['#17122d', '#4c1d95']}
+      style={StyleSheet.absoluteFill}
+    >
+      <View style={{ flex: 1, padding: 10, justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Ionicons name="flame" size={15} color="#FDBA74" />
+          <Text style={{ color: '#FDBA74', fontSize: 10, fontWeight: '900', letterSpacing: 0.6 }}>TRENDING</Text>
+        </View>
+        <View>
+          <Text numberOfLines={3} style={{ color: '#fff', fontSize: 13, lineHeight: 17, fontWeight: '800' }}>{item.title}</Text>
+          <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,.72)', fontSize: 10, marginTop: 5 }}>{item.creator.handle || item.creator.name} · {platformLabel}</Text>
+        </View>
+      </View>
+    </LinearGradient>
   );
 }
 

@@ -9,6 +9,7 @@ export default function SocialMap({
   region,
   pins,
   stories,
+  discoveryItems = [],
   currentEventRooms = [],
   selectedPinId,
   loading,
@@ -17,6 +18,7 @@ export default function SocialMap({
   onCreate,
   onSelectPin,
   onSelectStory,
+  onSelectDiscoveryItem,
   onSelectCurrentEventRoom,
   onAreaPress,
 }: SocialMapProps) {
@@ -60,6 +62,20 @@ export default function SocialMap({
         const positions = [{ right: 100, top: 245 }, { left: 90, top: 120 }, { left: 210, top: 390 }, { right: 45, top: 455 }, { left: 35, top: 330 }];
         return <Pressable key={story.id} onPress={() => onSelectStory(story)} style={[styles.storyMarker, positions[index]]}><StoryAvatar name={story.author.name} size={48} color={colors.primary} viewed={story.viewer.viewed} /></Pressable>;
       })}
+      {discoveryItems.filter((item) => item.latitude !== null && item.longitude !== null).slice(0, 4).map((item, index) => {
+        const positions = [{ left: 58, top: 255 }, { right: 52, top: 305 }, { left: 190, top: 125 }, { right: 130, top: 440 }];
+        return (
+          <Pressable
+            key={`discovery-${item.id}`}
+            onPress={() => onSelectDiscoveryItem?.(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open trending ${item.platform} post`}
+            style={[styles.discoveryMarker, positions[index], { backgroundColor: '#F97316' }]}
+          >
+            <Ionicons name="flame" size={18} color="#fff" />
+          </Pressable>
+        );
+      })}
       {currentEventRooms.filter((room) => room.latitude !== null && room.longitude !== null).slice(0, 5).map((room, index) => {
         const positions = [{ left: 110, top: 205 }, { right: 135, top: 165 }, { left: 220, top: 285 }, { right: 75, top: 390 }, { left: 35, top: 430 }];
         return (
@@ -101,4 +117,5 @@ const styles = StyleSheet.create({
   storyMarker: { position: 'absolute' },
   eventMarker: { position: 'absolute', width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, elevation: 4 },
   eventLiveDot: { position: 'absolute', width: 9, height: 9, borderRadius: 5, backgroundColor: '#EF4444', right: -2, top: -2, borderWidth: 1.5, borderColor: '#fff' },
+  discoveryMarker: { position: 'absolute', width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 6, elevation: 5 },
 });

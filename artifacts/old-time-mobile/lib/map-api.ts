@@ -26,6 +26,24 @@ export type MapPin = {
   viewer: { reacted: boolean; saved: boolean };
 };
 
+export type DiscoveryItem = {
+  id: number;
+  platform: 'youtube' | 'tiktok' | 'x';
+  url: string;
+  embedHtml: string;
+  title: string;
+  creator: { name: string; handle: string | null };
+  category: string | null;
+  engagement: { views?: number; likes?: number; comments?: number; shares?: number };
+  latitude: number | null;
+  longitude: number | null;
+  locationLabel: string | null;
+  publishedAt: number | null;
+  discoveredAt: number;
+  distanceKm: number | null;
+  score: number;
+};
+
 function baseUrl() {
   return apiBaseUrl();
 }
@@ -53,6 +71,24 @@ export function getNearbyPins(token: string, latitude: number, longitude: number
   return request<{ items: MapPin[] }>(
     token,
     `/api/map/pins/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=${encodeURIComponent(radiusKm)}`,
+  );
+}
+
+export function getNearbyDiscoveryItems(token: string, latitude: number, longitude: number, radiusKm = 10) {
+  return request<{ items: DiscoveryItem[]; usedGlobalFallback: boolean }>(
+    token,
+    `/api/discovery/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=${encodeURIComponent(radiusKm)}`,
+  );
+}
+
+export function discoveryEmbedUrl(itemId: number) {
+  return `${baseUrl()}/api/discovery/items/${itemId}/embed`;
+}
+
+export function getDiscoveryFeed(token: string, limit = 12) {
+  return request<{ items: DiscoveryItem[] }>(
+    token,
+    `/api/discovery/feed?limit=${encodeURIComponent(limit)}`,
   );
 }
 
