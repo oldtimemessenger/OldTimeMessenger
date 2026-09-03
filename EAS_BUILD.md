@@ -15,13 +15,12 @@ Point Expo / EAS at the branch you actually build from (currently the repo defau
    ```
 3. Save. Every GitHub-triggered build will now run from that subdirectory, so EAS can find `eas.json` and `app.json`.
 
-## Local / Expo Dev build command
+## Build trigger
 
-```sh
-cd artifacts/old-time-mobile
-npx eas-cli build --profile development --platform ios
-```
+Use Replit’s Expo Launch / Publish flow for builds. Select the mobile
+artifact, choose the iOS platform, and select the `preview` profile for an
+internal build or `production` for an App Store build.
 
-**Do not run `eas build` from the monorepo root.** `eas.json` and `app.json` live
-only in `artifacts/old-time-mobile/`, so running EAS from any other directory will
-fail to find them.
+**Do not start a build from the monorepo root.** `eas.json` and `app.json` live
+only in `artifacts/old-time-mobile/`; the configured base directory must remain
+`artifacts/old-time-mobile/`.

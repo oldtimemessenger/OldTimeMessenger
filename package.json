@@ -9,10 +9,6 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
-  "devDependencies": {
-    "prettier": "^3.9.6",
-    "typescript": "~5.9.3"
-  },
   "pnpm": {
     "overrides": {
       "brace-expansion@>=5.0.6": "5.0.5",
@@ -26,6 +22,10 @@
       "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0",
       "esbuild": "0.27.3"
     }
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6",
+    "typescript": "~5.9.3"
   },
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.3",
