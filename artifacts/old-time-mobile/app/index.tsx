@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Redirect } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, Animated, Easing, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { type AuthenticatedUser, type BirthdayRequiredResponse } from '@workspace/api-client-react';
@@ -29,7 +29,6 @@ function birthdayToIso(value: string): string | null {
 export default function AuthScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { session, setSession } = useApp();
   const [busy, setBusy] = useState(false);
   const [birthday, setBirthday] = useState('');
@@ -44,11 +43,6 @@ export default function AuthScreen() {
   const introProgress = useRef(new Animated.Value(0)).current;
   const ambientProgress = useRef(new Animated.Value(0)).current;
   const authProgress = useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    if (!session) return;
-    router.replace('/(tabs)');
-  }, [router, session]);
 
   useEffect(() => {
     let mounted = true;
@@ -108,9 +102,7 @@ export default function AuthScreen() {
 
   const birthdayUser = birthdayChallenge;
 
-  if (session && !birthdayUser) {
-    return null;
-  }
+  if (session && !birthdayUser) return <Redirect href="/(tabs)" />;
 
   function handleVerifiedUser(user: AuthenticatedUser | BirthdayRequiredResponse, newProfile?: { name: string; username: string }) {
     if (newProfile) {
