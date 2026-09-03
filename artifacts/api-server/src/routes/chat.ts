@@ -388,11 +388,18 @@ router.post("/auth/firebase", async (req, res): Promise<void> => {
       return;
     }
 
-    await syncFirebaseProfile({
-      uid: identity.uid,
-      email,
-      name: typeof identity.name === "string" ? identity.name : undefined,
-    });
+    try {
+      await syncFirebaseProfile({
+        uid: identity.uid,
+        email,
+        name: typeof identity.name === "string" ? identity.name : undefined,
+      });
+    } catch (error) {
+      req.log.warn(
+        { err: error },
+        "Supabase profile synchronization deferred during Firebase sign-in",
+      );
+    }
     const timestamp = now();
     let [user] = await db
       .select()
