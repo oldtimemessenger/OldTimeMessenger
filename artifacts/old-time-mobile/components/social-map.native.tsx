@@ -89,16 +89,6 @@ function buildHeatPoints(
   return clusters.slice(0, 70);
 }
 
-const mapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#E7EEF4' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#486074' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#F7FAFC' }] },
-  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#DCE9E2' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#FFFFFF' }] },
-  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#F8FAFC' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#BBD8EB' }] },
-];
-
 export default function SocialMap({
   center,
   region,
@@ -176,7 +166,8 @@ export default function SocialMap({
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         region={region as Region}
-        customMapStyle={mapStyle}
+        mapType="standard"
+        showsPointsOfInterest
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass
