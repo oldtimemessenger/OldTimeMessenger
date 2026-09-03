@@ -43,7 +43,6 @@ export default function AuthScreen() {
   const [reduceMotion, setReduceMotion] = useState(false);
   const introProgress = useRef(new Animated.Value(0)).current;
   const ambientProgress = useRef(new Animated.Value(0)).current;
-  const exitProgress = useRef(new Animated.Value(0)).current;
   const authProgress = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
@@ -173,18 +172,7 @@ export default function AuthScreen() {
   }
 
   function startApp() {
-    if (reduceMotion) {
-      setShowWelcome(false);
-      return;
-    }
-    Animated.timing(exitProgress, {
-      toValue: 1,
-      duration: 340,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: Platform.OS !== 'web',
-    }).start(({ finished }) => {
-      if (finished) setShowWelcome(false);
-    });
+    setShowWelcome(false);
   }
 
   if (showWelcome && !birthdayUser) {
@@ -194,8 +182,6 @@ export default function AuthScreen() {
     const copyOpacity = introProgress.interpolate({ inputRange: [0, 0.42, 1], outputRange: [0, 0, 1] });
     const buttonTranslateY = introProgress.interpolate({ inputRange: [0, 1], outputRange: [28, 0] });
     const buttonOpacity = introProgress.interpolate({ inputRange: [0, 0.62, 1], outputRange: [0, 0, 1] });
-    const exitOpacity = exitProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
-    const exitScale = exitProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.97] });
     const blueDrift = ambientProgress.interpolate({ inputRange: [0, 1], outputRange: [-18, 22] });
     const orangeDrift = ambientProgress.interpolate({ inputRange: [0, 1], outputRange: [18, -16] });
     const ringRotate = ambientProgress.interpolate({ inputRange: [0, 1], outputRange: ['-7deg', '7deg'] });
@@ -205,7 +191,7 @@ export default function AuthScreen() {
 
     return (
       <View style={[styles.launchRoot, { backgroundColor: colors.launchNavy }]}>
-        <Animated.View style={[styles.launchAnimated, { opacity: exitOpacity, transform: [{ scale: exitScale }] }]}>
+        <Animated.View style={styles.launchAnimated}>
           <LinearGradient
             colors={[colors.launchSky, colors.launchPurple, colors.launchNavy]}
             locations={[0, 0.48, 1]}
