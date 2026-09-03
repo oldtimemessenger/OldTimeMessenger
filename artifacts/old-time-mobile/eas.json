@@ -23,6 +23,7 @@
       "pnpm": "10.26.1",
       "distribution": "store",
       "node": "20.18.0",
+      "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
       }
