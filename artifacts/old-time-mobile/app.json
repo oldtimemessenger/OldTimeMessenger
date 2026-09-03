@@ -11,6 +11,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
+      "image": "./assets/images/old-time-native-splash.png",
+      "resizeMode": "cover",
       "backgroundColor": "#6F20B4"
     },
     "ios": {
