@@ -141,6 +141,13 @@ export default function CameraScreen() {
     }
   }
 
+  function zoomLabel(value: number) {
+    if (value >= 0.82) return '5×';
+    if (value >= 0.45) return '3×';
+    if (value >= 0.14) return '2×';
+    return '1×';
+  }
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -161,7 +168,11 @@ export default function CameraScreen() {
         holdTimer.current = null;
         if (isRecordingRef.current) {
           stopRecording();
-        } else if (Math.abs(gestureState.dx) < 12 && Math.abs(gestureState.dy) < 12) {
+        } else if (
+          cameraMode === 'photo' &&
+          Math.abs(gestureState.dx) < 12 &&
+          Math.abs(gestureState.dy) < 12
+        ) {
           void takePicture();
         }
       },
@@ -330,11 +341,22 @@ export default function CameraScreen() {
           />
         )}
 
+        <View pointerEvents="none" style={styles.identityOverlay}>
+          <View style={styles.frameCornerTopLeft} />
+          <View style={styles.frameCornerTopRight} />
+          <View style={styles.frameCornerBottomLeft} />
+          <View style={styles.frameCornerBottomRight} />
+        </View>
+
         {/* Top Bar */}
         <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}>
           <Pressable onPress={() => router.back()} testID="close-button" style={{ padding: 8 }}>
             <Ionicons name="close" size={28} color="#fff" />
           </Pressable>
+          <View style={styles.identityLockup}>
+            <Text style={styles.identityName}>OLD TIME</Text>
+            <Text style={styles.identitySubtitle}>CAPTURE WHAT STAYS</Text>
+          </View>
           {!isWeb && (
             <View style={styles.topActions}>
               {isRecording && (
@@ -360,6 +382,7 @@ export default function CameraScreen() {
         {/* Zoom Rail */}
         {!isWeb && (
           <View style={styles.zoomRail}>
+            <Text style={styles.zoomCurrent}>{zoomLabel(zoom)}</Text>
             {ZOOM_STOPS.map((stop) => (
               <Pressable key={stop.label} onPress={() => setZoom(stop.value)} style={{ paddingVertical: 8, paddingHorizontal: 4 }}>
                 <Text style={[styles.zoomText, Math.abs(zoom - stop.value) < 0.1 && styles.zoomActive]}>
@@ -396,6 +419,11 @@ export default function CameraScreen() {
               </Pressable>
             ))}
           </View>
+          {cameraMode !== 'text' && !isWeb ? (
+            <Text style={styles.captureHint}>
+              Tap to capture · hold to record · drag up/down to zoom
+            </Text>
+          ) : null}
           <View style={styles.captureRow}>
             <Pressable onPress={openGallery} style={styles.gallery} testID="gallery-button">
               {shots[0] ? (
@@ -410,7 +438,14 @@ export default function CameraScreen() {
                 <View style={styles.shutter}><Ionicons name="arrow-up" size={32} color="#000" /></View>
               </Pressable>
             ) : (
-              <View {...panResponder.panHandlers} testID="shutter-button" style={styles.shutterContainer}>
+              <View
+                {...panResponder.panHandlers}
+                testID="shutter-button"
+                accessibilityRole="button"
+                accessibilityLabel={cameraMode === 'video' ? 'Hold to record video' : 'Tap to capture photo'}
+                accessibilityHint="Hold and drag up to zoom in, or down to zoom out"
+                style={styles.shutterContainer}
+              >
                 <View style={styles.shutter}>
                   <Animated.View style={[
                     styles.shutterInner,
@@ -434,6 +469,11 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   viewfinder: { flex: 1, position: 'relative', backgroundColor: '#000' },
   cameraView: { ...StyleSheet.absoluteFillObject },
+  identityOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 2 },
+  frameCornerTopLeft: { position: 'absolute', top: '19%', left: 18, width: 26, height: 26, borderTopWidth: 2, borderLeftWidth: 2, borderColor: 'rgba(255,255,255,0.72)', borderTopLeftRadius: 6 },
+  frameCornerTopRight: { position: 'absolute', top: '19%', right: 18, width: 26, height: 26, borderTopWidth: 2, borderRightWidth: 2, borderColor: 'rgba(255,255,255,0.72)', borderTopRightRadius: 6 },
+  frameCornerBottomLeft: { position: 'absolute', bottom: '25%', left: 18, width: 26, height: 26, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: 'rgba(255,255,255,0.72)', borderBottomLeftRadius: 6 },
+  frameCornerBottomRight: { position: 'absolute', bottom: '25%', right: 18, width: 26, height: 26, borderBottomWidth: 2, borderRightWidth: 2, borderColor: 'rgba(255,255,255,0.72)', borderBottomRightRadius: 6 },
   previewImage: { flex: 1, resizeMode: 'contain', width: '100%', height: '100%', backgroundColor: '#000' },
   webGallery: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111116' },
   webGalleryButton: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.28)' },
@@ -443,6 +483,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 16, zIndex: 10
   },
+  identityLockup: { alignItems: 'center', gap: 2 },
+  identityName: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 3 },
+  identitySubtitle: { color: '#F5B74A', fontSize: 8, fontWeight: '800', letterSpacing: 1.4 },
   topActions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
   autoFlashText: { position: 'absolute', bottom: -2, right: 4, color: '#FFD54A', fontSize: 10, fontWeight: '600' },
 
@@ -450,7 +493,8 @@ const styles = StyleSheet.create({
   recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#F0537A' },
   recordingText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
-  zoomRail: { position: 'absolute', right: 16, top: '40%', gap: 12, alignItems: 'center', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.3)', paddingVertical: 12, borderRadius: 24 },
+  zoomRail: { position: 'absolute', right: 16, top: '36%', gap: 8, alignItems: 'center', zIndex: 10, backgroundColor: 'rgba(8,11,18,0.6)', paddingVertical: 11, paddingHorizontal: 6, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  zoomCurrent: { color: '#F5B74A', fontSize: 11, fontWeight: '900', marginBottom: 2 },
   zoomText: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '500' },
   zoomActive: { color: '#FFD54A', fontWeight: '600', fontSize: 15 },
   textModePanel: { position: 'absolute', left: 22, right: 22, top: '24%', backgroundColor: 'rgba(0,0,0,0.42)', borderRadius: 18, padding: 18 },
@@ -458,19 +502,20 @@ const styles = StyleSheet.create({
   textModeInput: { minHeight: 130, color: '#fff', fontSize: 25, lineHeight: 31, textAlignVertical: 'top' },
   textModeHint: { color: 'rgba(255,255,255,0.68)', fontSize: 12, lineHeight: 17, marginTop: 8 },
 
-  bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 18, paddingHorizontal: 0, backgroundColor: 'rgba(0,0,0,0.28)' },
-  modeRow: { gap: 30, paddingHorizontal: 30, paddingBottom: 24 },
+  bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 18, paddingHorizontal: 0, backgroundColor: 'rgba(8,11,18,0.68)' },
+  modeRow: { gap: 30, paddingHorizontal: 30, paddingBottom: 10 },
   mode: { color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: '600', letterSpacing: 0.5 },
   modeActive: { color: '#FFD54A' },
+  captureHint: { color: 'rgba(255,255,255,0.68)', textAlign: 'center', fontSize: 11, letterSpacing: 0.15, marginBottom: 11 },
 
   captureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 40, paddingBottom: 20 },
   gallery: { width: 52, height: 52, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.1)' },
   thumb: { ...StyleSheet.absoluteFillObject, resizeMode: 'cover' },
 
   shutterContainer: { padding: 10 },
-  shutter: { width: 86, height: 86, borderRadius: 43, borderWidth: 5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  shutter: { width: 86, height: 86, borderRadius: 43, borderWidth: 5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(245,183,74,0.18)' },
   shutterInner: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff' },
-  recordingInner: { width: 32, height: 32, borderRadius: 8 },
+  recordingInner: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#F05B68' },
 
   flip: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
 
