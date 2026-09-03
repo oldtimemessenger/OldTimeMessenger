@@ -87,6 +87,11 @@ export type AuthenticatedUser = User & {
   authToken: string;
 };
 
+export interface FirebaseSignInBody {
+  /** @minLength 100 */
+  idToken: string;
+}
+
 export type AttachmentType = typeof AttachmentType[keyof typeof AttachmentType];
 
 
@@ -1075,6 +1080,11 @@ export interface CurrentEventWallet {
   coins: number;
   gold: number;
   pendingGold: number;
+}
+
+export interface CurrentEventWalletSyncResult {
+  creditedCoins: number;
+  wallet: CurrentEventWallet;
 }
 
 export type ViewerIdParameter = number;

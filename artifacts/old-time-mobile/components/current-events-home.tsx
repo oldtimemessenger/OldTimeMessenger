@@ -65,6 +65,7 @@ export default function CurrentEventsHome({
   const [isOpen, setIsOpen] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const loadRooms = useCallback(async () => {
     setLoading(true);
@@ -111,9 +112,12 @@ export default function CurrentEventsHome({
         <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to Map" style={styles.headerButton}>
           <Ionicons name="arrow-back" size={23} color={colors.foreground} />
         </Pressable>
-        <Text style={[typography.navigationTitle, { color: colors.foreground, fontSize: 21 }]}>Current Events</Text>
-        <Pressable accessibilityLabel="Current Events notifications" style={styles.headerButton}>
+        <View pointerEvents="none" style={styles.headerTitleSlot}>
+          <Text style={[typography.navigationTitle, styles.headerTitle, { color: colors.foreground }]}>Current Events</Text>
+        </View>
+        <Pressable onPress={() => setNotificationsOpen(true)} accessibilityRole="button" accessibilityLabel="Open Current Events notifications" style={styles.headerButton}>
           <Ionicons name="notifications-outline" size={22} color={colors.foreground} />
+          {rooms.length > 0 ? <View style={styles.notificationDot} /> : null}
         </Pressable>
       </View>
 
@@ -189,6 +193,51 @@ export default function CurrentEventsHome({
         <Text style={styles.hostButtonText}>host a room</Text>
       </Pressable>
 
+      <Modal visible={notificationsOpen} transparent animationType="slide" onRequestClose={() => setNotificationsOpen(false)}>
+        <View style={styles.modalShade}>
+          <View style={[styles.notificationsSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.notificationsHeader, { borderBottomColor: colors.border }]}>
+              <View>
+                <Text style={[styles.notificationsEyebrow, { color: colors.mutedForeground }]}>CURRENT EVENTS</Text>
+                <Text style={[styles.notificationsTitle, { color: colors.foreground }]}>Notifications</Text>
+              </View>
+              <Pressable onPress={() => setNotificationsOpen(false)} accessibilityRole="button" accessibilityLabel="Close notifications" style={[styles.closeButton, { backgroundColor: colors.muted }]}>
+                <Ionicons name="close" size={22} color={colors.foreground} />
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notificationsList}>
+              {rooms.length === 0 ? (
+                <View style={styles.notificationsEmpty}>
+                  <Ionicons name="notifications-off-outline" size={34} color={colors.mutedForeground} />
+                  <Text style={[styles.emptyTitle, { color: colors.foreground }]}>You’re all caught up</Text>
+                  <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Live room updates will appear here.</Text>
+                </View>
+              ) : rooms.map((room) => (
+                <Pressable
+                  key={room.id}
+                  onPress={() => {
+                    setNotificationsOpen(false);
+                    onOpenRoom(room);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open notification for ${room.title}`}
+                  style={[styles.notificationRow, { borderBottomColor: colors.border }]}
+                >
+                  <View style={styles.notificationIcon}>
+                    <Ionicons name="radio-outline" size={20} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.notificationCopy}>
+                    <Text style={[styles.notificationRoomTitle, { color: colors.foreground }]} numberOfLines={2}>{room.title}</Text>
+                    <Text style={[styles.notificationRoomMeta, { color: colors.mutedForeground }]}>{room.clubName} is live now · {room.counts.listeners} listening</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={hostOpen} transparent animationType="slide" onRequestClose={() => setHostOpen(false)}>
         <View style={styles.modalShade}>
           <View style={[styles.hostSheet, { backgroundColor: colors.card }]}>
@@ -233,8 +282,11 @@ export default function CurrentEventsHome({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { minHeight: 60, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
+  header: { height: 60, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
   headerButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  headerTitleSlot: { position: 'absolute', left: 58, right: 58, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 21, textAlign: 'center' },
+  notificationDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F46A3D', borderWidth: 1.5, borderColor: '#FFFFFF' },
   topicRail: { gap: 8, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
   topicChip: { borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 8 },
   topicText: { fontSize: 13, fontWeight: '500' },
@@ -258,6 +310,18 @@ const styles = StyleSheet.create({
   hostButton: { position: 'absolute', bottom: 22, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 48, borderRadius: 25, paddingHorizontal: 20 },
   hostButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   modalShade: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
+  notificationsSheet: { maxHeight: '72%', minHeight: 330, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
+  notificationsHeader: { minHeight: 78, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
+  notificationsEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 1.1 },
+  notificationsTitle: { fontSize: 24, lineHeight: 30, fontWeight: '700', marginTop: 2 },
+  closeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  notificationsList: { paddingHorizontal: 18, paddingBottom: 28 },
+  notificationsEmpty: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 54 },
+  notificationRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  notificationIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3559C7' },
+  notificationCopy: { flex: 1 },
+  notificationRoomTitle: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  notificationRoomMeta: { fontSize: 12, lineHeight: 17, marginTop: 3 },
   hostSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 30 },
   grabber: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   sheetTitle: { fontSize: 22, lineHeight: 28, fontWeight: '600' },

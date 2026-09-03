@@ -17,6 +17,8 @@ import { z } from "zod/v4";
 export const usersTable = pgTable("chat_users", {
   id: serial("id").primaryKey(),
   phone: text("phone").notNull().unique(),
+  firebaseUid: text("firebase_uid").unique(),
+  email: text("email"),
   name: text("name").notNull(),
   username: text("username").notNull().unique(),
   bio: text("bio").notNull().default(""),

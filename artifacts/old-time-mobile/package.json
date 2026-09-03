@@ -59,12 +59,15 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "expo-auth-session": "~7.0.11",
     "expo-camera": "~17.0.10",
     "expo-contacts": "~14.0.5",
     "expo-dev-client": "~6.0.21",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.24",
     "expo-video": "~3.0.16",
-    "react-native-maps": "1.18.0"
+    "firebase": "^12.18.0",
+    "react-native-maps": "1.18.0",
+    "react-native-purchases": "^10.8.1"
   }
 }

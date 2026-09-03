@@ -89,3 +89,19 @@ export const currentEventGiftsTable = pgTable(
     roomCreatedIndex: index("current_event_gifts_room_created_idx").on(table.roomId, table.createdAt),
   }),
 );
+
+export const currentEventCoinPurchasesTable = pgTable(
+  "current_event_coin_purchases",
+  {
+    purchaseId: text("purchase_id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    productId: text("product_id").notNull(),
+    storeIdentifier: text("store_identifier").notNull(),
+    coins: integer("coins").notNull(),
+    purchasedAt: pgBigint("purchased_at", { mode: "number" }).notNull(),
+    creditedAt: pgBigint("credited_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    userPurchasedIndex: index("current_event_coin_purchases_user_purchased_idx").on(table.userId, table.purchasedAt),
+  }),
+);

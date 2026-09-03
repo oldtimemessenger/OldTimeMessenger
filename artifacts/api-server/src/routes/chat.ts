@@ -10,6 +10,8 @@ import {
   CreateMessageResponse,
   CompleteBirthdayBody,
   CompleteBirthdayResponse,
+  FirebaseSignInBody,
+  FirebaseSignInResponse,
   GetDirectChatParams,
   GetDirectChatResponse,
   GetInboxParams,
@@ -70,6 +72,8 @@ import {
   MAX_UPLOAD_BYTES,
 } from "../lib/chat-storage";
 import { isValidBirthday, meetsMinimumAge } from "../lib/age-gate";
+import { verifyFirebaseIdToken } from "../lib/firebase-auth";
+import { syncFirebaseProfile } from "../lib/supabase-profiles";
 
 const router: IRouter = Router();
 
@@ -92,7 +96,7 @@ function parseUser(user: ChatUser, viewerId = user.id) {
   const revealPresence = viewerId === user.id || user.lastSeenVisible;
   return {
     id: user.id,
-    phone: user.phone,
+    phone: user.phone.startsWith("firebase:") ? "" : user.phone,
     name: user.name,
     username: user.username,
     bio: user.bio,
@@ -366,6 +370,88 @@ router.post("/auth/request-otp", async (req, res): Promise<void> => {
   } catch (error) {
     req.log.error({ err: error }, "Unable to send phone verification");
     res.status(503).json({ error: "Phone verification is temporarily unavailable." });
+  }
+});
+
+router.post("/auth/firebase", async (req, res): Promise<void> => {
+  const parsed = FirebaseSignInBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "A valid Firebase ID token is required." });
+    return;
+  }
+
+  try {
+    const identity = await verifyFirebaseIdToken(parsed.data.idToken);
+    const email = identity.email?.trim().toLowerCase();
+    if (!email) {
+      res.status(400).json({ error: "Sign in with an account that has an email address." });
+      return;
+    }
+
+    await syncFirebaseProfile({ uid: identity.uid, email });
+    const timestamp = now();
+    let [user] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.firebaseUid, identity.uid))
+      .limit(1);
+
+    if (!user) {
+      const internalPhone = `firebase:${identity.uid}`;
+      const emailName = email.split("@")[0]?.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+      const [created] = await db
+        .insert(usersTable)
+        .values({
+          phone: internalPhone,
+          firebaseUid: identity.uid,
+          email,
+          name: typeof identity.name === "string" && identity.name.trim()
+            ? identity.name.trim().slice(0, 80)
+            : emailName?.slice(0, 80) || "Old Time User",
+          username: defaultUsernameForPhone(internalPhone),
+          online: false,
+          lastSeen: timestamp,
+        })
+        .returning();
+      user = created;
+    } else if (user.email !== email) {
+      const [updated] = await db
+        .update(usersTable)
+        .set({ email })
+        .where(eq(usersTable.id, user.id))
+        .returning();
+      user = updated;
+    }
+
+    if (!user.birthday) {
+      const challengeId = randomUUID();
+      await db.insert(authChallengesTable).values({
+        id: challengeId,
+        phone: user.phone,
+        codeHash: null,
+        requestIpHash: privacyHash(req.ip || req.socket.remoteAddress || "unknown"),
+        status: "birthday_pending",
+        createdAt: timestamp,
+        expiresAt: timestamp + 30 * 60 * 1000,
+      });
+      res.json(FirebaseSignInResponse.parse({ requiresBirthday: true, challengeId }));
+      return;
+    }
+    if (!meetsMinimumAge(user.birthday)) {
+      res.status(403).json({ error: "Old Time is for people age 13 and older." });
+      return;
+    }
+
+    const [activeUser] = await db
+      .update(usersTable)
+      .set({ online: true, lastSeen: timestamp })
+      .where(eq(usersTable.id, user.id))
+      .returning();
+    const authToken = await createAuthToken(activeUser.id);
+    res.json(FirebaseSignInResponse.parse({ ...parseUser(activeUser), authToken }));
+  } catch (error) {
+    req.log.error({ err: error }, "Firebase sign-in failed");
+    res.status(503).json({ error: "Firebase sign-in is temporarily unavailable." });
   }
 });
 

@@ -8,3 +8,7 @@
 - [Updates and Community separation](updates-feed-separation.md) — Updates is media-only; text and mixed social posts belong in Community and profiles.
 - [Private navigation boundaries](private-navigation-boundaries.md) — Story viewing stays modal/standalone; Updates Map actions use the visible Map tab, never hidden tab routes.
 - [Story text positioning](story-text-positioning.md) — persist Story text placement as a normalized canvas offset so it scales across devices.
+- [Supabase schema staging](supabase-schema-staging.md) — stage Old Time tables in an isolated schema before any database cutover.
+- [Firebase profile sync boundary](firebase-profile-sync-boundary.md) — verify Firebase tokens and write Supabase profiles only through the API.
+- [RevenueCat coin crediting](revenuecat-coin-crediting.md) — reconcile provider purchases server-side and ledger each purchase before changing wallet balances.
+- [Customer-facing product copy](customer-facing-product-copy.md) — Old Time UI must describe outcomes in plain language, never expose implementation terminology.

@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, gt, inArray, sql } from "drizzle-orm";
 import { z } from "@workspace/api-zod";
 import {
   currentEventGiftsTable,
+  currentEventCoinPurchasesTable,
   currentEventMessagesTable,
   currentEventParticipantsTable,
   currentEventRoomsTable,
@@ -11,6 +12,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
+import { getVerifiedCoinPurchases } from "../lib/revenuecat";
 
 const router: IRouter = Router();
 
@@ -491,6 +493,36 @@ router.get("/current-events/wallet", async (req, res): Promise<void> => {
   await ensureWallet(viewerId);
   const [wallet] = await db.select().from(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, viewerId));
   res.json({ coins: wallet?.coins ?? 0, gold: wallet?.gold ?? 0, pendingGold: wallet?.pendingGold ?? 0 });
+});
+
+router.post("/current-events/wallet/sync-purchases", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  try {
+    const purchases = await getVerifiedCoinPurchases(viewerId);
+    const creditedCoins = await db.transaction(async (tx) => {
+      await tx.insert(currentEventWalletsTable).values({ userId: viewerId, updatedAt: Date.now() }).onConflictDoNothing();
+      let total = 0;
+      for (const purchase of purchases) {
+        const inserted = await tx.insert(currentEventCoinPurchasesTable)
+          .values({ ...purchase, userId: viewerId, creditedAt: Date.now() })
+          .onConflictDoNothing()
+          .returning({ purchaseId: currentEventCoinPurchasesTable.purchaseId });
+        if (inserted.length) total += purchase.coins;
+      }
+      if (total > 0) {
+        await tx.update(currentEventWalletsTable)
+          .set({ coins: sql`${currentEventWalletsTable.coins} + ${total}`, updatedAt: Date.now() })
+          .where(eq(currentEventWalletsTable.userId, viewerId));
+      }
+      return total;
+    });
+    const [wallet] = await db.select().from(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, viewerId));
+    res.json({ creditedCoins, wallet: { coins: wallet.coins, gold: wallet.gold, pendingGold: wallet.pendingGold } });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "RevenueCat wallet synchronization failed");
+    res.status(503).json({ error: "Purchases could not be verified right now. Your purchase is safe; try restoring it shortly." });
+  }
 });
 
 export default router;

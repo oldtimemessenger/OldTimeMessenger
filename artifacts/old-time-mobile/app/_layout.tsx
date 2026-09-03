@@ -13,6 +13,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { useApp } from '@/context/app-state';
 import { setPresence } from '@/lib/social-api';
 import { apiBaseUrl } from '@/lib/api-base-url';
+import { RevenueCatProvider } from '@/lib/revenuecat';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -81,14 +82,16 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AppProvider>
-          <PresenceHeartbeat />
-          <ErrorBoundary>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              <KeyboardProvider>
-                <RootLayoutNav />
-              </KeyboardProvider>
-            </GestureHandlerRootView>
-          </ErrorBoundary>
+          <RevenueCatProvider>
+            <PresenceHeartbeat />
+            <ErrorBoundary>
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <KeyboardProvider>
+                  <RootLayoutNav />
+                </KeyboardProvider>
+              </GestureHandlerRootView>
+            </ErrorBoundary>
+          </RevenueCatProvider>
         </AppProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

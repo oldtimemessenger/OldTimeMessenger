@@ -46,6 +46,36 @@ export const RequestOtpResponse = zod.object({
 
 
 /**
+ * @summary Exchange a verified Firebase identity for an Old Time session
+ */
+export const firebaseSignInBodyIdTokenMin = 100;
+
+
+
+export const FirebaseSignInBody = zod.object({
+  "idToken": zod.string().min(firebaseSignInBodyIdTokenMin)
+})
+
+export const FirebaseSignInResponse = zod.union([zod.object({
+  "id": zod.number(),
+  "phone": zod.string(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "bio": zod.string(),
+  "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
+  "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
+  "online": zod.boolean(),
+  "lastSeen": zod.number(),
+  "lastSeenVisible": zod.boolean()
+}).and(zod.object({
+  "authToken": zod.string()
+})),zod.object({
+  "requiresBirthday": zod.boolean(),
+  "challengeId": zod.string()
+})])
+
+
+/**
  * @summary Verify a phone code and create a session
  */
 export const verifyOtpBodyPhoneMin = 7;
@@ -2959,6 +2989,19 @@ export const GetCurrentEventWalletResponse = zod.object({
   "coins": zod.number(),
   "gold": zod.number(),
   "pendingGold": zod.number()
+})
+
+
+/**
+ * @summary Verify RevenueCat purchases and credit new coin packs
+ */
+export const SyncCurrentEventWalletPurchasesResponse = zod.object({
+  "creditedCoins": zod.number(),
+  "wallet": zod.object({
+  "coins": zod.number(),
+  "gold": zod.number(),
+  "pendingGold": zod.number()
+})
 })
 
 

@@ -40,8 +40,10 @@ import type {
   CurrentEventRoomInput,
   CurrentEventRoomList,
   CurrentEventWallet,
+  CurrentEventWalletSyncResult,
   DirectChat,
   ErrorResponse,
+  FirebaseSignInBody,
   FollowActionResult,
   GetCurrentEventRoomsParams,
   GetNearbyMapPinsParams,
@@ -362,6 +364,77 @@ export const useRequestOtp = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getRequestOtpMutationOptions(options));
+    }
+
+export const getFirebaseSignInUrl = () => {
+
+
+
+
+  return `/api/auth/firebase`
+}
+
+/**
+ * @summary Exchange a verified Firebase identity for an Old Time session
+ */
+export const firebaseSignIn = async (firebaseSignInBody: FirebaseSignInBody, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser | BirthdayRequiredResponse> => {
+
+  return customFetch<AuthenticatedUser | BirthdayRequiredResponse>(getFirebaseSignInUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(firebaseSignInBody)
+  }
+);}
+
+
+
+
+
+export const getFirebaseSignInMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof firebaseSignIn>>, TError,{data: BodyType<FirebaseSignInBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof firebaseSignIn>>, TError,{data: BodyType<FirebaseSignInBody>}, TContext> => {
+
+const mutationKey = ['firebaseSignIn'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof firebaseSignIn>>, {data: BodyType<FirebaseSignInBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  firebaseSignIn(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FirebaseSignInMutationResult = NonNullable<Awaited<ReturnType<typeof firebaseSignIn>>>
+    export type FirebaseSignInMutationBody = BodyType<FirebaseSignInBody>
+    export type FirebaseSignInMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Exchange a verified Firebase identity for an Old Time session
+ */
+export const useFirebaseSignIn = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof firebaseSignIn>>, TError,{data: BodyType<FirebaseSignInBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof firebaseSignIn>>,
+        TError,
+        {data: BodyType<FirebaseSignInBody>},
+        TContext
+      > => {
+      return useMutation(getFirebaseSignInMutationOptions(options));
     }
 
 export const getVerifyOtpUrl = () => {
@@ -7308,6 +7381,77 @@ export function useGetCurrentEventWallet<TData = Awaited<ReturnType<typeof getCu
 
 
 
+
+export const getSyncCurrentEventWalletPurchasesUrl = () => {
+
+
+
+
+  return `/api/current-events/wallet/sync-purchases`
+}
+
+/**
+ * @summary Verify RevenueCat purchases and credit new coin packs
+ */
+export const syncCurrentEventWalletPurchases = async ( options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventWalletSyncResult> => {
+
+  return customFetch<CurrentEventWalletSyncResult>(getSyncCurrentEventWalletPurchasesUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSyncCurrentEventWalletPurchasesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncCurrentEventWalletPurchases>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncCurrentEventWalletPurchases>>, TError,void, TContext> => {
+
+const mutationKey = ['syncCurrentEventWalletPurchases'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncCurrentEventWalletPurchases>>, void> = () => {
+
+
+          return  syncCurrentEventWalletPurchases(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SyncCurrentEventWalletPurchasesMutationResult = NonNullable<Awaited<ReturnType<typeof syncCurrentEventWalletPurchases>>>
+
+    export type SyncCurrentEventWalletPurchasesMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Verify RevenueCat purchases and credit new coin packs
+ */
+export const useSyncCurrentEventWalletPurchases = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncCurrentEventWalletPurchases>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof syncCurrentEventWalletPurchases>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getSyncCurrentEventWalletPurchasesMutationOptions(options));
+    }
 
 export const getRequestUploadUrlUrl = () => {
 

@@ -19,6 +19,13 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.oldtime.messenger",
       "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0"
+            ]
+          }
+        ],
         "NSMicrophoneUsageDescription": "Old Time uses your microphone for voice notes and calls.",
         "NSCameraUsageDescription": "Old Time uses your camera to share photos, video, and your status.",
         "NSPhotoLibraryUsageDescription": "Old Time uses your photo library to share images in chats.",

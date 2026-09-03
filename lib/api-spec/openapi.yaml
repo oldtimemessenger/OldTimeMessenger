@@ -86,6 +86,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/firebase:
+    post:
+      security: []
+      operationId: firebaseSignIn
+      tags: [auth]
+      summary: Exchange a verified Firebase identity for an Old Time session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FirebaseSignInBody"
+      responses:
+        "200":
+          description: Authenticated user or birthday requirement
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AuthenticatedUser"
+                  - $ref: "#/components/schemas/BirthdayRequiredResponse"
+        "400":
+          description: Invalid Firebase credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Firebase or profile synchronization is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/verify-otp:
     post:
       security: []
@@ -1434,6 +1467,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentEventWallet"
+  /current-events/wallet/sync-purchases:
+    post:
+      operationId: syncCurrentEventWalletPurchases
+      tags: [current-events]
+      summary: Verify RevenueCat purchases and credit new coin packs
+      responses:
+        "200":
+          description: Reconciled wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventWalletSyncResult"
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -1674,6 +1719,13 @@ components:
             authToken:
               type: string
           required: [authToken]
+    FirebaseSignInBody:
+      type: object
+      properties:
+        idToken:
+          type: string
+          minLength: 100
+      required: [idToken]
     Attachment:
       type: object
       properties:
@@ -2472,4 +2524,10 @@ components:
         gold: { type: number }
         pendingGold: { type: number }
       required: [coins, gold, pendingGold]
+    CurrentEventWalletSyncResult:
+      type: object
+      properties:
+        creditedCoins: { type: number }
+        wallet: { $ref: "#/components/schemas/CurrentEventWallet" }
+      required: [creditedCoins, wallet]
 

@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/ui';
 import { useColors } from '@/hooks/useColors';
 import { audioService } from '@/lib/audio-service';
+import { useRevenueCat } from '@/lib/revenuecat';
 
 const gifts = [
   { key: 'coffee' as const, label: 'Coffee', icon: 'cafe-outline' as const, cost: 25 },
@@ -53,9 +54,10 @@ export default function CurrentEventRoomScreen() {
   const [loading, setLoading] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
   const [giftOpen, setGiftOpen] = useState(false);
+  const [storeOpen, setStoreOpen] = useState(false);
+  const revenueCat = useRevenueCat();
   const [message, setMessage] = useState('');
   const [giftRecipientId, setGiftRecipientId] = useState<number | null>(null);
-  const [audioConnected, setAudioConnected] = useState(false);
   const [reactionCount, setReactionCount] = useState(0);
   const [roomUnavailable, setRoomUnavailable] = useState(false);
   const roomEndedRef = useRef(false);
@@ -75,7 +77,6 @@ export default function CurrentEventRoomScreen() {
       setRoom(nextRoom);
       setRoomUnavailable(false);
       const session = await audioService.join(roomId, nextRoom.viewer.role ?? 'listener');
-      setAudioConnected(session.connected);
       if (nextRoom.viewer.participantId !== null) {
         const [messageResult, walletResult] = await Promise.all([
           getCurrentEventMessages(roomId),
@@ -153,7 +154,8 @@ export default function CurrentEventRoomScreen() {
   async function sendGift(gift: (typeof gifts)[number]) {
     if (!room || !activeRecipientId) return;
     if (wallet.coins < gift.cost) {
-      Alert.alert('Not enough coins', `You need ${gift.cost} coins for this gift, but your balance is ${wallet.coins}.`);
+      setGiftOpen(false);
+      setStoreOpen(true);
       return;
     }
     try {
@@ -183,8 +185,8 @@ export default function CurrentEventRoomScreen() {
         <Pressable onPress={leaveRoom} accessibilityLabel="Leave Current Event room" style={styles.headerButton}>
           <Ionicons name="chevron-down" size={25} color={colors.foreground} />
         </Pressable>
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerKicker, { color: colors.mutedForeground }]}>{room.clubName.toUpperCase()}</Text>
+        <View pointerEvents="none" style={styles.headerCenter}>
+          <Text style={[styles.headerKicker, { color: colors.mutedForeground }]}>CURRENT EVENTS</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>{room.title}</Text>
         </View>
         <Pressable onPress={() => setChatOpen(true)} accessibilityLabel="Open room chat" style={styles.headerButton}>
@@ -196,13 +198,13 @@ export default function CurrentEventRoomScreen() {
         <View style={styles.liveRow}>
           <View style={styles.livePill}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
           <Text style={[styles.listenerSummary, { color: colors.mutedForeground }]}>{room.counts.speakers} speakers · {room.counts.listeners} listeners</Text>
-          <Text style={[styles.coinBalance, { color: colors.foreground }]}>◈ {wallet.coins}</Text>
+          <Pressable onPress={() => setStoreOpen(true)}><Text style={[styles.coinBalance, { color: colors.foreground }]}>◈ {wallet.coins}  +</Text></Pressable>
         </View>
 
         {!room.audio.configured ? (
           <View style={[styles.audioNotice, { backgroundColor: colors.muted, borderColor: colors.border }]}>
             <Ionicons name="volume-mute-outline" size={18} color={colors.mutedForeground} />
-            <Text style={[styles.audioNoticeText, { color: colors.mutedForeground }]}>{audioConnected ? 'Audio service preview: provider not connected yet.' : 'Voice audio is not connected yet. A provider can be enabled without changing this room.'}</Text>
+            <Text style={[styles.audioNoticeText, { color: colors.mutedForeground }]}>Live audio is coming soon. You can still join the room chat and support speakers.</Text>
           </View>
         ) : null}
 
@@ -298,6 +300,38 @@ export default function CurrentEventRoomScreen() {
            <Text style={[styles.walletBalance, { color: colors.mutedForeground }]}>Balance ◈ {wallet.coins}</Text>
         </View></View>
       </Modal>
+
+      <Modal visible={storeOpen} transparent animationType="slide" onRequestClose={() => setStoreOpen(false)}>
+        <View style={styles.modalShadeRoot}><View style={styles.modalShade} /><View style={[styles.giftSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20 }]}>
+          <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Get coins</Text><Pressable onPress={() => setStoreOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
+          <Text style={[styles.sheetHint, { color: colors.mutedForeground }]}>Use coins to support speakers. Prices are shown by the App Store.</Text>
+          {revenueCat.loading ? <ActivityIndicator color={colors.primary} /> : revenueCat.packages.map((item) => (
+            <Pressable key={item.identifier} disabled={revenueCat.purchasing} onPress={async () => {
+              try {
+                const credited = await revenueCat.purchase(item);
+                const nextWallet = await getCurrentEventWallet();
+                setWallet(nextWallet);
+                Alert.alert('Coins added', `${credited} coins were added to your wallet.`);
+              } catch (error: any) {
+                if (!error?.userCancelled) Alert.alert('Purchase unavailable', error?.message ?? 'Try again shortly.');
+              }
+            }} style={[styles.packRow, { backgroundColor: colors.muted, opacity: revenueCat.purchasing ? 0.55 : 1 }]}>
+              <View><Text style={[styles.packName, { color: colors.foreground }]}>{item.product.title}</Text><Text style={[styles.packCoins, { color: colors.mutedForeground }]}>{item.product.description || 'Current Events coins'}</Text></View>
+              <Text style={[styles.packName, { color: colors.primary }]}>{item.product.priceString}</Text>
+            </Pressable>
+          ))}
+          {!revenueCat.loading && revenueCat.packages.length === 0 ? <Text style={[styles.sheetHint, { color: colors.mutedForeground }]}>Coin packs are not available from this store yet.</Text> : null}
+          <Pressable disabled={revenueCat.purchasing} onPress={async () => {
+            try {
+              const credited = await revenueCat.restore();
+              setWallet(await getCurrentEventWallet());
+              Alert.alert('Purchases restored', credited ? `${credited} coins were recovered.` : 'Your wallet is already up to date.');
+            } catch (error: any) {
+              Alert.alert('Restore unavailable', error?.message ?? 'Try again shortly.');
+            }
+          }} style={styles.walletLink}><Text style={[styles.walletLinkText, { color: colors.primary }]}>Restore purchases</Text></Pressable>
+        </View></View>
+      </Modal>
     </View>
   );
 }
@@ -334,9 +368,9 @@ const styles = StyleSheet.create({
   endedText: { fontSize: 14, lineHeight: 19, textAlign: 'center', marginTop: 8, maxWidth: 290 },
   endedButton: { minHeight: 48, borderRadius: 24, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', marginTop: 22 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { minHeight: 60, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  header: { height: 64, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerButton: { width: 42, height: 42, justifyContent: 'center', alignItems: 'center' },
-  headerCenter: { flex: 1, paddingHorizontal: 8 },
+  headerCenter: { position: 'absolute', left: 54, right: 54, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
   headerKicker: { fontSize: 10, fontWeight: '600', letterSpacing: 1 },
   headerTitle: { fontSize: 17, fontWeight: '600', marginTop: 3 },
   content: { padding: 16 },

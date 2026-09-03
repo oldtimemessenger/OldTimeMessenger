@@ -21,7 +21,7 @@ import { VideoSurface } from '@/components/video-surface';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
-import { useRequestUploadUrl } from '@workspace/api-client-react';
+import { createChat, listUsers, useRequestUploadUrl, type User } from '@workspace/api-client-react';
 import {
   createStory,
   createNote,
@@ -145,17 +145,20 @@ export default function UpdatesScreen() {
   const [peopleSearchError, setPeopleSearchError] = useState<string | null>(null);
   const [interestPrompt, setInterestPrompt] = useState<{ topic: string; title: string } | null>(null);
   const [noteEditor, setNoteEditor] = useState<Note | 'new' | null>(null);
+  const [showNewMessage, setShowNewMessage] = useState(false);
   const promptedContent = useRef(new Set<string>());
 
   const loadSocial = useCallback(async (mode: 'for-you' | 'following' | 'community' = 'for-you', filter: CommunityFilter = communityFilter) => {
     if (!session?.authToken) return;
     setSocialLoading(true);
     setSocialError(null);
+    void getNotes(session.authToken)
+      .then((notePage) => setNotes(notePage.items))
+      .catch(() => undefined);
     try {
-      const [feed, storyPage, notePage, card, notificationPage, exclusions] = await Promise.all([
+      const [feed, storyPage, card, notificationPage, exclusions] = await Promise.all([
         getSocialFeed(session.authToken, mode, null, filter, interests, mode !== 'community'),
         getStories(session.authToken),
-        getNotes(session.authToken),
         getUserCard(session.authToken, session.id),
         getSocialNotifications(session.authToken),
         getSharingExclusions(session.authToken),
@@ -163,7 +166,6 @@ export default function UpdatesScreen() {
       setSocialPosts(feed.items);
       setCommunityCursor(mode === 'community' ? feed.nextCursor : null);
       setSocialStories(storyPage.items);
-      setNotes(notePage.items);
       setOwnCard(card);
       setNotifications(notificationPage.items);
       updateSettings({ excludedPeople: exclusions.items.map((item) => ({ id: item.id, name: item.name })) });
@@ -719,21 +721,39 @@ export default function UpdatesScreen() {
           notes={notes}
           colors={colors}
           onClose={() => setShowMessagesInbox(false)}
-          onCreateNote={() => setNoteEditor('new')}
-          onEditNote={(note) => setNoteEditor(note)}
+          onCreateNote={() => {
+            setShowMessagesInbox(false);
+            setNoteEditor('new');
+          }}
+          onEditNote={(note) => {
+            setShowMessagesInbox(false);
+            setNoteEditor(note);
+          }}
           onDeleteNote={(note) => {
             if (!session?.authToken) return;
             void deleteNote(session.authToken, note.id).then(() => {
               setNotes((items) => items.filter((item) => item.id !== note.id));
             }).catch((error) => Alert.alert('Could not delete note', error instanceof Error ? error.message : 'Please try again.'));
           }}
-          onOpenMessages={() => {
+          onCreateMessage={() => {
             setShowMessagesInbox(false);
-            router.push('/(tabs)');
+            setShowNewMessage(true);
           }}
           onOpenRequests={() => {
             setShowMessagesInbox(false);
             openMessageRequests();
+          }}
+        />
+      </Modal>
+
+      <Modal visible={showNewMessage} transparent animationType="slide" onRequestClose={() => setShowNewMessage(false)}>
+        <NewMessageSheet
+          viewerId={session?.id ?? 0}
+          colors={colors}
+          onClose={() => setShowNewMessage(false)}
+          onChatReady={(chatId) => {
+            setShowNewMessage(false);
+            router.push(`/chat/${chatId}`);
           }}
         />
       </Modal>
@@ -2073,7 +2093,7 @@ function MessageRequestsSheet({ requests, loading, colors, onClose, onAccept, on
   );
 }
 
-function MessagesInboxSheet({ requestCount, loading, username, displayName, notes, posts, colors, onClose, onOpenMessages, onOpenRequests, onCreateNote, onEditNote, onDeleteNote }: { requestCount: number; loading: boolean; username: string; displayName: string; notes: Note[]; posts: SocialPost[]; colors: any; onClose: () => void; onOpenMessages: () => void; onOpenRequests: () => void; onCreateNote: () => void; onEditNote: (note: Note) => void; onDeleteNote: (note: Note) => void }) {
+function MessagesInboxSheet({ requestCount, loading, username, displayName, notes, posts, colors, onClose, onCreateMessage, onOpenRequests, onCreateNote, onEditNote }: { requestCount: number; loading: boolean; username: string; displayName: string; notes: Note[]; posts: SocialPost[]; colors: any; onClose: () => void; onCreateMessage: () => void; onOpenRequests: () => void; onCreateNote: () => void; onEditNote: (note: Note) => void; onDeleteNote: (note: Note) => void }) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const ownNote = notes.find((note) => note.viewer.isOwner);
@@ -2087,7 +2107,7 @@ function MessagesInboxSheet({ requestCount, loading, username, displayName, note
           <Text style={[styles.messagesInboxUsername, { color: colors.foreground }]}>{username}</Text>
           <View style={styles.messagesInboxHeaderActions}>
             <IconButton name="close" onPress={onClose} size={24} />
-            <IconButton name="create-outline" onPress={onOpenMessages} size={24} />
+            <IconButton name="create-outline" onPress={onCreateMessage} size={24} label="Create a message" />
           </View>
         </View>
         <View style={[styles.messagesSearch, { backgroundColor: colors.muted }]}>
@@ -2102,30 +2122,43 @@ function MessagesInboxSheet({ requestCount, loading, username, displayName, note
           />
         </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesRail}>
-             <Pressable onPress={() => ownNote ? onEditNote(ownNote) : onCreateNote()} style={styles.noteItem} accessibilityRole="button" accessibilityLabel={ownNote ? 'Edit your note' : 'Create a note'}>
-               <View style={[styles.noteBubble, { backgroundColor: ownNote ? colors.primary : colors.muted }]}>
-                 <Text style={[styles.noteBubbleText, { color: ownNote ? '#fff' : colors.foreground }]} numberOfLines={3}>
-                   {ownNote?.content ?? 'Share a note with your friends…'}
-                 </Text>
-               </View>
-              <Avatar name={displayName} size={56} color={colors.primary} />
-              <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>Your note</Text>
-               <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>{ownNote ? (ownNote.expiresAt <= Date.now() ? 'Only you can see this' : 'Visible for 24 hours') : 'Tap to add'}</Text>
-            </Pressable>
-             {sharedNotes.slice(0, 8).map((note) => (
-               <View key={note.id} style={styles.noteItem}>
-                 <View style={[styles.noteBubble, { backgroundColor: colors.muted }]}><Text style={[styles.noteBubbleText, { color: colors.foreground }]} numberOfLines={3}>{note.content}</Text></View>
-                 <Avatar name={note.owner.name} size={56} color={colors.primary} />
-                 <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>{note.owner.name}</Text>
-                 <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>Visible for 24 hours</Text>
-              </View>
-            ))}
-          </ScrollView>
+          <Pressable
+            onPress={() => ownNote ? onEditNote(ownNote) : onCreateNote()}
+            style={[styles.ownNoteCard, { backgroundColor: colors.muted, borderColor: colors.border }]}
+            accessibilityRole="button"
+            accessibilityLabel={ownNote ? 'Edit your note' : 'Create a note'}
+          >
+            <Avatar name={displayName} size={48} color={colors.primary} />
+            <View style={styles.ownNoteCopy}>
+              <Text style={[styles.ownNoteTitle, { color: colors.foreground }]}>{ownNote ? 'Your note' : 'Share a note'}</Text>
+              <Text style={[styles.ownNoteText, { color: colors.mutedForeground }]} numberOfLines={2}>
+                {ownNote?.content ?? 'Let friends know what’s on your mind.'}
+              </Text>
+            </View>
+            <View style={[styles.ownNoteAction, { backgroundColor: colors.card }]}>
+              <Ionicons name={ownNote ? 'pencil' : 'add'} size={17} color={colors.primary} />
+            </View>
+          </Pressable>
+          {sharedNotes.length > 0 ? (
+            <View style={styles.friendNotes}>
+              <Text style={[styles.friendNotesLabel, { color: colors.mutedForeground }]}>FRIENDS’ NOTES</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesRail}>
+                {sharedNotes.slice(0, 8).map((note) => (
+                  <View key={note.id} style={[styles.friendNoteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Avatar name={note.owner.name} size={34} color={colors.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>{note.owner.name}</Text>
+                      <Text style={[styles.friendNoteText, { color: colors.mutedForeground }]} numberOfLines={2}>{note.content}</Text>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
           <View style={styles.messagesTabs}>
-            <Pressable onPress={onOpenMessages} style={styles.messagesTab} accessibilityRole="tab" accessibilityState={{ selected: true }}>
+            <View style={styles.messagesTab} accessibilityRole="tab" accessibilityState={{ selected: true }}>
               <Text style={[styles.messagesTabText, { color: colors.foreground }]}>Messages</Text>
-            </Pressable>
+            </View>
             <Pressable onPress={onOpenRequests} style={styles.messagesTab} accessibilityRole="tab" accessibilityLabel="Requests">
               <Text style={[styles.messagesTabText, { color: colors.mutedForeground }]}>Requests</Text>
               {requestCount > 0 ? <View style={[styles.messagesTabBadge, { backgroundColor: colors.primary }]}><Text style={styles.messagesTabBadgeText}>{requestCount}</Text></View> : null}
@@ -2138,7 +2171,7 @@ function MessagesInboxSheet({ requestCount, loading, username, displayName, note
               <Text style={[styles.messagesEmptyText, { color: colors.mutedForeground }]}>Your conversations will appear here.</Text>
             </View>
           ) : visibleAuthors.slice(0, 12).map((author, index) => (
-            <Pressable key={author.id} onPress={onOpenMessages} style={({ pressed }) => [styles.messageContactRow, { opacity: pressed ? 0.7 : 1 }]} accessibilityRole="button" accessibilityLabel={`Open messages with ${author.name}`}>
+            <Pressable key={author.id} onPress={onCreateMessage} style={({ pressed }) => [styles.messageContactRow, { opacity: pressed ? 0.7 : 1 }]} accessibilityRole="button" accessibilityLabel={`Create a message for ${author.name}`}>
               <Avatar name={author.name} size={58} color={colors.primary} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.messageContactName, { color: colors.foreground }]} numberOfLines={1}>{author.name}</Text>
@@ -2148,6 +2181,81 @@ function MessagesInboxSheet({ requestCount, loading, username, displayName, note
             </Pressable>
           ))}
         </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function NewMessageSheet({ viewerId, colors, onClose, onChatReady }: { viewerId: number; colors: any; onClose: () => void; onChatReady: (chatId: number) => void }) {
+  const insets = useSafeAreaInsets();
+  const [query, setQuery] = useState('');
+  const [people, setPeople] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creatingId, setCreatingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    void listUsers({ viewerId })
+      .then((items) => { if (active) setPeople(items.filter((person) => person.id !== viewerId)); })
+      .catch(() => { if (active) setError('People are unavailable right now.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [viewerId]);
+
+  const visiblePeople = people.filter((person) => `${person.name} ${person.username ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()));
+
+  async function choosePerson(person: User) {
+    if (creatingId !== null) return;
+    setCreatingId(person.id);
+    setError(null);
+    try {
+      const chat = await createChat({ userIds: [viewerId, person.id] });
+      onChatReady(chat.id);
+    } catch {
+      setError(`A message with ${person.name} could not be started.`);
+      setCreatingId(null);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView behavior="padding" style={[styles.messagesInboxOverlay, { backgroundColor: colors.card }]}>
+      <View style={[styles.messagesInboxSheet, { backgroundColor: colors.card, paddingTop: insets.top + 8 }]}>
+        <View style={styles.messagesInboxHeader}>
+          <View>
+            <Text style={[styles.newMessageEyebrow, { color: colors.mutedForeground }]}>NEW CONVERSATION</Text>
+            <Text style={[styles.newMessageTitle, { color: colors.foreground }]}>Create a message</Text>
+          </View>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        <View style={[styles.messagesSearch, { backgroundColor: colors.muted }]}>
+          <Ionicons name="search-outline" size={18} color={colors.mutedForeground} />
+          <TextInput
+            autoFocus
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Who do you want to message?"
+            placeholderTextColor={colors.mutedForeground}
+            style={[styles.messagesSearchInput, { color: colors.foreground }]}
+          />
+        </View>
+        {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> : (
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: 16, paddingBottom: insets.bottom + 24 }}>
+            {error ? <Text style={[styles.newMessageError, { color: colors.destructive }]}>{error}</Text> : null}
+            {visiblePeople.map((person) => (
+              <Pressable key={person.id} onPress={() => void choosePerson(person)} style={[styles.messageContactRow, { borderBottomColor: colors.border }]} disabled={creatingId !== null}>
+                <Avatar name={person.name} size={50} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.messageContactName, { color: colors.foreground }]}>{person.name}</Text>
+                  {person.username ? <Text style={[styles.messageContactPreview, { color: colors.mutedForeground }]}>@{person.username}</Text> : null}
+                </View>
+                {creatingId === person.id ? <ActivityIndicator color={colors.primary} /> : <Ionicons name="arrow-forward-circle-outline" size={24} color={colors.primary} />}
+              </Pressable>
+            ))}
+            {!error && visiblePeople.length === 0 ? <View style={styles.messagesEmpty}><Ionicons name="people-outline" size={28} color={colors.primary} /><Text style={[styles.messagesEmptyTitle, { color: colors.foreground }]}>No one found</Text><Text style={[styles.messagesEmptyText, { color: colors.mutedForeground }]}>Try another name.</Text></View> : null}
+          </ScrollView>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -2559,12 +2667,17 @@ const styles = StyleSheet.create({
   messagesInboxHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   messagesSearch: { minHeight: 45, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, marginTop: 4 },
   messagesSearchInput: { flex: 1, fontSize: 16, paddingVertical: 9 },
-  notesRail: { gap: 12, paddingTop: 22, paddingBottom: 18 },
-  noteItem: { width: 76, alignItems: 'center' },
-  noteBubble: { minHeight: 48, width: 76, borderRadius: 12, paddingHorizontal: 6, paddingVertical: 6, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  noteBubbleText: { fontSize: 10, lineHeight: 12, textAlign: 'center' },
-  noteName: { width: 76, fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: 6 },
-  noteMeta: { width: 76, fontSize: 9, textAlign: 'center', marginTop: 2 },
+  ownNoteCard: { minHeight: 82, borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, marginTop: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  ownNoteCopy: { flex: 1 },
+  ownNoteTitle: { fontSize: 15, fontWeight: '700' },
+  ownNoteText: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  ownNoteAction: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  friendNotes: { paddingTop: 18 },
+  friendNotesLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.1, marginBottom: 9 },
+  notesRail: { gap: 9, paddingBottom: 16 },
+  friendNoteCard: { width: 188, minHeight: 66, borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  noteName: { fontSize: 12, fontWeight: '700' },
+  friendNoteText: { fontSize: 11, lineHeight: 15, marginTop: 2 },
   messagesTabs: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(128,128,128,0.28)' },
   messagesTab: { minHeight: 48, minWidth: 92, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
   messagesTabText: { fontSize: 16, fontWeight: '700' },
@@ -2573,10 +2686,13 @@ const styles = StyleSheet.create({
   messagesEmpty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   messagesEmptyTitle: { fontSize: 17, fontWeight: '700' },
   messagesEmptyText: { fontSize: 13 },
-  messageContactRow: { minHeight: 80, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  messageContactRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   messageContactName: { fontSize: 15, fontWeight: '700' },
   messageContactPreview: { fontSize: 13, marginTop: 4 },
   messageUnreadDot: { width: 9, height: 9, borderRadius: 5, marginRight: 4 },
+  newMessageEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 1.1 },
+  newMessageTitle: { fontSize: 21, fontWeight: '800', letterSpacing: -0.4, marginTop: 1 },
+  newMessageError: { fontSize: 13, textAlign: 'center', paddingVertical: 10 },
   commentsSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, minHeight: WINDOW_HEIGHT * 0.48, maxHeight: WINDOW_HEIGHT * 0.78, padding: 20 },
   sheetTop: { width: '100%', minHeight: 45, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetEyebrow: { fontSize: 10, fontWeight: '600', letterSpacing: 1.4 },

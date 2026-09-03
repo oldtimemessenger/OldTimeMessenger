@@ -246,7 +246,7 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <View style={[styles.localNotice, { backgroundColor: colors.secondary }]}>
                 <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
-                <Text style={[styles.localNoticeText, { color: colors.foreground }]}>These notes are stored on this device. Server-saved chat messages will appear here after the messages service is connected.</Text>
+                <Text style={[styles.localNoticeText, { color: colors.foreground }]}>Keep reminders, recipes, and anything you want close at hand.</Text>
               </View>
               <View style={[styles.saveComposer, { backgroundColor: colors.background }]}>
                 <TextInput
@@ -271,7 +271,7 @@ export default function SettingsScreen() {
                 </View>
               ))}
               {savedMessages.length > 0 ? (
-                <Pressable onPress={() => Alert.alert('Clear saved notes?', 'This only clears notes stored on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear all', style: 'destructive', onPress: () => savedMessages.forEach((message) => removeSavedMessage(message)) }])} style={styles.clearLocalButton} accessibilityRole="button">
+                <Pressable onPress={() => Alert.alert('Clear saved notes?', 'This removes every note in Saved Messages.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear all', style: 'destructive', onPress: () => savedMessages.forEach((message) => removeSavedMessage(message)) }])} style={styles.clearLocalButton} accessibilityRole="button">
                   <Text style={[styles.clearLocalButtonText, { color: colors.destructive }]}>Clear all local notes</Text>
                 </Pressable>
               ) : null}
@@ -420,7 +420,7 @@ export default function SettingsScreen() {
                     {cacheStatus === 'clearing' ? 'Clearing Cache…' : cacheStatus === 'cleared' ? 'Cache Cleared' : 'Clear Cache'}
                   </Text>
                   <Text style={{ fontSize: 13, color: colors.mutedForeground, marginTop: 2 }}>
-                    {cacheStatus === 'error' ? 'Cache could not be cleared. Try again.' : cacheStatus === 'cleared' ? 'Temporary images and API data were removed.' : 'Remove temporary images and cached API data'}
+                    {cacheStatus === 'error' ? 'Cleanup could not finish. Try again.' : cacheStatus === 'cleared' ? 'Temporary images were removed.' : 'Remove temporary images to free up space'}
                   </Text>
                 </View>
                 <Ionicons name={cacheStatus === 'cleared' ? 'checkmark-circle' : 'trash'} size={18} color={cacheStatus === 'cleared' ? '#34C77E' : '#F0537A'} />
@@ -428,12 +428,12 @@ export default function SettingsScreen() {
               <PanelToggleRow label="Automatic media downloads" value={settings.autoDownload} onChange={() => toggle('autoDownload')} />
               <PanelToggleRow label="Wi-Fi only" sub="Only download media automatically on Wi-Fi." value={settings.wifiOnly} onChange={() => toggle('wifiOnly')} isLast />
             </PanelSection>
-            <PanelSection title="Local app data">
-              <Pressable onPress={() => Alert.alert('Clear local app data?', 'This removes local Stories, drafts, calls, saved notes, preferences, and profile data from this device. Your server account is not deleted.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear data', style: 'destructive', onPress: () => { resetLocalData(); setPanel(null); } }])} style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: 'transparent' }]} accessibilityRole="button">
+            <PanelSection title="Your Old Time data">
+              <Pressable onPress={() => Alert.alert('Clear personal app data?', 'This removes Stories, drafts, calls, saved notes, preferences, and profile details from this phone. Your account remains active.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear data', style: 'destructive', onPress: () => { resetLocalData(); setPanel(null); } }])} style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: 'transparent' }]} accessibilityRole="button">
                 <View style={[styles.settingIcon, { backgroundColor: `${colors.destructive}22` }]}><Ionicons name="trash-outline" size={16} color={colors.destructive} /></View>
                 <View style={{ flex: 1, marginLeft: 16 }}>
-                  <Text style={[styles.panelRowLabel, { color: colors.destructive }]}>Clear local app data</Text>
-                  <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>Remove device-only data without deleting your account.</Text>
+                  <Text style={[styles.panelRowLabel, { color: colors.destructive }]}>Clear personal app data</Text>
+                  <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>Start fresh without deleting your account.</Text>
                 </View>
               </Pressable>
             </PanelSection>

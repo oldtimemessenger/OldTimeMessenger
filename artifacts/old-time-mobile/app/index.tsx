@@ -1,20 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRequestOtp, useVerifyOtp, type AuthenticatedUser, type BirthdayRequiredResponse } from '@workspace/api-client-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Alert, Animated, Easing, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { type AuthenticatedUser, type BirthdayRequiredResponse } from '@workspace/api-client-react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { completeBirthday } from '@/lib/social-api';
-
-function formatPhone(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 10);
-  if (digits.length < 4) return digits;
-  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-}
+import { FirebaseAuthPanel } from '@/components/firebase-auth-panel';
 
 function formatBirthday(value: string) {
   const digits = value.replace(/\D/g, '').slice(0, 8);
@@ -32,27 +26,81 @@ function birthdayToIso(value: string): string | null {
   return `${year}-${month}-${day}`;
 }
 
-const TEST_PHONE = '+11234567890';
-const TEST_CODE = '123456';
-
 export default function AuthScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { session, setSession } = useApp();
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
-  const [challengeId, setChallengeId] = useState('');
   const [busy, setBusy] = useState(false);
   const [birthday, setBirthday] = useState('');
   const [birthdayChallenge, setBirthdayChallenge] = useState<BirthdayRequiredResponse | null>(null);
-  const requestOtp = useRequestOtp();
-  const verifyOtp = useVerifyOtp();
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const introProgress = useRef(new Animated.Value(0)).current;
+  const ambientProgress = useRef(new Animated.Value(0)).current;
+  const exitProgress = useRef(new Animated.Value(0)).current;
+  const authProgress = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     if (!session) return;
     router.replace('/(tabs)');
   }, [router, session]);
+
+  useEffect(() => {
+    let mounted = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (mounted) setReduceMotion(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      introProgress.setValue(1);
+      ambientProgress.setValue(0.5);
+      return;
+    }
+    const entrance = Animated.spring(introProgress, {
+      toValue: 1,
+      damping: 16,
+      stiffness: 105,
+      mass: 0.75,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    const ambient = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ambientProgress, { toValue: 1, duration: 4200, easing: Easing.inOut(Easing.ease), useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(ambientProgress, { toValue: 0, duration: 4200, easing: Easing.inOut(Easing.ease), useNativeDriver: Platform.OS !== 'web' }),
+      ]),
+    );
+    entrance.start();
+    ambient.start();
+    return () => {
+      entrance.stop();
+      ambient.stop();
+    };
+  }, [ambientProgress, introProgress, reduceMotion]);
+
+  useEffect(() => {
+    if (showWelcome) return;
+    if (reduceMotion) {
+      authProgress.setValue(1);
+      return;
+    }
+    const entrance = Animated.spring(authProgress, {
+      toValue: 1,
+      damping: 19,
+      stiffness: 120,
+      mass: 0.8,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    entrance.start();
+    return () => entrance.stop();
+  }, [authProgress, reduceMotion, showWelcome]);
 
   const birthdayUser = birthdayChallenge;
 
@@ -68,45 +116,6 @@ export default function AuthScreen() {
     }
     setSession(user);
     router.replace('/(tabs)');
-  }
-
-  async function sendCode() {
-    setBusy(true);
-    try {
-      const result = await requestOtp.mutateAsync({ data: { phone } });
-      setChallengeId(result.challengeId);
-    } catch {
-      Alert.alert('Could not send code', 'Check the number and try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verifyCode() {
-    setBusy(true);
-    try {
-      const user = await verifyOtp.mutateAsync({ data: { phone, otp, challengeId } });
-      handleVerifiedUser(user);
-    } catch (error) {
-      Alert.alert('Sign-in unavailable', error instanceof Error ? error.message : 'That code is not quite right. Try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function useDemoAccess() {
-    setBusy(true);
-    try {
-      const challenge = await requestOtp.mutateAsync({ data: { phone: TEST_PHONE } });
-      const user = await verifyOtp.mutateAsync({
-        data: { phone: TEST_PHONE, otp: TEST_CODE, challengeId: challenge.challengeId },
-      });
-      handleVerifiedUser(user);
-    } catch (error) {
-      Alert.alert('Demo access unavailable', error instanceof Error ? error.message : 'The local API is still starting. Try again in a moment.');
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function saveBirthday() {
@@ -129,58 +138,136 @@ export default function AuthScreen() {
     }
   }
 
-  return <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior="padding">
-    <LinearGradient colors={[colors.launchOrange, colors.launchPurple]} style={[styles.hero, { paddingTop: insets.top + 40 }]}>
-      <View style={styles.orbit} />
-      <Image source={require('../assets/images/old-time-icon.png')} style={styles.logo} />
-      <Text style={styles.brand}>Old Time<Text style={[styles.brandDot, { color: colors.launchOrange }]}>.</Text></Text>
-      <Text style={styles.tagline}>Private conversations. Real connections.</Text>
-    </LinearGradient>
-    <View style={[styles.form, { paddingBottom: insets.bottom + 24 }]}>
-      {birthdayUser ? <>
-        <Text style={[styles.kicker, { color: colors.mutedForeground }]}>ONE LAST STEP</Text>
-        <Text style={[styles.heading, { color: colors.foreground }]}>Add your birthday.</Text>
-        <Text style={[styles.birthdayHint, { color: colors.mutedForeground }]}>Your birthday helps keep your account age-appropriate. It stays private and is never shown on your profile.</Text>
-        <Text style={[styles.label, { color: colors.foreground }]}>Birthday</Text>
-        <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
-          <Ionicons name="calendar-outline" size={19} color={colors.primary} />
-          <TextInput testID="input-birthday" value={birthday} onChangeText={(value) => setBirthday(formatBirthday(value))} keyboardType="number-pad" placeholder="MM/DD/YYYY" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} maxLength={10} />
-        </View>
-        <Pressable testID="button-save-birthday" disabled={busy || !birthdayToIso(birthday)} onPress={() => void saveBirthday()} style={({ pressed }) => [styles.continueButton, { backgroundColor: colors.launchButton, opacity: busy || !birthdayToIso(birthday) ? 0.45 : pressed ? 0.75 : 1 }]}><Text style={styles.continueText}>{busy ? 'Saving...' : 'Continue'}</Text><Ionicons name="arrow-forward" size={18} color="#fff" /></Pressable>
-      </> : <>
-        <Text style={[styles.kicker, { color: colors.mutedForeground }]}>WELCOME BACK</Text>
-        <Text style={[styles.heading, { color: colors.foreground }]}>Sign in to chat.</Text>
-      {!challengeId ? <>
-        <Text style={[styles.label, { color: colors.foreground }]}>Phone number</Text>
-        <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
-          <Ionicons name="call-outline" size={19} color={colors.primary} />
-          <TextInput testID="input-phone" value={phone} onChangeText={(value) => setPhone(formatPhone(value))} keyboardType="phone-pad" placeholder="(555) 014-2024" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} />
-        </View>
-        <Pressable testID="button-request-otp" disabled={busy || phone.replace(/\D/g, '').length < 7} onPress={sendCode} style={({ pressed }) => [styles.continueButton, { backgroundColor: colors.launchButton, opacity: busy || phone.replace(/\D/g, '').length < 7 ? 0.45 : pressed ? 0.75 : 1 }]}><Text style={styles.continueText}>{busy ? 'Sending code...' : 'Continue'}</Text><Ionicons name="arrow-forward" size={18} color="#fff" /></Pressable>
-        {__DEV__ ? <Pressable testID="button-demo-access" onPress={() => void useDemoAccess()} disabled={busy} style={({ pressed }) => [styles.demoAccess, { backgroundColor: colors.secondary, borderColor: colors.brandPurple, opacity: busy ? 0.5 : pressed ? 0.7 : 1 }]}>
-          <Ionicons name="flash-outline" size={16} color={colors.brandPurple} />
-          <View style={styles.demoCopy}>
-            <Text style={[styles.demoTitle, { color: colors.foreground }]}>Use demo access</Text>
-            <Text style={[styles.demoHint, { color: colors.mutedForeground }]}>1234567890 · any 6-digit code</Text>
+  function startApp() {
+    if (reduceMotion) {
+      setShowWelcome(false);
+      return;
+    }
+    Animated.timing(exitProgress, {
+      toValue: 1,
+      duration: 340,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== 'web',
+    }).start(({ finished }) => {
+      if (finished) setShowWelcome(false);
+    });
+  }
+
+  if (showWelcome && !birthdayUser) {
+    const logoTranslateY = introProgress.interpolate({ inputRange: [0, 1], outputRange: [30, 0] });
+    const logoScale = introProgress.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.72, 1.04, 1] });
+    const copyTranslateY = introProgress.interpolate({ inputRange: [0, 1], outputRange: [22, 0] });
+    const copyOpacity = introProgress.interpolate({ inputRange: [0, 0.42, 1], outputRange: [0, 0, 1] });
+    const buttonTranslateY = introProgress.interpolate({ inputRange: [0, 1], outputRange: [28, 0] });
+    const buttonOpacity = introProgress.interpolate({ inputRange: [0, 0.62, 1], outputRange: [0, 0, 1] });
+    const exitOpacity = exitProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+    const exitScale = exitProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.97] });
+    const blueDrift = ambientProgress.interpolate({ inputRange: [0, 1], outputRange: [-18, 22] });
+    const orangeDrift = ambientProgress.interpolate({ inputRange: [0, 1], outputRange: [18, -16] });
+    const ringRotate = ambientProgress.interpolate({ inputRange: [0, 1], outputRange: ['-7deg', '7deg'] });
+    const haloScale = ambientProgress.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.96, 1.04, 0.96] });
+    const haloOpacity = ambientProgress.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.42, 0.8, 0.42] });
+    const buttonScale = ambientProgress.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.99, 1.015, 0.99] });
+
+    return (
+      <View style={[styles.launchRoot, { backgroundColor: colors.launchNavy }]}>
+        <Animated.View style={[styles.launchAnimated, { opacity: exitOpacity, transform: [{ scale: exitScale }] }]}>
+          <LinearGradient
+            colors={[colors.launchSky, colors.launchPurple, colors.launchNavy]}
+            locations={[0, 0.48, 1]}
+            style={styles.launchGradient}
+          >
+            <Animated.View style={[styles.launchGlow, styles.launchGlowBlue, { backgroundColor: colors.brandBlue, transform: [{ translateX: blueDrift }] }]} />
+            <Animated.View style={[styles.launchGlow, styles.launchGlowOrange, { backgroundColor: colors.brandOrange, transform: [{ translateX: orangeDrift }] }]} />
+            <Animated.View style={[styles.launchRing, { borderColor: 'rgba(255,255,255,0.13)', transform: [{ rotate: ringRotate }] }]} />
+            <View style={[styles.launchSafeArea, { paddingTop: insets.top + 18, paddingBottom: insets.bottom + 22 }]}>
+              <View style={styles.launchCenter}>
+                <Animated.View style={{ opacity: introProgress, transform: [{ translateY: logoTranslateY }, { scale: logoScale }] }}>
+                  <Animated.View style={[styles.logoPulse, { opacity: haloOpacity, transform: [{ scale: haloScale }], borderColor: 'rgba(255,255,255,0.25)' }]} />
+                  <View style={styles.logoHalo}>
+                    <View style={styles.logoHaloInner}>
+                      <Image source={require('../assets/images/old-time-icon.png')} style={styles.launchLogo} />
+                    </View>
+                  </View>
+                </Animated.View>
+                <Animated.View style={[styles.launchCopy, { opacity: copyOpacity, transform: [{ translateY: copyTranslateY }] }]}>
+                  <Text style={styles.launchBrand}>Old Time<Text style={[styles.launchBrandDot, { color: colors.brandOrange }]}>.</Text></Text>
+                  <Text style={styles.launchTagline}>Private conversations. Real connections.</Text>
+                  <Text style={styles.launchSubline}>A calmer way to stay close.</Text>
+                </Animated.View>
+              </View>
+
+              <Animated.View style={[styles.launchAction, { opacity: buttonOpacity, transform: [{ translateY: buttonTranslateY }] }]}>
+                <Pressable onPress={startApp} accessibilityRole="button" accessibilityLabel="Get started" style={({ pressed }) => [styles.getStartedButton, { backgroundColor: colors.launchButton, transform: [{ scale: pressed ? 0.98 : buttonScale }] }]}>
+                  <Text style={styles.getStartedText}>Get started</Text>
+                  <View style={styles.getStartedArrow}><Ionicons name="arrow-forward" size={18} color={colors.launchButton} /></View>
+                </Pressable>
+                <Text style={styles.launchFooter}>Your people. Your space. Your time.</Text>
+              </Animated.View>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+      </View>
+    );
+  }
+
+  const authOpacity = authProgress.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 0.7, 1] });
+  const authTranslateY = authProgress.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
+
+  return <Animated.View style={[styles.root, { opacity: authOpacity, transform: [{ translateY: authTranslateY }] }]}>
+    <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior="padding">
+      <LinearGradient colors={[colors.launchOrange, colors.launchPurple]} style={[styles.hero, { paddingTop: insets.top + 40 }]}>
+        <View style={styles.orbit} />
+        <Image source={require('../assets/images/old-time-icon.png')} style={styles.logo} />
+        <Text style={styles.brand}>Old Time<Text style={[styles.brandDot, { color: colors.launchOrange }]}>.</Text></Text>
+        <Text style={styles.tagline}>Private conversations. Real connections.</Text>
+      </LinearGradient>
+      <View style={[styles.form, { paddingBottom: insets.bottom + 24 }]}>
+        {birthdayUser ? <>
+          <Text style={[styles.kicker, { color: colors.mutedForeground }]}>ONE LAST STEP</Text>
+          <Text style={[styles.heading, { color: colors.foreground }]}>Add your birthday.</Text>
+          <Text style={[styles.birthdayHint, { color: colors.mutedForeground }]}>Your birthday helps keep your account age-appropriate. It stays private and is never shown on your profile.</Text>
+          <Text style={[styles.label, { color: colors.foreground }]}>Birthday</Text>
+          <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Ionicons name="calendar-outline" size={19} color={colors.primary} />
+            <TextInput testID="input-birthday" value={birthday} onChangeText={(value) => setBirthday(formatBirthday(value))} keyboardType="number-pad" placeholder="MM/DD/YYYY" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} maxLength={10} />
           </View>
-        </Pressable> : null}
-      </> : <>
-        <View style={[styles.codeCard, { backgroundColor: colors.secondary, borderColor: colors.primary }]}>
-          <View style={styles.codeIcon}><Ionicons name="checkmark" size={16} color="#fff" /></View>
-          <View style={styles.codeCopy}><Text style={[styles.codeTitle, { color: colors.foreground }]}>Code sent to {phone}</Text></View>
-        </View>
-        <Text style={[styles.label, { color: colors.foreground }]}>Enter your code</Text>
-        <TextInput testID="input-otp" value={otp} onChangeText={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" maxLength={6} autoFocus placeholder="000000" placeholderTextColor={colors.mutedForeground} style={[styles.otp, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]} />
-        <Pressable testID="button-verify-otp" disabled={busy || otp.length < 4} onPress={verifyCode} style={({ pressed }) => [styles.continueButton, { backgroundColor: colors.launchButton, opacity: busy || otp.length < 4 ? 0.45 : pressed ? 0.75 : 1 }]}><Text style={styles.continueText}>{busy ? 'Checking code...' : 'Open Old Time'}</Text><Ionicons name="arrow-forward" size={18} color="#fff" /></Pressable>
-        <Pressable onPress={() => { setChallengeId(''); setOtp(''); }} style={styles.change}><Text style={{ color: colors.mutedForeground }}>Use a different number</Text></Pressable>
-      </>}
-      </>}
-    </View>
-  </KeyboardAvoidingView>;
+          <Pressable testID="button-save-birthday" disabled={busy || !birthdayToIso(birthday)} onPress={() => void saveBirthday()} style={({ pressed }) => [styles.continueButton, { backgroundColor: colors.launchButton, opacity: busy || !birthdayToIso(birthday) ? 0.45 : pressed ? 0.75 : 1 }]}><Text style={styles.continueText}>{busy ? 'Saving...' : 'Continue'}</Text><Ionicons name="arrow-forward" size={18} color="#fff" /></Pressable>
+        </> : <>
+          <Text style={[styles.kicker, { color: colors.mutedForeground }]}>WELCOME BACK</Text>
+          <Text style={[styles.heading, { color: colors.foreground }]}>Sign in to chat.</Text>
+          <FirebaseAuthPanel onAuthenticated={handleVerifiedUser} />
+        </>}
+      </View>
+    </KeyboardAvoidingView>
+  </Animated.View>;
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  launchRoot: { flex: 1 },
+  launchAnimated: { flex: 1 },
+  launchGradient: { flex: 1, overflow: 'hidden' },
+  launchSafeArea: { flex: 1, paddingHorizontal: 24, justifyContent: 'space-between' },
+  launchCenter: { alignItems: 'center', justifyContent: 'center', flex: 1 },
+  logoPulse: { position: 'absolute', width: 208, height: 208, borderRadius: 104, borderWidth: 1 },
+  logoHalo: { width: 188, height: 188, borderRadius: 94, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', shadowColor: '#102A75', shadowOpacity: 0.3, shadowRadius: 30, shadowOffset: { width: 0, height: 14 }, elevation: 12 },
+  logoHaloInner: { width: 148, height: 148, borderRadius: 74, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20,39,111,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
+  launchLogo: { width: 128, height: 128, borderRadius: 64 },
+  launchCopy: { alignItems: 'center', marginTop: 30 },
+  launchBrand: { color: '#FFFFFF', fontSize: 43, lineHeight: 49, fontWeight: '800', letterSpacing: -2 },
+  launchBrandDot: {},
+  launchTagline: { color: 'rgba(255,255,255,0.90)', fontSize: 15, fontWeight: '500', marginTop: 9, letterSpacing: 0.1 },
+  launchSubline: { color: 'rgba(255,255,255,0.62)', fontSize: 13, marginTop: 7 },
+  launchAction: { alignItems: 'center' },
+  getStartedButton: { minHeight: 58, width: '100%', borderRadius: 29, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 13, shadowColor: '#111A55', shadowOpacity: 0.28, shadowRadius: 18, shadowOffset: { width: 0, height: 9 }, elevation: 8 },
+  getStartedText: { color: '#FFFFFF', fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  getStartedArrow: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.92)' },
+  launchFooter: { color: 'rgba(255,255,255,0.62)', fontSize: 12, marginTop: 14 },
+  launchGlow: { position: 'absolute', borderRadius: 999, opacity: 0.22 },
+  launchGlowBlue: { width: 280, height: 280, left: -145, top: '32%' },
+  launchGlowOrange: { width: 250, height: 250, right: -125, top: '8%' },
+  launchRing: { position: 'absolute', width: 470, height: 470, borderRadius: 235, borderWidth: 36, right: -220, top: '12%', opacity: 0.8 },
   hero: { minHeight: 330, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   orbit: { position: 'absolute', width: 260, height: 260, borderRadius: 130, borderWidth: 30, borderColor: 'rgba(255,255,255,0.11)', right: -85, top: 30 },
   logo: { width: 104, height: 104, borderRadius: 52 },
