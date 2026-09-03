@@ -11,9 +11,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/old-time-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FF7A00"
+      "backgroundColor": "#6F20B4"
     },
     "ios": {
       "supportsTablet": false,
