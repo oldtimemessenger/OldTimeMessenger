@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState, useMemo } from 'react';
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { File, Paths } from 'expo-file-system';
@@ -9,12 +9,11 @@ import { Avatar, PrimaryButton, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useLogout } from '@workspace/api-client-react';
-import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib/social-api';
 import { t } from '@/lib/i18n';
 
-type Panel = 'profile' | 'notifications' | 'socialPrivacy' | 'storage' | 'appearance' | 'power' | 'language' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
+type Panel = 'profile' | 'phone' | 'notifications' | 'socialPrivacy' | 'storage' | 'appearance' | 'power' | 'language' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
 
 const SUPPORTED_LANGUAGES = [
   'English', 'Haitian Creole', 'French', 'Afrikaans', 'Arabic', 'Bengali',
@@ -28,7 +27,6 @@ const SUPPORTED_LANGUAGES = [
 
 export default function SettingsScreen() {
   const colors = useColors();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const logout = useLogout();
   const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, removeSavedMessage, setSession, resetLocalData } = useApp();
@@ -37,11 +35,14 @@ export default function SettingsScreen() {
   const [panel, setPanel] = useState<Panel>(null);
   const [query, setQuery] = useState('');
   const [cacheStatus, setCacheStatus] = useState<'idle' | 'clearing' | 'cleared' | 'error'>('idle');
+  const [signingOut, setSigningOut] = useState(false);
 
   // Profile state
   const [draftName, setDraftName] = useState(profile.name);
   const [draftUsername, setDraftUsername] = useState(profile.username);
   const [draftBio, setDraftBio] = useState(profile.bio);
+  const [draftPhone, setDraftPhone] = useState(session?.phone ?? '');
+  const [phonePermission, setPhonePermission] = useState<'contacts' | 'everyone' | 'nobody'>(session?.phoneDiscoveryPermission ?? 'contacts');
 
   const faqs = [
     { q: 'What is Old Time?', a: 'A private messenger with chats, status updates, device location sharing, and phone calls to your contacts.' },
@@ -68,11 +69,16 @@ export default function SettingsScreen() {
     }
   }
 
-  function signOut() {
-    logout.mutate(undefined);
-    setSession(null);
+  async function signOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await logout.mutateAsync(undefined);
+    } catch {
+      // A failed server revoke must not trap someone in a local session.
+    }
     queryClient.clear();
-    router.replace('/');
+    setSession(null);
   }
 
   async function chooseProfilePhoto() {
@@ -124,6 +130,22 @@ export default function SettingsScreen() {
     }
   }
 
+  async function savePhoneSettings() {
+    if (!session?.authToken) return;
+    try {
+      const updated = await updateUserProfile(session.authToken, session.id, {
+        phoneNumber: draftPhone.trim() || null,
+        phoneDiscoveryPermission: phonePermission,
+      });
+      updateProfile({ phone: updated.phone });
+      setSession({ ...session, ...updated });
+      Alert.alert('Phone settings saved', 'SMS verification is not required yet.');
+      setPanel(null);
+    } catch (error) {
+      Alert.alert('Phone settings not saved', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
+
   async function updateContactPermission(next: 'everyone' | 'followers' | 'nobody') {
     const previous = settings.contactPermission;
     updateSettings({ contactPermission: next });
@@ -151,6 +173,7 @@ export default function SettingsScreen() {
   const groups = useMemo(() => ([
       { items: [
       { key: "profile", icon: "person", bg: colors.settingsRed, label: translate('myProfile'), value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
+      { key: "phone", icon: "call", bg: colors.settingsGreen, label: 'Phone Number', value: session?.hasRegisteredPhone ? (session.phoneVerified ? 'Verified' : 'Registered') : 'Not registered', onPress: () => { setDraftPhone(session?.phone ?? ''); setPhonePermission(session?.phoneDiscoveryPermission ?? 'contacts'); setPanel('phone'); } },
       { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
     ]},
     { items: [
@@ -171,7 +194,7 @@ export default function SettingsScreen() {
     { items: [
        { key: "logout", icon: "log-out", bg: colors.settingsRed, label: translate('logout'), danger: true, onPress: signOut },
     ]},
-  ] as const), [colors, profile, savedMessages.length, settings, logout]);
+  ] as const), [colors, profile, savedMessages.length, session, settings, logout]);
 
   const filteredGroups = useMemo(() => {
     if (!query.trim()) return groups;
@@ -236,6 +259,32 @@ export default function SettingsScreen() {
                   <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>Save</Text>
                 </Pressable>
               </View>
+            </PanelSection>
+          </DetailShell>
+        );
+
+      case 'phone':
+        return (
+          <DetailShell title="Phone Number" onBack={() => setPanel(null)}>
+            <View style={[styles.privacyNotice, { backgroundColor: colors.secondary }]}>
+              <Ionicons name="people-outline" size={20} color={colors.primary} />
+              <Text style={[styles.privacyNoticeText, { color: colors.foreground }]}>SMS verification is not required yet. Your address-book numbers are not uploaded.</Text>
+            </View>
+            <PanelSection title="Registered number">
+              <View style={[styles.phonePanel, { backgroundColor: colors.card }]}>
+                <Text style={[styles.phoneStatus, { color: colors.foreground }]}>{session?.hasRegisteredPhone ? (session.phoneVerified ? 'Verified' : 'Registered') : 'No phone number registered'}</Text>
+                <TextInput value={draftPhone} onChangeText={setDraftPhone} placeholder="+1 555 555 5555" keyboardType="phone-pad" placeholderTextColor={colors.mutedForeground} style={[styles.phoneInput, { color: colors.foreground, borderColor: colors.border }]} />
+                <PrimaryButton label={draftPhone.trim() ? 'Save phone number' : 'Remove phone number'} onPress={() => void savePhoneSettings()} />
+              </View>
+            </PanelSection>
+            <PanelSection title="Find me by phone">
+              {([
+                ['contacts', 'My contacts', 'People who have your number in their contacts.'],
+                ['everyone', 'Everyone who has my number', 'Anyone who already has your number.'],
+                ['nobody', 'Nobody', 'Do not show your account through phone contacts.'],
+              ] as const).map(([value, label, sub], index, items) => (
+                <AudienceRow key={value} label={label} sub={sub} value={phonePermission === value} onPress={() => setPhonePermission(value)} isLast={index === items.length - 1} />
+              ))}
             </PanelSection>
           </DetailShell>
         );
@@ -533,6 +582,12 @@ export default function SettingsScreen() {
       <Modal visible={panel !== null} animationType="slide" onRequestClose={() => setPanel(null)}>
         {panel && renderPanel()}
       </Modal>
+      {signingOut ? (
+        <View style={styles.signOutOverlay} accessibilityRole="progressbar" accessibilityLabel="Signing out">
+          <ActivityIndicator color="#FFFFFF" />
+          <Text style={styles.signOutText}>Signing out…</Text>
+        </View>
+      ) : null}
     </Screen>
   );
 }
@@ -619,6 +674,19 @@ function PanelSection({ title, children }: any) {
 // ---------------- Styles ----------------
 
 const styles = StyleSheet.create({
+  signOutOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(10, 24, 58, 0.92)',
+  },
+  signOutText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
   searchContainer: { flexDirection: 'row', alignItems: 'center', height: 44, borderRadius: 10, borderWidth: 1, marginBottom: 20 },
   searchInput: { flex: 1, paddingHorizontal: 10, fontSize: 16, height: '100%' },
   sectionTitle: { textTransform: 'uppercase', fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginLeft: 4, marginBottom: 6, marginTop: 4 },
@@ -660,6 +728,9 @@ const styles = StyleSheet.create({
   profileEditorPhone: { fontSize: 15, marginBottom: 20 },
   profileEditorBioInput: { width: '100%', minHeight: 88, borderWidth: 1, borderRadius: 14, padding: 12, fontSize: 16, lineHeight: 22, marginBottom: 4 },
   profileEditorBioCount: { alignSelf: 'flex-end', fontSize: 12, marginBottom: 14 },
+  phonePanel: { padding: 16, gap: 12 },
+  phoneStatus: { fontSize: 16, fontWeight: '700' },
+  phoneInput: { height: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 13, fontSize: 16 },
 
   walletCard: { alignItems: 'center', paddingVertical: 32 },
   walletSub: { fontSize: 14, marginBottom: 4 },

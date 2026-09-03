@@ -24,6 +24,7 @@ import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
 import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
+import { AdMobBanner } from '@/components/admob-banner';
 import { adManager } from '@/lib/ad-manager';
 import { createChat, listUsers, useRequestUploadUrl, type User } from '@workspace/api-client-react';
 import {
@@ -485,6 +486,9 @@ export default function UpdatesScreen() {
                   onShare={(post) => void shareSocialPost(post)}
                  onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
                />
+                <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 }}>
+                  <AdMobBanner />
+                </View>
 
               <View style={[styles.feedTabs, { borderBottomColor: colors.border }]}>
                 {(['for-you', 'following', 'interests'] as FeedTab[]).map(item => (
