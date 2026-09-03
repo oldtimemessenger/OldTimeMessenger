@@ -3,7 +3,8 @@ import * as Location from 'expo-location';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Avatar, Screen } from '@/components/ui';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Avatar, Screen, StoryAvatar } from '@/components/ui';
 import { useRouter } from 'expo-router';
 import { getCurrentEventRooms, type CurrentEventRoom } from '@workspace/api-client-react';
 import SocialMap from '@/components/social-map';
@@ -19,13 +20,21 @@ import CurrentEventsHome from '@/components/current-events-home';
 
 type Coordinate = { latitude: number; longitude: number };
 
+const WORLD_REGION: SocialMapRegion = {
+  latitude: 20,
+  longitude: 0,
+  latitudeDelta: 105,
+  longitudeDelta: 170,
+};
+
 export default function MapScreen() {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const { session, settings } = useApp();
   const router = useRouter();
   const [permission, requestPermission] = Location.useForegroundPermissions();
   const [location, setLocation] = useState<Coordinate | null>(null);
-  const [region, setRegion] = useState<SocialMapRegion | null>(null);
+  const [region, setRegion] = useState<SocialMapRegion>(WORLD_REGION);
   const [pins, setPins] = useState<MapPin[]>([]);
   const [stories, setStories] = useState<Story[]>([]);
   const [mapDiscoveryItems, setMapDiscoveryItems] = useState<DiscoveryItem[]>([]);
@@ -43,6 +52,12 @@ export default function MapScreen() {
   const [areaDiscoveryItems, setAreaDiscoveryItems] = useState<DiscoveryItem[] | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [storyOpen, setStoryOpen] = useState<Story | null>(null);
+  const [storyPreview, setStoryPreview] = useState<Story | null>(null);
+  const [heatEnabled, setHeatEnabled] = useState(true);
+  const [placingPin, setPlacingPin] = useState(false);
+  const [pinCoordinate, setPinCoordinate] = useState<Coordinate | null>(null);
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placeSearching, setPlaceSearching] = useState(false);
   const [currentEventsMode, setCurrentEventsMode] = useState(false);
   const [currentEventRooms, setCurrentEventRooms] = useState<CurrentEventRoom[]>([]);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -111,6 +126,16 @@ export default function MapScreen() {
 
   function selectPin(pin: MapPin) {
     setSelectedPin(pin);
+    setStoryPreview(null);
+    setDiscoveryCoordinate(null);
+    setDiscoveryPins(null);
+    setDiscoveryStories(null);
+    setAreaDiscoveryItems(null);
+  }
+
+  function previewMapStory(story: Story) {
+    setStoryPreview(story);
+    setSelectedPin(null);
     setDiscoveryCoordinate(null);
     setDiscoveryPins(null);
     setDiscoveryStories(null);
@@ -134,6 +159,7 @@ export default function MapScreen() {
       const nextRegion = { ...coordinate, latitudeDelta: 0.055, longitudeDelta: 0.07 };
       setLocation(coordinate);
       setRegion(nextRegion);
+      if (placingPin) setPinCoordinate(coordinate);
       setSelectedPin(null);
       setDiscoveryCoordinate(null);
       setDiscoveryPins(null);
@@ -144,6 +170,38 @@ export default function MapScreen() {
       Alert.alert('Location unavailable', 'Old Time could not read your current location. Try again outdoors or check device location services.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  function startPinPlacement() {
+    setPinCoordinate({ latitude: region.latitude, longitude: region.longitude });
+    setPlacingPin(true);
+    setSelectedPin(null);
+    setStoryPreview(null);
+    setDiscoveryCoordinate(null);
+    setDiscoveryPins(null);
+    setDiscoveryStories(null);
+    setAreaDiscoveryItems(null);
+  }
+
+  async function searchPlace() {
+    const query = placeQuery.trim();
+    if (!query) return;
+    setPlaceSearching(true);
+    try {
+      const matches = await Location.geocodeAsync(query);
+      const first = matches[0];
+      if (!first) {
+        Alert.alert('Place not found', 'Try a city, landmark, venue, or full address.');
+        return;
+      }
+      const coordinate = { latitude: first.latitude, longitude: first.longitude };
+      setPinCoordinate(coordinate);
+      setRegion({ ...coordinate, latitudeDelta: 0.08, longitudeDelta: 0.1 });
+    } catch {
+      Alert.alert('Search unavailable', 'Move the map to choose the location, or try searching again.');
+    } finally {
+      setPlaceSearching(false);
     }
   }
 
@@ -170,8 +228,8 @@ export default function MapScreen() {
   }
 
   async function publishPin() {
-    if (!location) {
-      Alert.alert('Location required', 'Turn on location access before posting a pin so Old Time knows where to place it.');
+    if (!pinCoordinate) {
+      Alert.alert('Choose a location', 'Move the map or search for the place where this pin belongs.');
       return;
     }
     if (!session?.authToken) {
@@ -180,11 +238,12 @@ export default function MapScreen() {
     }
     try {
       const expiresAt = expiry === 'never' ? null : Date.now() + (expiry === 'day' ? 86_400_000 : 604_800_000);
-      const created = await createMapPin(session.authToken, { ...location, caption: caption.trim() || undefined, visibility, expiresAt });
+      const created = await createMapPin(session.authToken, { ...pinCoordinate, caption: caption.trim() || undefined, visibility, expiresAt });
       setPins((items) => [created, ...items]);
       regionCache.current.clear();
       setCaption('');
       setComposerOpen(false);
+      setPinCoordinate(null);
     } catch (requestError) {
       Alert.alert('Pin not saved', requestError instanceof Error ? requestError.message : 'Please try again.');
     }
@@ -208,16 +267,16 @@ export default function MapScreen() {
   }
 
   return (
-    <Screen title="Map">
+    <Screen>
       <View style={styles.mapCanvas}>
         <Pressable
           onPress={() => setCurrentEventsMode(true)}
           accessibilityRole="button"
           accessibilityLabel="Open Current Events"
-          style={[styles.currentEventsButton, { backgroundColor: colors.primary }]}
+          style={[styles.currentEventsButton, { top: insets.top + 10, backgroundColor: colors.primary }]}
         >
           <Ionicons name="mic-outline" size={16} color={colors.primaryForeground} />
-          <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>Current Events</Text>
+          <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>What’s happening</Text>
           <View style={styles.liveDot} />
           <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>{currentEventRooms.length}</Text>
         </Pressable>
@@ -229,31 +288,28 @@ export default function MapScreen() {
           discoveryItems={mapDiscoveryItems}
           currentEventRooms={currentEventRooms}
           selectedPinId={selectedPin?.id ?? null}
+          placementMode={placingPin}
+          placementCoordinate={pinCoordinate}
+          heatEnabled={heatEnabled}
           loading={loading}
           colors={colors}
           onLocate={() => void refreshLocation()}
-          onCreate={() => {
-            if (location) {
-              setComposerOpen(true);
-            } else {
-              Alert.alert('Location required', 'Allow location access before posting a pin.', [
-                { text: 'Not now', style: 'cancel' },
-                { text: 'Enable location', onPress: () => void refreshLocation() },
-              ]);
-            }
-          }}
+          onCreate={startPinPlacement}
+          onToggleHeat={() => setHeatEnabled((enabled) => !enabled)}
+          onPlacementChange={setPinCoordinate}
           onSelectPin={selectPin}
-          onSelectStory={(story) => setStoryOpen(story)}
+          onSelectStory={previewMapStory}
           onSelectDiscoveryItem={(item) => void openDiscoveryItem(item)}
           onSelectCurrentEventRoom={(room) => router.push({ pathname: '/current-event/[id]', params: { id: String(room.id), returnTo: 'map' } })}
           onAreaPress={(coordinate) => {
             setSelectedPin(null);
+            setStoryPreview(null);
             void discoverArea(coordinate);
           }}
           onRegionChange={changeRegion}
         />
-        {loading && region ? <View style={[styles.loadingPill, { backgroundColor: colors.card }]}><ActivityIndicator size="small" color={colors.primary} /></View> : null}
-        {error ? <Pressable onPress={() => region && void loadRegion(region, true)} style={[styles.errorPill, { backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name="cloud-offline-outline" size={17} color={colors.destructive} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Retry area</Text></Pressable> : null}
+        {loading ? <View style={[styles.loadingPill, { top: insets.top + 10, backgroundColor: colors.card }]}><ActivityIndicator size="small" color={colors.primary} /></View> : null}
+        {error ? <Pressable onPress={() => void loadRegion(region, true)} style={[styles.errorPill, { top: insets.top + 10, backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name="cloud-offline-outline" size={17} color={colors.destructive} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Retry area</Text></Pressable> : null}
         {discoveryCoordinate ? (
           <DiscoveryPanel
             pins={discoveryPins ?? []}
@@ -268,13 +324,46 @@ export default function MapScreen() {
               setAreaDiscoveryItems(null);
             }}
             onSelectPin={selectPin}
-            onSelectStory={(story) => setStoryOpen(story)}
+            onSelectStory={previewMapStory}
             onSelectDiscoveryItem={(item) => void openDiscoveryItem(item)}
           />
         ) : null}
         {selectedPin ? <View style={styles.selectedPinPanel}><PinCard pin={selectedPin} own={selectedPin.authorId === session?.id} colors={colors} onOpen={() => void openInMaps(selectedPin)} onComment={() => setCommentPin(selectedPin)} onChanged={(pin) => { setSelectedPin(pin); setPins((all) => all.map((current) => current.id === pin.id ? pin : current)); }} onDelete={() => { setPins((all) => all.filter((pin) => pin.id !== selectedPin.id)); setSelectedPin(null); }} token={session?.authToken ?? ''} /></View> : null}
+        {placingPin ? (
+          <PlacementPanel
+            coordinate={pinCoordinate}
+            query={placeQuery}
+            setQuery={setPlaceQuery}
+            searching={placeSearching}
+            colors={colors}
+            onSearch={() => void searchPlace()}
+            onUseLocation={() => void refreshLocation()}
+            onCancel={() => {
+              setPlacingPin(false);
+              setPinCoordinate(null);
+            }}
+            onContinue={() => {
+              setPlacingPin(false);
+              setComposerOpen(true);
+            }}
+          />
+        ) : null}
+        {!placingPin && storyPreview ? (
+          <MapStoryPreview
+            story={storyPreview}
+            colors={colors}
+            onClose={() => setStoryPreview(null)}
+            onOpen={() => {
+              setStoryOpen(storyPreview);
+              setStoryPreview(null);
+            }}
+          />
+        ) : null}
+        {!placingPin && !storyPreview && !selectedPin && !discoveryCoordinate && stories.length > 0 ? (
+          <MapStoryTray stories={stories} colors={colors} onSelect={previewMapStory} />
+        ) : null}
       </View>
-      <PinComposer visible={composerOpen} colors={colors} caption={caption} setCaption={setCaption} visibility={visibility} setVisibility={setVisibility} expiry={expiry} setExpiry={setExpiry} onClose={() => setComposerOpen(false)} onSave={() => void publishPin()} />
+      <PinComposer visible={composerOpen} coordinate={pinCoordinate} colors={colors} caption={caption} setCaption={setCaption} visibility={visibility} setVisibility={setVisibility} expiry={expiry} setExpiry={setExpiry} onClose={() => { setComposerOpen(false); setPinCoordinate(null); }} onSave={() => void publishPin()} />
       <CommentsSheet pin={commentPin} token={session?.authToken ?? ''} colors={colors} onClose={() => setCommentPin(null)} />
       <Modal visible={storyOpen !== null} transparent animationType="fade" onRequestClose={() => setStoryOpen(null)}>
         {storyOpen ? (
@@ -300,6 +389,115 @@ function timeAgo(timestamp: number) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+function PlacementPanel({
+  coordinate,
+  query,
+  setQuery,
+  searching,
+  colors,
+  onSearch,
+  onUseLocation,
+  onCancel,
+  onContinue,
+}: {
+  coordinate: Coordinate | null;
+  query: string;
+  setQuery: (value: string) => void;
+  searching: boolean;
+  colors: any;
+  onSearch: () => void;
+  onUseLocation: () => void;
+  onCancel: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <View style={[styles.placementPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.placementHeading}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.placementTitle, { color: colors.foreground }]}>Choose where to post</Text>
+          <Text style={[styles.placementText, { color: colors.mutedForeground }]}>Move the map anywhere in the world. The marker stays centered.</Text>
+        </View>
+        <Pressable accessibilityLabel="Cancel location selection" hitSlop={10} onPress={onCancel}>
+          <Ionicons name="close" size={22} color={colors.foreground} />
+        </Pressable>
+      </View>
+      <View style={[styles.placeSearch, { borderColor: colors.border, backgroundColor: colors.background }]}>
+        <Ionicons name="search" size={18} color={colors.mutedForeground} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search a city, venue, or address"
+          placeholderTextColor={colors.mutedForeground}
+          returnKeyType="search"
+          onSubmitEditing={onSearch}
+          style={[styles.placeSearchInput, { color: colors.foreground }]}
+        />
+        <Pressable disabled={!query.trim() || searching} onPress={onSearch} style={styles.searchAction}>
+          {searching ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="arrow-forward" size={19} color={colors.primary} />}
+        </Pressable>
+      </View>
+      <View style={styles.placementActions}>
+        <Pressable onPress={onUseLocation} style={[styles.locationShortcut, { borderColor: colors.border }]}>
+          <Ionicons name="locate-outline" size={17} color={colors.primary} />
+          <Text style={{ color: colors.foreground, fontWeight: '700' }}>My location</Text>
+        </Pressable>
+        <Pressable disabled={!coordinate} onPress={onContinue} style={[styles.postHere, { backgroundColor: colors.primary, opacity: coordinate ? 1 : 0.45 }]}>
+          <Ionicons name="location" size={17} color={colors.primaryForeground} />
+          <Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Post here</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function MapStoryPreview({ story, colors, onClose, onOpen }: { story: Story; colors: any; onClose: () => void; onOpen: () => void }) {
+  return (
+    <Pressable onPress={onOpen} style={[styles.storyPreview, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <StoryAvatar name={story.author.name} size={54} color={colors.primary} viewed={story.viewer.viewed} />
+      <View style={styles.storyPreviewCopy}>
+        <View style={styles.storyPreviewTitle}>
+          <Text numberOfLines={1} style={[styles.storyPreviewName, { color: colors.foreground }]}>{story.author.name}</Text>
+          <Text style={[styles.storyPreviewTime, { color: colors.mutedForeground }]}>{timeAgo(story.createdAt)}</Text>
+        </View>
+        <Text numberOfLines={2} style={[styles.storyPreviewText, { color: colors.mutedForeground }]}>{story.content || 'Open this Story from the map'}</Text>
+      </View>
+      <View style={[styles.storyPlay, { backgroundColor: colors.primary }]}>
+        <Ionicons name="play" size={17} color={colors.primaryForeground} />
+      </View>
+      <Pressable accessibilityLabel="Close Story preview" hitSlop={10} onPress={(event) => { event.stopPropagation(); onClose(); }} style={styles.storyPreviewClose}>
+        <Ionicons name="close" size={17} color={colors.mutedForeground} />
+      </Pressable>
+    </Pressable>
+  );
+}
+
+function MapStoryTray({ stories, colors, onSelect }: { stories: Story[]; colors: any; onSelect: (story: Story) => void }) {
+  return (
+    <View style={[styles.storyTray, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.storyTrayHeader}>
+        <View style={styles.storyTrayLabel}>
+          <Ionicons name="flame" size={15} color={colors.primary} />
+          <Text style={[styles.storyTrayTitle, { color: colors.foreground }]}>Stories on the map</Text>
+        </View>
+        <Text style={[styles.storyTrayMeta, { color: colors.mutedForeground }]}>{stories.length} nearby</Text>
+      </View>
+      <FlatList
+        horizontal
+        data={stories.slice(0, 20)}
+        keyExtractor={(story) => String(story.id)}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.storyTrayList}
+        renderItem={({ item }) => (
+          <Pressable onPress={() => onSelect(item)} style={styles.storyTrayItem}>
+            <StoryAvatar name={item.author.name} size={48} color={colors.primary} viewed={item.viewer.viewed} />
+            <Text numberOfLines={1} style={[styles.storyTrayName, { color: colors.foreground }]}>{item.author.name.split(' ')[0]}</Text>
+          </Pressable>
+        )}
+      />
+    </View>
+  );
 }
 
 function DiscoveryPanel({ pins, stories, discoveryItems, loading, colors, onClose, onSelectPin, onSelectStory, onSelectDiscoveryItem }: { pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[]; loading: boolean; colors: any; onClose: () => void; onSelectPin: (pin: MapPin) => void; onSelectStory: (story: Story) => void; onSelectDiscoveryItem: (item: DiscoveryItem) => void }) {
@@ -369,8 +567,8 @@ function PinAction({ icon, label, active, colors, onPress }: { icon: keyof typeo
   return <Pressable onPress={onPress} style={styles.pinAction}><Ionicons name={icon} size={18} color={active ? colors.destructive : colors.mutedForeground} /><Text style={{ color: active ? colors.destructive : colors.mutedForeground, fontSize: 12 }}>{label}</Text></Pressable>;
 }
 
-function PinComposer({ visible, colors, caption, setCaption, visibility, setVisibility, expiry, setExpiry, onClose, onSave }: any) {
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><View style={[styles.sheet, { backgroundColor: colors.background }]}><View style={[styles.grabber, { backgroundColor: colors.border }]} /><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Post location</Text><Text style={[styles.sheetText, { color: colors.mutedForeground }]}>Only the location currently shown on your device will be posted when you tap Post.</Text><TextInput value={caption} onChangeText={setCaption} placeholder="Add a caption (optional)" placeholderTextColor={colors.mutedForeground} multiline maxLength={280} style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /><Text style={[styles.field, { color: colors.foreground }]}>Who can see this?</Text><View style={styles.choices}>{(['public', 'friends', 'followers', 'private'] as MapVisibility[]).map((item) => <Pressable key={item} onPress={() => setVisibility(item)} style={[styles.choice, { borderColor: visibility === item ? colors.primary : colors.border, backgroundColor: visibility === item ? colors.secondary : 'transparent' }]}><Text style={{ color: colors.foreground }}>{item}</Text></Pressable>)}</View><Text style={[styles.field, { color: colors.foreground }]}>Expiry</Text><View style={styles.choices}>{(['day', 'week', 'never'] as const).map((item) => <Pressable key={item} onPress={() => setExpiry(item)} style={[styles.choice, { borderColor: expiry === item ? colors.primary : colors.border }]}><Text style={{ color: colors.foreground }}>{item === 'day' ? '24 hours' : item === 'week' ? '7 days' : 'Never'}</Text></Pressable>)}</View><View style={styles.sheetActions}><Pressable onPress={onClose}><Text style={{ color: colors.mutedForeground, fontWeight: '700' }}>Cancel</Text></Pressable><Pressable onPress={onSave} style={[styles.publish, { backgroundColor: colors.primary }]}><Text style={styles.primaryText}>Post pin</Text></Pressable></View></View></View></Modal>;
+function PinComposer({ visible, coordinate, colors, caption, setCaption, visibility, setVisibility, expiry, setExpiry, onClose, onSave }: any) {
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><View style={[styles.sheet, { backgroundColor: colors.background }]}><View style={[styles.grabber, { backgroundColor: colors.border }]} /><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Post location</Text><Text style={[styles.sheetText, { color: colors.mutedForeground }]}>{coordinate ? 'Your chosen map location will be attached to this pin.' : 'Choose a location on the map before posting.'}</Text><TextInput value={caption} onChangeText={setCaption} placeholder="Add a caption (optional)" placeholderTextColor={colors.mutedForeground} multiline maxLength={280} style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /><Text style={[styles.field, { color: colors.foreground }]}>Who can see this?</Text><View style={styles.choices}>{(['public', 'friends', 'followers', 'private'] as MapVisibility[]).map((item) => <Pressable key={item} onPress={() => setVisibility(item)} style={[styles.choice, { borderColor: visibility === item ? colors.primary : colors.border, backgroundColor: visibility === item ? colors.secondary : 'transparent' }]}><Text style={{ color: colors.foreground }}>{item}</Text></Pressable>)}</View><Text style={[styles.field, { color: colors.foreground }]}>Expiry</Text><View style={styles.choices}>{(['day', 'week', 'never'] as const).map((item) => <Pressable key={item} onPress={() => setExpiry(item)} style={[styles.choice, { borderColor: expiry === item ? colors.primary : colors.border }]}><Text style={{ color: colors.foreground }}>{item === 'day' ? '24 hours' : item === 'week' ? '7 days' : 'Never'}</Text></Pressable>)}</View><View style={styles.sheetActions}><Pressable onPress={onClose}><Text style={{ color: colors.mutedForeground, fontWeight: '700' }}>Cancel</Text></Pressable><Pressable onPress={onSave} style={[styles.publish, { backgroundColor: colors.primary }]}><Text style={styles.primaryText}>Post pin</Text></Pressable></View></View></View></Modal>;
 }
 
 function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; token: string; colors: any; onClose: () => void }) {
@@ -384,11 +582,37 @@ function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; to
 
 const styles = StyleSheet.create({
   mapCanvas: { flex: 1, position: 'relative', overflow: 'hidden' },
-  currentEventsButton: { position: 'absolute', zIndex: 8, top: 14, right: 14, minHeight: 38, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
+  currentEventsButton: { position: 'absolute', zIndex: 8, left: 68, right: 68, minHeight: 40, borderRadius: 21, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#EF4444', marginLeft: 1 },
-  loadingPill: { position: 'absolute', top: 14, alignSelf: 'center', width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
-  errorPill: { position: 'absolute', top: 14, left: 14, minHeight: 38, borderRadius: 19, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  loadingPill: { position: 'absolute', left: 14, zIndex: 7, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
+  errorPill: { position: 'absolute', left: 14, zIndex: 7, minHeight: 40, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },
   selectedPinPanel: { position: 'absolute', left: 10, right: 10, bottom: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 6 },
+  placementPanel: { position: 'absolute', zIndex: 12, left: 10, right: 10, bottom: 10, borderRadius: 26, borderWidth: 1, padding: 14, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 8 },
+  placementHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  placementTitle: { fontSize: 16, fontWeight: '900' },
+  placementText: { fontSize: 12, lineHeight: 17, marginTop: 3 },
+  placeSearch: { minHeight: 46, borderRadius: 23, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 13, paddingRight: 7, marginTop: 12 },
+  placeSearchInput: { flex: 1, minHeight: 44, paddingHorizontal: 9, fontSize: 14 },
+  searchAction: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  placementActions: { flexDirection: 'row', gap: 10, marginTop: 11 },
+  locationShortcut: { minHeight: 44, flex: 1, borderRadius: 22, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  postHere: { minHeight: 44, flex: 1.15, borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  storyPreview: { position: 'absolute', zIndex: 10, left: 10, right: 10, bottom: 10, minHeight: 82, borderRadius: 26, borderWidth: 1, padding: 12, paddingRight: 44, flexDirection: 'row', alignItems: 'center', gap: 11, shadowColor: '#000', shadowOpacity: 0.17, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 7 },
+  storyPreviewCopy: { flex: 1 },
+  storyPreviewTitle: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  storyPreviewName: { flexShrink: 1, fontSize: 14, fontWeight: '900' },
+  storyPreviewTime: { fontSize: 11, fontWeight: '600' },
+  storyPreviewText: { fontSize: 12, lineHeight: 17, marginTop: 3 },
+  storyPlay: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  storyPreviewClose: { position: 'absolute', top: 7, right: 8, width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  storyTray: { position: 'absolute', zIndex: 9, left: 8, right: 8, bottom: 8, borderRadius: 25, borderWidth: 1, paddingTop: 10, paddingBottom: 8, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  storyTrayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 13, marginBottom: 7 },
+  storyTrayLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  storyTrayTitle: { fontSize: 12, fontWeight: '900' },
+  storyTrayMeta: { fontSize: 10, fontWeight: '600' },
+  storyTrayList: { paddingHorizontal: 10, gap: 9 },
+  storyTrayItem: { width: 55, alignItems: 'center', gap: 4 },
+  storyTrayName: { width: 55, textAlign: 'center', fontSize: 10, fontWeight: '600' },
   list: { padding: 16, gap: 12 },
   mapScene: { height: 455, borderRadius: 30, borderWidth: 1, overflow: 'hidden', position: 'relative', marginBottom: 12 },
   mapRoadA: { position: 'absolute', width: 620, height: 34, backgroundColor: 'rgba(255,255,255,.48)', transform: [{ rotate: '-22deg' }], top: 190, left: -120 },

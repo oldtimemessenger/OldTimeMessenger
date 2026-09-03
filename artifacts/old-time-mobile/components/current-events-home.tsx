@@ -18,6 +18,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/ui';
 import { typography } from '@/constants/typography';
 
@@ -56,6 +57,7 @@ export default function CurrentEventsHome({
   onRoomCreated: (room: CurrentEventRoom) => void;
   onRoomsChanged: (rooms: CurrentEventRoom[]) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [topic, setTopic] = useState<CurrentEventTopic>('for-you');
   const [rooms, setRooms] = useState<CurrentEventRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,7 +110,7 @@ export default function CurrentEventsHome({
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { minHeight: insets.top + 60, paddingTop: insets.top, backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="Back to Map" style={styles.headerButton}>
           <Ionicons name="arrow-back" size={23} color={colors.foreground} />
         </Pressable>
@@ -121,7 +123,7 @@ export default function CurrentEventsHome({
         </Pressable>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicRail}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.topicScroller} contentContainerStyle={styles.topicRail}>
         {topicLabels.map((item) => (
           <Pressable
             key={item.key}
@@ -282,11 +284,12 @@ export default function CurrentEventsHome({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { height: 60, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
+  header: { paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
   headerButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   headerTitleSlot: { position: 'absolute', left: 58, right: 58, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 21, textAlign: 'center' },
   notificationDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F46A3D', borderWidth: 1.5, borderColor: '#FFFFFF' },
+  topicScroller: { flexGrow: 0, maxHeight: 60 },
   topicRail: { gap: 8, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
   topicChip: { borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 8 },
   topicText: { fontSize: 13, fontWeight: '500' },

@@ -20,6 +20,9 @@ export type SocialMapProps = {
   discoveryItems?: DiscoveryItem[];
   currentEventRooms?: CurrentEventRoom[];
   selectedPinId: number | null;
+  placementMode?: boolean;
+  placementCoordinate?: SocialMapCoordinate | null;
+  heatEnabled?: boolean;
   loading: boolean;
   colors: {
     background: string;
@@ -34,6 +37,8 @@ export type SocialMapProps = {
   };
   onLocate: () => void;
   onCreate: () => void;
+  onToggleHeat?: () => void;
+  onPlacementChange?: (coordinate: SocialMapCoordinate) => void;
   onSelectPin: (pin: MapPin) => void;
   onSelectStory: (story: Story) => void;
   onSelectDiscoveryItem?: (item: DiscoveryItem) => void;
