@@ -69,7 +69,21 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
-  if (!user?.birthday || !meetsMinimumAge(user.birthday)) {
+  // Orphan sessions (user row wiped / DB reset) must not keep returning opaque 404s.
+  if (!user) {
+    await db
+      .update(authSessionsTable)
+      .set({ revokedAt: Date.now() })
+      .where(
+        and(
+          eq(authSessionsTable.tokenHash, tokenHash(token)),
+          isNull(authSessionsTable.revokedAt),
+        ),
+      );
+    res.status(401).json({ error: "Your session is no longer valid. Please sign in again." });
+    return null;
+  }
+  if (!user.birthday || !meetsMinimumAge(user.birthday)) {
     res.status(401).json({ error: "Age verification is required before using Old Time." });
     return null;
   }
