@@ -1193,11 +1193,23 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
 }) {
   const insets = useSafeAreaInsets();
   const [muted, setMuted] = useState(true);
+  const [userPaused, setUserPaused] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const relationInFlightRef = useRef<{ like: boolean; save: boolean }>({ like: false, save: false });
   const media = post.media?.[0];
   const mediaUrl = media ? socialMediaUrl(media.objectPath) : null;
 
+  useEffect(() => {
+    if (!active) setUserPaused(false);
+  }, [active]);
+
+  useEffect(() => () => {
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+  }, []);
+
   async function changeRelation(relation: 'like' | 'repost' | 'save') {
+    if ((relation === 'like' || relation === 'save') && relationInFlightRef.current[relation]) return;
     const activeNow = relation === 'like' ? post.viewer.liked : relation === 'repost' ? post.viewer.reposted : post.viewer.saved;
     const nextActive = !activeNow;
     const countKey = relation === 'like' ? 'likes' : relation === 'repost' ? 'reposts' : 'saves';
@@ -1206,12 +1218,15 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
       counts: { ...post.counts, [countKey]: Math.max(0, post.counts[countKey] + (nextActive ? 1 : -1)) },
       viewer: { ...post.viewer, liked: relation === 'like' ? nextActive : post.viewer.liked, reposted: relation === 'repost' ? nextActive : post.viewer.reposted, saved: relation === 'save' ? nextActive : post.viewer.saved },
     };
+    if (relation === 'like' || relation === 'save') relationInFlightRef.current[relation] = true;
     onChanged(next);
     try {
       await setPostRelation(token, post.id, relation, nextActive);
     } catch (error) {
       onChanged(post);
       Alert.alert('Could not update post', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      if (relation === 'like' || relation === 'save') relationInFlightRef.current[relation] = false;
     }
   }
 
@@ -1221,10 +1236,44 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
     setTimeout(() => setShowHeart(false), 650);
   }
 
+  function singleTap() {
+    if (media?.type === 'video') {
+      if (active) setUserPaused((value) => !value);
+      return;
+    }
+    doubleTap();
+  }
+
+  function handleMediaTap() {
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+      tapTimeoutRef.current = null;
+      doubleTap();
+      return;
+    }
+    tapTimeoutRef.current = setTimeout(() => {
+      tapTimeoutRef.current = null;
+      singleTap();
+    }, 220);
+  }
+
   return (
     <View style={styles.creatorFeedPage}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={doubleTap} accessibilityRole="button" accessibilityLabel="Like this creator post">
-        {mediaUrl && media?.type === 'video' ? <VideoSurface source={mediaUrl} style={StyleSheet.absoluteFill} muted={muted} paused={!active} /> : mediaUrl ? <Image source={{ uri: mediaUrl }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={handleMediaTap}
+        accessibilityRole="button"
+        accessibilityLabel={media?.type === 'video' ? 'Creator post video' : 'Like this creator post'}
+        accessibilityHint={media?.type === 'video' ? 'Pauses or resumes the video. Use the Like post button to like' : undefined}
+        accessibilityActions={media?.type === 'video' ? [{ name: 'activate', label: userPaused ? 'Resume video' : 'Pause video' }] : undefined}
+        onAccessibilityAction={media?.type === 'video' ? (event) => {
+          const actionName = event.nativeEvent.actionName;
+          if (actionName === 'activate') {
+            if (active) setUserPaused((value) => !value);
+          }
+        } : undefined}
+      >
+        {mediaUrl && media?.type === 'video' ? <VideoSurface source={mediaUrl} style={StyleSheet.absoluteFill} muted={muted} paused={!active || userPaused} /> : mediaUrl ? <Image source={{ uri: mediaUrl }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
       </Pressable>
       <View style={styles.creatorFeedShade} pointerEvents="none" />
       {showHeart ? <View style={styles.creatorHeart} pointerEvents="none"><Ionicons name="heart" size={120} color="#fff" /></View> : null}
