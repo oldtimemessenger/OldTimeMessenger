@@ -53,6 +53,7 @@ export default function MapScreen() {
   const [discoveryStories, setDiscoveryStories] = useState<Story[] | null>(null);
   const [areaDiscoveryItems, setAreaDiscoveryItems] = useState<DiscoveryItem[] | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [storyOpen, setStoryOpen] = useState<Story | null>(null);
   const [storyPreview, setStoryPreview] = useState<Story | null>(null);
   const [heatEnabled, setHeatEnabled] = useState(true);
@@ -64,6 +65,7 @@ export default function MapScreen() {
   const [currentEventRooms, setCurrentEventRooms] = useState<CurrentEventRoom[]>([]);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[] }>());
+  const discoveryRequestId = useRef(0);
 
   useEffect(() => {
     adManager.setActiveSurface('map');
@@ -111,43 +113,55 @@ export default function MapScreen() {
 
   const discoverArea = useCallback(async (coordinate: Coordinate) => {
     if (!session?.authToken) return;
+    const requestId = ++discoveryRequestId.current;
     const safeCoordinate = normalizeCoordinate(coordinate);
     setDiscoveryCoordinate(safeCoordinate);
     setDiscoveryLoading(true);
+    setDiscoveryError(null);
+    setDiscoveryPins(null);
+    setDiscoveryStories(null);
+    setAreaDiscoveryItems(null);
     try {
       const [pinPage, storyPage, discoveryPage] = await Promise.all([
         getNearbyPins(session.authToken, safeCoordinate.latitude, safeCoordinate.longitude, 5),
         getNearbyStories(session.authToken, safeCoordinate.latitude, safeCoordinate.longitude, 5, 20),
         getNearbyDiscoveryItems(session.authToken, safeCoordinate.latitude, safeCoordinate.longitude, 5),
       ]);
+      if (requestId !== discoveryRequestId.current) return;
       setDiscoveryPins(pinPage.items);
       setDiscoveryStories(storyPage.items);
       setAreaDiscoveryItems(discoveryPage.items);
-    } catch {
-      setDiscoveryPins([]);
-      setDiscoveryStories([]);
-      setAreaDiscoveryItems([]);
+    } catch (requestError) {
+      if (requestId !== discoveryRequestId.current) return;
+      setDiscoveryPins(null);
+      setDiscoveryStories(null);
+      setAreaDiscoveryItems(null);
+      setDiscoveryError(requestError instanceof Error ? requestError.message : 'Could not load this area.');
     } finally {
-      setDiscoveryLoading(false);
+      if (requestId === discoveryRequestId.current) setDiscoveryLoading(false);
     }
   }, [session?.authToken]);
 
   function selectPin(pin: MapPin) {
+    discoveryRequestId.current += 1;
     setSelectedPin(pin);
     setStoryPreview(null);
     setDiscoveryCoordinate(null);
     setDiscoveryPins(null);
     setDiscoveryStories(null);
     setAreaDiscoveryItems(null);
+    setDiscoveryError(null);
   }
 
   function previewMapStory(story: Story) {
+    discoveryRequestId.current += 1;
     setStoryPreview(story);
     setSelectedPin(null);
     setDiscoveryCoordinate(null);
     setDiscoveryPins(null);
     setDiscoveryStories(null);
     setAreaDiscoveryItems(null);
+    setDiscoveryError(null);
   }
 
   async function refreshLocation() {
@@ -173,6 +187,7 @@ export default function MapScreen() {
       setDiscoveryPins(null);
       setDiscoveryStories(null);
       setAreaDiscoveryItems(null);
+      setDiscoveryError(null);
       await loadRegion(nextRegion, true);
     } catch {
       Alert.alert('Location unavailable', 'Old Time could not read your current location. Try again outdoors or check device location services.');
@@ -325,12 +340,18 @@ export default function MapScreen() {
             stories={discoveryStories ?? []}
             discoveryItems={areaDiscoveryItems ?? []}
             loading={discoveryLoading}
+            error={discoveryError}
             colors={colors}
+            onRetry={() => {
+              if (discoveryCoordinate) void discoverArea(discoveryCoordinate);
+            }}
             onClose={() => {
+              discoveryRequestId.current += 1;
               setDiscoveryCoordinate(null);
               setDiscoveryPins(null);
               setDiscoveryStories(null);
               setAreaDiscoveryItems(null);
+              setDiscoveryError(null);
             }}
             onSelectPin={selectPin}
             onSelectStory={previewMapStory}
@@ -534,7 +555,7 @@ type MapActivity =
   | { kind: 'story'; id: string; story: Story }
   | { kind: 'pin'; id: string; pin: MapPin };
 
-function DiscoveryPanel({ pins, stories, discoveryItems, loading, colors, onClose, onSelectPin, onSelectStory, onSelectDiscoveryItem }: { pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[]; loading: boolean; colors: any; onClose: () => void; onSelectPin: (pin: MapPin) => void; onSelectStory: (story: Story) => void; onSelectDiscoveryItem: (item: DiscoveryItem) => void }) {
+function DiscoveryPanel({ pins, stories, discoveryItems, loading, error, colors, onRetry, onClose, onSelectPin, onSelectStory, onSelectDiscoveryItem }: { pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[]; loading: boolean; error: string | null; colors: any; onRetry: () => void; onClose: () => void; onSelectPin: (pin: MapPin) => void; onSelectStory: (story: Story) => void; onSelectDiscoveryItem: (item: DiscoveryItem) => void }) {
   const recentPins = [...pins].sort((left, right) => right.createdAt - left.createdAt);
   const popularPins = [...pins].filter((pin) => pin.counts.reactions + pin.counts.comments + pin.counts.saves > 0).sort((left, right) => (right.counts.reactions + right.counts.comments + right.counts.saves) - (left.counts.reactions + left.counts.comments + left.counts.saves));
   const people = new Set([...pins.map((pin) => pin.author.id), ...stories.map((story) => story.author.id)]).size;
@@ -553,7 +574,8 @@ function DiscoveryPanel({ pins, stories, discoveryItems, loading, colors, onClos
         </View>
         {loading ? <ActivityIndicator color={colors.primary} /> : <Pressable accessibilityLabel="Close location discovery" onPress={onClose} hitSlop={10}><Ionicons name="close" size={20} color={colors.mutedForeground} /></Pressable>}
       </View>
-      {!loading && discoveryItems.length === 0 && stories.length === 0 && recentPins.length === 0 ? <Text style={[styles.discoveryEmpty, { color: colors.mutedForeground }]}>Nothing posted here yet.</Text> : null}
+      {!loading && error ? <Pressable onPress={onRetry} style={styles.discoveryEmpty}><Text style={{ color: colors.destructive }}>{error}</Text><Text style={{ color: colors.primary, fontWeight: '700' }}>Try again</Text></Pressable> : null}
+      {!loading && !error && discoveryItems.length === 0 && stories.length === 0 && recentPins.length === 0 ? <Text style={[styles.discoveryEmpty, { color: colors.mutedForeground }]}>Nothing posted here yet.</Text> : null}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.discoveryList}>
       {!loading && activityFeed.map((entry) => entry.kind === 'native-ad' ? (
         <AdMobNativeFeedAd key={entry.key} surface="map" placement={entry.placement} />

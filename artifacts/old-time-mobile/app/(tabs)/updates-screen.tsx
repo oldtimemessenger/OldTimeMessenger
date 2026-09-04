@@ -249,27 +249,43 @@ export default function UpdatesScreen() {
     if (!session?.authToken) return;
     setSocialLoading(true);
     setSocialError(null);
-    void getNotes(session.authToken)
-      .then((notePage) => setNotes(notePage.items))
-      .catch(() => undefined);
     try {
-      const [feed, storyPage, card, notificationPage, exclusions, discoveryPage] = await Promise.all([
+      const [feed, storyPage, card, notificationPage, exclusions] = await Promise.all([
         getSocialFeed(session.authToken, mode, null, filter, interests, mode !== 'community'),
         getStories(session.authToken),
         getUserCard(session.authToken, session.id),
         getSocialNotifications(session.authToken),
         getSharingExclusions(session.authToken),
-        mode === 'for-you'
-          ? getDiscoveryFeed(session.authToken).catch(() => ({ items: [] as DiscoveryItem[] }))
-          : Promise.resolve({ items: [] as DiscoveryItem[] }),
       ]);
       setSocialPosts(feed.items);
-      setDiscoveryItems(mode === 'for-you' ? discoveryPage.items : []);
       setCommunityCursor(mode === 'community' ? feed.nextCursor : null);
       setSocialStories(storyPage.items);
       setOwnCard(card);
       setNotifications(notificationPage.items);
       updateSettings({ excludedPeople: exclusions.items.map((item) => ({ id: item.id, name: item.name })) });
+
+      if (mode === 'community') {
+        setDiscoveryItems([]);
+      } else {
+        const [noteResult, discoveryResult] = await Promise.allSettled([
+          getNotes(session.authToken),
+          mode === 'for-you'
+            ? getDiscoveryFeed(session.authToken)
+            : Promise.resolve({ items: [] as DiscoveryItem[] }),
+        ]);
+        if (noteResult.status === 'fulfilled') setNotes(noteResult.value.items);
+        if (discoveryResult.status === 'fulfilled') setDiscoveryItems(discoveryResult.value.items);
+        const optionalFailure = noteResult.status === 'rejected'
+          ? noteResult.reason
+          : discoveryResult.status === 'rejected'
+            ? discoveryResult.reason
+            : null;
+        if (optionalFailure) {
+          setSocialError(optionalFailure instanceof Error
+            ? optionalFailure.message
+            : 'Some updates could not be loaded. Try again.');
+        }
+      }
     } catch (error) {
       setSocialError(error instanceof Error ? error.message : 'Social updates are unavailable right now.');
     } finally {

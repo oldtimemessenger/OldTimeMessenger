@@ -5,6 +5,11 @@ import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
+router.get("/", (_req, res) => {
+  const data = HealthCheckResponse.parse({ status: "ok" });
+  res.json(data);
+});
+
 router.get("/healthz", (_req, res) => {
   const data = HealthCheckResponse.parse({ status: "ok" });
   res.json(data);
@@ -15,14 +20,7 @@ router.get("/readyz", async (req, res) => {
     "SESSION_SECRET",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
-    "REVENUECAT_SECRET_KEY",
     "FIREBASE_PROJECT_ID",
-    "TWILIO_ACCOUNT_SID",
-    "TWILIO_AUTH_TOKEN",
-    "TWILIO_VERIFY_SERVICE_SID",
-    "LIVEKIT_URL",
-    "LIVEKIT_API_KEY",
-    "LIVEKIT_API_SECRET",
   ];
   const missing = required.filter((name) => !process.env[name]);
   if (!process.env.SUPABASE_DATABASE_URL && !process.env.DATABASE_URL) {

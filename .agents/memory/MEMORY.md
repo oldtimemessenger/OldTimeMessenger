@@ -3,10 +3,11 @@
 - [Story viewer content model](story-viewer-content-model.md) — sequence discriminated viewer items so sponsored content can be inserted without changing navigation.
 - [GitHub sync identity](github-sync-identity.md) — the connected repository is singular `oldtimemessenger/OldTimeMessenger`; the workspace Git remote is backup-only.
 - [Mobile dev API routing](mobile-dev-api-routing.md) — preview builds may inherit a stale production API domain, and local OTP retries can hit resend throttles.
-- [Development readiness checks](development-readiness-checks.md) — use healthz for local smoke tests; readyz intentionally requires production-only provider configuration.
+- [Development readiness checks](development-readiness-checks.md) — readyz must return 200 before release and must not depend on optional providers.
 - [Generated client regeneration](generated-client-regeneration.md) — restart live Metro/Vite workflows after clean API codegen to avoid transient missing-module errors.
 - [Updates and Community separation](updates-feed-separation.md) — Updates is media-only; text and mixed social posts belong in Community and profiles.
 - [Private navigation boundaries](private-navigation-boundaries.md) — Story viewing stays modal/standalone; Updates Map actions use the visible Map tab, never hidden tab routes.
+- [Map location sharing](map-location-sharing.md) — users can browse the Map and place chosen pins without sharing exact current location continuously.
 - [Story text positioning](story-text-positioning.md) — persist Story text placement as a normalized canvas offset so it scales across devices.
 - [Supabase schema staging](supabase-schema-staging.md) — stage Old Time tables in an isolated schema before any database cutover.
 - [Firebase profile sync boundary](firebase-profile-sync-boundary.md) — verify Firebase tokens and write Supabase profiles only through the API.
@@ -14,5 +15,7 @@
 - [Customer-facing product copy](customer-facing-product-copy.md) — Old Time UI must describe outcomes in plain language, never expose implementation terminology.
 - [External discovery embeds](external-discovery-embeds.md) — third-party discovery uses official embeds only; native Old Time content gains priority as supply grows.
 - [EAS pnpm compatibility](eas-pnpm-compatibility.md) — EAS may run an older pnpm than packageManager declares; avoid catalog dependency specs in build workspaces.
+- [EAS to TestFlight handoff](eas-testflight-handoff.md) — preflight the exact paid-build profile; EAS completion and TestFlight availability are separate.
 - [Phone identity boundaries](phone-identity-boundaries.md) — phone discovery stays optional, separate from Firebase login and message permissions.
 - [Mobile advertising boundaries](mobile-advertising-boundaries.md) — central policy governs public placements; private communication surfaces stay permanently ad-free.
+- [Deployment status and placeholder behavior](deployment-status-quirk.md) — an existing production URL can still serve the not-live placeholder when the current build is unsuccessful.

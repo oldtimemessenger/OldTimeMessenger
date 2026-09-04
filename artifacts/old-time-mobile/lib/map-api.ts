@@ -1,4 +1,5 @@
 import { apiBaseUrl } from '@/lib/api-base-url';
+import { mobileApiRequest } from '@/lib/mobile-api';
 
 export type MapVisibility = 'public' | 'friends' | 'followers' | 'private';
 
@@ -48,33 +49,7 @@ function baseUrl() {
   return apiBaseUrl();
 }
 
-async function request<T>(token: string, path: string, init?: RequestInit): Promise<T> {
-  const origin = baseUrl();
-  if (!origin) {
-    throw new Error('Old Time could not reach the server. Check your connection and try again.');
-  }
-  let response: Response;
-  try {
-    response = await fetch(`${origin}${path}`, {
-      ...init,
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...init?.headers,
-      },
-    });
-  } catch {
-    throw new Error('Old Time could not reach the server. Check your connection and try again.');
-  }
-  const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(data && typeof data === 'object' && typeof data.error === 'string'
-      ? data.error
-      : 'The request could not be completed.');
-  }
-  return data as T;
-}
+const request = mobileApiRequest;
 
 export function getNearbyPins(token: string, latitude: number, longitude: number, radiusKm = 25) {
   return request<{ items: MapPin[] }>(

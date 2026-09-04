@@ -11,6 +11,8 @@ export type UnauthorizedHandler = () => Promise<void> | void;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
+const NETWORK_ERROR_MESSAGE =
+  "Unable to reach Old Time. Check your connection and try again.";
 
 // ---------------------------------------------------------------------------
 // Module-level configuration
@@ -82,6 +84,19 @@ function resolveUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
   if (isUrl(input)) return input.toString();
   return input.url;
+}
+
+function isAbortError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "name" in error &&
+      (error as { name?: unknown }).name === "AbortError",
+  );
+}
+
+function normalizeNetworkError(): Error {
+  return new Error(NETWORK_ERROR_MESSAGE);
 }
 
 function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
@@ -366,7 +381,13 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  let response: Response;
+  try {
+    response = await fetch(input, { ...init, method, headers });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    throw normalizeNetworkError();
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

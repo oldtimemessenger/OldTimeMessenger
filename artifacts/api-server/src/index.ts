@@ -27,6 +27,29 @@ const io = new Server(httpServer, {
 });
 registerRealtimeServer(io);
 
+let shuttingDown = false;
+
+function shutdown(signal: NodeJS.Signals): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, "Shutting down realtime API");
+
+  const forceExit = setTimeout(() => {
+    logger.error("Forced shutdown after graceful shutdown timeout");
+    process.exit(1);
+  }, 10_000);
+  forceExit.unref();
+
+  io.close(() => {
+    clearTimeout(forceExit);
+    logger.info("Realtime API shut down cleanly");
+    process.exit(0);
+  });
+}
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
+
 io.use(async (socket, next) => {
   const rawToken = socket.handshake.auth?.token;
   if (typeof rawToken !== "string") {

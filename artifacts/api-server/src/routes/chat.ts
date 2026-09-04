@@ -387,7 +387,7 @@ router.post("/auth/request-otp", async (req, res): Promise<void> => {
       expiresAt,
     });
     req.log.info(
-      { phoneHash: privacyHash(phone), provider: developmentCode ? "local-development" : "twilio" },
+      { phoneHash: privacyHash(phone), provider: "local-development" },
       "Phone verification requested",
     );
     res.json(RequestOtpResponse.parse({ success: true, challengeId, expiresAt }));
@@ -462,7 +462,7 @@ router.post("/auth/firebase", async (req, res): Promise<void> => {
       const challengeId = randomUUID();
       await db.insert(authChallengesTable).values({
         id: challengeId,
-        phone: user.phone,
+        phone: `firebase:${identity.uid}`,
         codeHash: null,
         requestIpHash: privacyHash(req.ip || req.socket.remoteAddress || "unknown"),
         status: "birthday_pending",
@@ -676,7 +676,32 @@ router.post("/auth/complete-birthday", async (req, res): Promise<void> => {
   }
 
   const timestamp = now();
-  let [user] = await db.select().from(usersTable).where(eq(usersTable.phone, challenge.phone));
+  const firebaseUid = challenge.phone.startsWith("firebase:")
+    ? challenge.phone.slice("firebase:".length)
+    : null;
+  let [user] = await db
+    .select()
+    .from(usersTable)
+    .where(
+      firebaseUid
+        ? eq(usersTable.firebaseUid, firebaseUid)
+        : eq(usersTable.phone, challenge.phone),
+    );
+  if (!user && firebaseUid) {
+    await db
+      .update(authChallengesTable)
+      .set({ status: "consumed" })
+      .where(
+        and(
+          eq(authChallengesTable.id, challenge.id),
+          eq(authChallengesTable.status, "verifying"),
+        ),
+      );
+    res.status(400).json({
+      error: "This age-verification step is no longer valid. Start sign-in again.",
+    });
+    return;
+  }
   if (!user) {
     const [created] = await db
       .insert(usersTable)
@@ -695,7 +720,17 @@ router.post("/auth/complete-birthday", async (req, res): Promise<void> => {
   } else {
     const [updated] = await db
       .update(usersTable)
-        .set({ birthday, online: true, lastSeen: timestamp, phoneVerified: true, phoneDiscoveryHash: contactDiscoveryHash(challenge.phone) })
+      .set({
+        birthday,
+        online: true,
+        lastSeen: timestamp,
+        ...(firebaseUid
+          ? {}
+          : {
+              phoneVerified: true,
+              phoneDiscoveryHash: contactDiscoveryHash(challenge.phone),
+            }),
+      })
       .where(eq(usersTable.id, user.id))
       .returning();
     user = updated;

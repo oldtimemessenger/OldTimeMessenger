@@ -1,10 +1,10 @@
 ---
 name: Development readiness checks
-description: Distinguishes the lightweight local health check from production dependency readiness.
+description: Defines health and traffic-readiness semantics for the API.
 ---
 
-Use `/api/healthz` as the local API smoke test. `/api/readyz` also validates provider configuration that may be intentionally absent during development, so a 503 `configuration_incomplete` there is not by itself an API startup failure.
+Treat `/api/readyz` returning 503 as a release blocker. Readiness must cover the database and providers required for the app's primary traffic path, but optional capabilities such as Twilio phone verification must not make the entire API unready.
 
-**Why:** The API can be fully reachable and database-backed in development while production-only messaging and storage providers are not configured.
+**Why:** Deployment systems use readiness to decide whether the API can receive traffic. Conflating an optional provider outage with process readiness can prevent an otherwise usable Firebase-first app from becoming live.
 
-**How to apply:** After server changes, verify the workflow starts and `healthz` returns 200; interpret `readyz` separately based on the target environment.
+**How to apply:** Before release, require both `/api/healthz` and `/api/readyz` to return 200. Optional feature endpoints should report their own provider-specific unavailability without failing global readiness.

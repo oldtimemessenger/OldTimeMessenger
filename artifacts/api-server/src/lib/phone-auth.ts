@@ -1,6 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
 
-const TWILIO_VERIFY_BASE = "https://verify.twilio.com/v2/Services";
 const TEST_BYPASS_PHONE = "+11234567890";
 const TEST_BYPASS_CODE_PATTERN = /^\d{6}$/;
 
@@ -33,47 +32,9 @@ export function contactDiscoveryHash(normalizedPhone: string): string {
   return createHash("sha256").update(normalizedPhone).digest("hex");
 }
 
-function twilioConfiguration(): {
-  accountSid: string;
-  authToken: string;
-  serviceSid: string;
-} | null {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
-  return accountSid && authToken && serviceSid ? { accountSid, authToken, serviceSid } : null;
-}
-
-async function twilioRequest(
-  path: string,
-  values: Record<string, string>,
-): Promise<Record<string, unknown>> {
-  const config = twilioConfiguration();
-  if (!config) throw new Error("SMS_PROVIDER_NOT_CONFIGURED");
-  const body = new URLSearchParams(values);
-  const response = await fetch(
-    `${TWILIO_VERIFY_BASE}/${encodeURIComponent(config.serviceSid)}/${path}`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64")}`,
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body,
-    },
-  );
-  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok) throw new Error(`SMS_PROVIDER_ERROR_${response.status}`);
-  return payload;
-}
-
 export async function sendPhoneVerification(phone: string): Promise<string | null> {
   if (isTestOtpBypassPhone(phone)) {
     return "123456";
-  }
-  if (twilioConfiguration()) {
-    await twilioRequest("Verifications", { To: phone, Channel: "sms" });
-    return null;
   }
   if (process.env.NODE_ENV === "production") throw new Error("SMS_PROVIDER_NOT_CONFIGURED");
   return process.env.DEV_OTP_CODE ?? "123456";
@@ -86,10 +47,6 @@ export async function checkPhoneVerification(
 ): Promise<boolean> {
   if (isTestOtpBypassPhone(phone)) {
     return TEST_BYPASS_CODE_PATTERN.test(code);
-  }
-  if (twilioConfiguration()) {
-    const result = await twilioRequest("VerificationCheck", { To: phone, Code: code });
-    return result.status === "approved";
   }
   if (process.env.NODE_ENV === "production") throw new Error("SMS_PROVIDER_NOT_CONFIGURED");
   return developmentCodeHash !== null && privacyHash(code) === developmentCodeHash;
