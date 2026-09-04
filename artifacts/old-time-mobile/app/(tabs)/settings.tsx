@@ -37,6 +37,7 @@ export default function SettingsScreen() {
   const [query, setQuery] = useState('');
   const [cacheStatus, setCacheStatus] = useState<'idle' | 'clearing' | 'cleared' | 'error'>('idle');
   const [signingOut, setSigningOut] = useState(false);
+  const [updatingNotifications, setUpdatingNotifications] = useState(false);
 
   // Profile state
   const [draftName, setDraftName] = useState(profile.name);
@@ -67,6 +68,32 @@ export default function SettingsScreen() {
     } catch (error) {
       updateSettings({ lastSeen: !next });
       Alert.alert('Privacy setting not saved', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }
+
+  async function toggleNotifications() {
+    if (updatingNotifications) return;
+    const next = !settings.notifications;
+    if (next) {
+      updateSettings({ notifications: true });
+      return;
+    }
+
+    setUpdatingNotifications(true);
+    try {
+      if (session?.authToken) {
+        await unregisterDeviceForPush(session.authToken);
+      }
+      updateSettings({ notifications: false });
+    } catch (error) {
+      Alert.alert(
+        'Notifications are still on',
+        error instanceof Error
+          ? error.message
+          : 'Old Time could not turn off notifications on this device. Please try again.',
+      );
+    } finally {
+      setUpdatingNotifications(false);
     }
   }
 
@@ -433,7 +460,12 @@ export default function SettingsScreen() {
         return (
           <DetailShell title="Notifications and Sounds" onBack={() => setPanel(null)}>
             <PanelSection>
-              <PanelToggleRow label="Notifications" sub="Show alerts for new messages and activity." value={settings.notifications} onChange={() => toggle('notifications')} />
+              <PanelToggleRow
+                label="Notifications"
+                sub={updatingNotifications ? 'Turning off notifications…' : 'Show alerts for new messages and activity.'}
+                value={settings.notifications}
+                onChange={() => void toggleNotifications()}
+              />
               <PanelToggleRow label="Sounds" sub="Play a sound for new messages and calls." value={settings.sounds} onChange={() => toggle('sounds')} />
               <PanelToggleRow label="Message previews" sub="Show message text in notifications." value={settings.previews} onChange={() => toggle('previews')} isLast />
             </PanelSection>

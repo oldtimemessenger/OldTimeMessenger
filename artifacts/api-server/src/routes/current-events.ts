@@ -14,6 +14,7 @@ import {
 import { requireChatAuth } from "../lib/chat-auth";
 import { getVerifiedCoinPurchases } from "../lib/revenuecat";
 import { createLiveKitToken, liveKitConfigured, liveKitPublicUrl } from "../lib/livekit";
+import { emitToCurrentEventRoom, evictCurrentEventRoom, evictUserFromCurrentEventRoom } from "../lib/realtime";
 
 const router: IRouter = Router();
 
@@ -221,7 +222,9 @@ router.post("/current-events/rooms", async (req, res): Promise<void> => {
     joinedAt: now,
   });
   await ensureWallet(viewerId);
-  res.status(201).json(await serializeRoom(room, viewerId));
+  const serialized = await serializeRoom(room, viewerId);
+  emitToCurrentEventRoom(room.id, "current-event-room-updated", { roomId: room.id });
+  res.status(201).json(serialized);
 });
 
 router.get("/current-events/rooms/:roomId", async (req, res): Promise<void> => {
@@ -269,7 +272,9 @@ router.post("/current-events/rooms/:roomId/join", async (req, res): Promise<void
     });
   }
   await ensureWallet(viewerId);
-  res.json(await serializeRoom(room, viewerId));
+  const serialized = await serializeRoom(room, viewerId);
+  if (!existing) emitToCurrentEventRoom(roomId, "current-event-room-updated", { roomId });
+  res.json(serialized);
 });
 
 router.post("/current-events/rooms/:roomId/token", async (req, res): Promise<void> => {
@@ -325,6 +330,12 @@ router.post("/current-events/rooms/:roomId/leave", async (req, res): Promise<voi
   } else {
     await db.delete(currentEventParticipantsTable).where(and(eq(currentEventParticipantsTable.roomId, roomId), eq(currentEventParticipantsTable.userId, viewerId)));
   }
+  emitToCurrentEventRoom(roomId, "current-event-room-updated", { roomId, ended: room.hostId === viewerId });
+  if (room.hostId === viewerId) {
+    await evictCurrentEventRoom(roomId);
+  } else {
+    await evictUserFromCurrentEventRoom(viewerId, roomId);
+  }
   res.json({ success: true });
 });
 
@@ -345,7 +356,8 @@ router.post("/current-events/rooms/:roomId/hand", async (req, res): Promise<void
   await db.update(currentEventParticipantsTable)
     .set({ handRaised: parsed.data.raised })
     .where(and(eq(currentEventParticipantsTable.roomId, roomId), eq(currentEventParticipantsTable.userId, viewerId), eq(currentEventParticipantsTable.role, "listener")));
-  await sendRoom(res, roomId, viewerId);
+  const serialized = await sendRoom(res, roomId, viewerId);
+  if (serialized) emitToCurrentEventRoom(roomId, "current-event-room-updated", { roomId });
 });
 
 router.patch("/current-events/rooms/:roomId/participants/:participantId", async (req, res): Promise<void> => {
@@ -383,7 +395,9 @@ router.patch("/current-events/rooms/:roomId/participants/:participantId", async 
   } else {
     await db.update(currentEventParticipantsTable).set({ muted: action === "mute" }).where(eq(currentEventParticipantsTable.id, participantId));
   }
-  await sendRoom(res, roomId, viewerId);
+  const serialized = await sendRoom(res, roomId, viewerId);
+  if (serialized) emitToCurrentEventRoom(roomId, "current-event-room-updated", { roomId });
+  if (action === "remove") await evictUserFromCurrentEventRoom(target[0].userId, roomId);
 });
 
 router.get("/current-events/rooms/:roomId/messages", async (req, res): Promise<void> => {
@@ -433,7 +447,9 @@ router.post("/current-events/rooms/:roomId/messages", async (req, res): Promise<
   }
   const [message] = await db.insert(currentEventMessagesTable).values({ roomId, senderId: viewerId, content: parsed.data.content, createdAt: Date.now() }).returning();
   const [sender] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, viewerId));
-  res.status(201).json({ id: message.id, roomId, sender: { id: sender.id, name: sender.name, username: usernameFor(sender) }, content: message.content, createdAt: message.createdAt });
+  const serialized = { id: message.id, roomId, sender: { id: sender.id, name: sender.name, username: usernameFor(sender) }, content: message.content, createdAt: message.createdAt };
+  emitToCurrentEventRoom(roomId, "current-event-message", serialized);
+  res.status(201).json(serialized);
 });
 
 router.post("/current-events/rooms/:roomId/gifts", async (req, res): Promise<void> => {

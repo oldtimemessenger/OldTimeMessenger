@@ -51,14 +51,11 @@ export async function registerDeviceForPush(authToken: string): Promise<string |
 export async function unregisterDeviceForPush(authToken: string): Promise<void> {
   const token = await AsyncStorage.getItem(TOKEN_KEY);
   if (!token) return;
-  try {
-    await unregisterPushToken(
-      { token },
-      { headers: { Authorization: `Bearer ${authToken}` } },
-    );
-  } finally {
-    await AsyncStorage.removeItem(TOKEN_KEY);
-  }
+  await unregisterPushToken(
+    { token },
+    { headers: { Authorization: `Bearer ${authToken}` } },
+  );
+  await AsyncStorage.removeItem(TOKEN_KEY);
 }
 
 export function addNotificationTapListener(open: (target: { chatId?: number; callId?: number }) => void): () => void {

@@ -15,7 +15,7 @@ import { setPresence } from '@/lib/social-api';
 import { apiBaseUrl } from '@/lib/api-base-url';
 import { RevenueCatProvider } from '@/lib/revenuecat';
 import { AdMobInitializer } from '@/components/admob-initializer';
-import { addNotificationTapListener, registerDeviceForPush } from '@/lib/push-notifications';
+import { addNotificationTapListener, registerDeviceForPush, unregisterDeviceForPush } from '@/lib/push-notifications';
 import { io } from 'socket.io-client';
 import { Platform } from 'react-native';
 import '@/lib/livekit-globals';
@@ -80,18 +80,25 @@ function PresenceHeartbeat() {
 }
 
 function PushNotificationManager() {
-  const { session, settings, updateSettings } = useApp();
+  const { session, settings } = useApp();
 
   useEffect(() => {
-    if (!session?.authToken || !settings.notifications) return;
+    if (!session?.authToken) return;
     let cancelled = false;
+    if (!settings.notifications) {
+      void unregisterDeviceForPush(session.authToken).catch((error: unknown) => {
+        if (!cancelled) console.warn('Push unregistration failed; this device may continue receiving notifications until the next retry.', error);
+      });
+      return () => { cancelled = true; };
+    }
     void registerDeviceForPush(session.authToken).then((token) => {
-      if (!token && !cancelled) updateSettings({ notifications: false });
-    }).catch(() => {
-      // Push registration is optional; retain the user's preference for a later retry.
+      if (!token && !cancelled) {
+        console.warn('Push registration did not return a device token; notifications remain enabled and registration will retry later.');
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) console.warn('Push registration failed; notifications remain enabled and registration will retry later.', error);
     });
     return () => { cancelled = true; };
-  // updateSettings is intentionally omitted: the context value changes as state is persisted.
   // Register only when the signed-in identity or notification preference changes.
   }, [session?.authToken, settings.notifications]);
 

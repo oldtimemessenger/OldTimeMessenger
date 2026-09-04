@@ -25,12 +25,20 @@ type RevenueCatV1Subscriber = {
   };
 };
 
+type RevenueCatPage<T> = {
+  items: T[];
+  nextPage: string | null;
+};
+
+const REVENUECAT_API_ORIGIN = "https://api.revenuecat.com";
+const MAX_REVENUECAT_PAGES = 100;
+
 async function request(path: string) {
   const secretKey = process.env.REVENUECAT_SECRET_KEY;
   if (!secretKey) {
     throw new Error("REVENUECAT_SECRET_KEY is not configured.");
   }
-  const response = await fetch(`https://api.revenuecat.com${path}`, {
+  const response = await fetch(`${REVENUECAT_API_ORIGIN}${path}`, {
     method: "GET",
     headers: {
       authorization: `Bearer ${secretKey}`,
@@ -44,6 +52,76 @@ async function request(path: string) {
     throw error;
   }
   return JSON.parse(text);
+}
+
+function parsePage<T>(payload: unknown, resourceName: string): RevenueCatPage<T> {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error(`RevenueCat ${resourceName} pagination response is malformed.`);
+  }
+  const page = payload as Record<string, unknown>;
+  if (!Array.isArray(page.items) || !Object.hasOwn(page, "next_page")) {
+    throw new Error(`RevenueCat ${resourceName} pagination response is malformed.`);
+  }
+  if (page.next_page !== null && typeof page.next_page !== "string") {
+    throw new Error(`RevenueCat ${resourceName} pagination response is malformed.`);
+  }
+  return { items: page.items as T[], nextPage: page.next_page };
+}
+
+function getNextPagePath(nextPage: string, resourceName: string) {
+  if (!nextPage) {
+    throw new Error(`RevenueCat ${resourceName} pagination response has an invalid next_page.`);
+  }
+  if (nextPage.startsWith("/")) {
+    if (nextPage.startsWith("//")) {
+      throw new Error(`RevenueCat ${resourceName} pagination response has an invalid next_page.`);
+    }
+    return nextPage;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(nextPage);
+  } catch {
+    throw new Error(`RevenueCat ${resourceName} pagination response has an invalid next_page.`);
+  }
+  if (url.origin !== REVENUECAT_API_ORIGIN) {
+    throw new Error(`RevenueCat ${resourceName} pagination response has an invalid next_page.`);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+async function requestAllPages<T>(
+  initialPath: string,
+  resourceName: string,
+  returnEmptyOnInitialNotFound = false,
+): Promise<T[]> {
+  const items: T[] = [];
+  const visitedPaths = new Set<string>();
+  let path = initialPath;
+
+  for (let pageCount = 0; pageCount < MAX_REVENUECAT_PAGES; pageCount += 1) {
+    if (visitedPaths.has(path)) {
+      throw new Error(`RevenueCat ${resourceName} pagination repeated a page.`);
+    }
+    visitedPaths.add(path);
+
+    let payload: unknown;
+    try {
+      payload = await request(path);
+    } catch (error) {
+      if (pageCount === 0 && returnEmptyOnInitialNotFound && (error as { status?: number }).status === 404) {
+        return [];
+      }
+      throw error;
+    }
+    const page = parsePage<T>(payload, resourceName);
+    items.push(...page.items);
+    if (page.nextPage === null) return items;
+    path = getNextPagePath(page.nextPage, resourceName);
+  }
+
+  throw new Error(`RevenueCat ${resourceName} pagination exceeded ${MAX_REVENUECAT_PAGES} pages.`);
 }
 
 export async function getVerifiedCoinPurchases(userId: number) {
@@ -86,14 +164,15 @@ export async function getVerifiedCoinPurchases(userId: number) {
     });
   }
 
-  let purchases: RevenueCatPurchase[];
-  try {
-    purchases = (await request(`/v2/projects/${useV2}/customers/${customerId}/purchases?limit=100`)).items ?? [];
-  } catch (error) {
-    if ((error as { status?: number }).status === 404) return [];
-    throw error;
-  }
-  const products: RevenueCatProduct[] = (await request(`/v2/projects/${useV2}/products?limit=100`)).items ?? [];
+  const purchases = await requestAllPages<RevenueCatPurchase>(
+    `/v2/projects/${useV2}/customers/${customerId}/purchases?limit=100`,
+    "purchases",
+    true,
+  );
+  const products = await requestAllPages<RevenueCatProduct>(
+    `/v2/projects/${useV2}/products?limit=100`,
+    "products",
+  );
   const productById = new Map(products.map((product) => [product.id, product]));
   return purchases.flatMap((purchase) => {
     const product = productById.get(purchase.product_id);

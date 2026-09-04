@@ -34,6 +34,9 @@ import { Avatar } from '@/components/ui';
 import { useColors } from '@/hooks/useColors';
 import { useRevenueCat } from '@/lib/revenuecat';
 import { audioService } from '@/lib/audio-service';
+import { useApp } from '@/context/app-state';
+import { apiBaseUrl } from '@/lib/api-base-url';
+import { io } from 'socket.io-client';
 
 const gifts = [
   { key: 'coffee' as const, label: 'Coffee', icon: 'cafe-outline' as const, cost: 25 },
@@ -43,10 +46,17 @@ const gifts = [
   { key: 'studio' as const, label: 'Studio', icon: 'radio-outline' as const, cost: 1000 },
 ];
 
+function mergeMessages(current: CurrentEventMessage[], incoming: CurrentEventMessage[]) {
+  const byId = new Map(current.map((item) => [item.id, item]));
+  for (const item of incoming) byId.set(item.id, item);
+  return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt || left.id - right.id);
+}
+
 export default function CurrentEventRoomScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { session } = useApp();
   const params = useLocalSearchParams<{ id: string }>();
   const roomId = Number(params.id);
   const [room, setRoom] = useState<CurrentEventRoom | null>(null);
@@ -85,7 +95,7 @@ export default function CurrentEventRoomScreen() {
           getCurrentEventMessages(roomId),
           getCurrentEventWallet(),
         ]);
-        setMessages(messageResult.items);
+        setMessages((current) => mergeMessages(current, messageResult.items));
         setWallet(walletResult);
       }
     } catch (error) {
@@ -110,6 +120,35 @@ export default function CurrentEventRoomScreen() {
       clearInterval(interval);
     };
   }, [loadRoom]);
+
+  useEffect(() => {
+    if (!session?.authToken || !room?.isLive || room.viewer.participantId === null || !Number.isInteger(roomId) || roomId < 1) return;
+    const socket = io(apiBaseUrl(), {
+      auth: { token: session.authToken },
+      reconnection: true,
+    });
+    const refreshRoom = (payload?: { roomId?: unknown }) => {
+      if (!payload || payload.roomId === roomId) void loadRoom(false);
+    };
+    const receiveMessage = (payload: unknown) => {
+      if (!payload || typeof payload !== 'object') return;
+      const incoming = payload as CurrentEventMessage;
+      if (incoming.roomId !== roomId || !Number.isInteger(incoming.id)) return;
+      setMessages((current) => mergeMessages(current, [incoming]));
+    };
+    const joinRoom = () => socket.emit('join-current-event', { roomId });
+
+    socket.on('connect', joinRoom);
+    socket.on('current-event-message', receiveMessage);
+    socket.on('current-event-room-updated', refreshRoom);
+    return () => {
+      socket.emit('leave-current-event', { roomId });
+      socket.off('connect', joinRoom);
+      socket.off('current-event-message', receiveMessage);
+      socket.off('current-event-room-updated', refreshRoom);
+      socket.disconnect();
+    };
+  }, [loadRoom, room?.isLive, room?.viewer.participantId, roomId, session?.authToken]);
 
   const connectAudio = useCallback(async () => {
     if (!room || room.viewer.participantId === null) return;
@@ -185,7 +224,7 @@ export default function CurrentEventRoomScreen() {
     if (!room || !message.trim()) return;
     try {
       const sent = await createCurrentEventMessage(room.id, { content: message.trim() });
-      setMessages((items) => [...items, sent]);
+      setMessages((items) => mergeMessages(items, [sent]));
       setMessage('');
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Message not sent.');

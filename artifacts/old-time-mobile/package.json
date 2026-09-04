@@ -3,17 +3,22 @@
   "version": "0.0.0",
   "private": true,
   "main": "expo-router/entry",
+  "expo": {
+    "install": {
+      "exclude": [
+        "react-native-maps"
+      ]
+    }
+  },
   "scripts": {
     "dev": "expo start --port $PORT",
-    "build": "node scripts/apply-chat-error-ui.mjs && node scripts/apply-gift-double-submit-guard.mjs && node scripts/build.js",
+    "build": "node scripts/build.js",
     "check:private-navigation": "node scripts/navigation-regression.mjs",
     "serve": "node server/serve.js",
-    "typecheck": "node scripts/apply-chat-error-ui.mjs && node scripts/apply-gift-double-submit-guard.mjs && tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "expo start",
     "android": "expo start --android",
-    "ios": "expo start --ios",
-    "fix:chat-error-ui": "node scripts/apply-chat-error-ui.mjs",
-    "fix:guards": "node scripts/apply-chat-error-ui.mjs && node scripts/apply-gift-double-submit-guard.mjs"
+    "ios": "expo start --ios"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -63,20 +68,20 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "13.0.0",
+    "@livekit/react-native": "2.12.0",
+    "@livekit/react-native-expo-plugin": "1.0.2",
+    "@livekit/react-native-webrtc": "144.1.2",
+    "event-target-shim": "6.0.2",
     "expo-auth-session": "~7.0.11",
     "expo-camera": "~17.0.10",
-    "expo-contacts": "~14.0.5",
+    "expo-contacts": "~15.0.11",
     "expo-crypto": "~15.0.9",
     "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.10",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.24",
     "expo-video": "~3.0.16",
-    "event-target-shim": "6.0.2",
-    "@config-plugins/react-native-webrtc": "13.0.0",
-    "@livekit/react-native": "2.12.0",
-    "@livekit/react-native-expo-plugin": "1.0.2",
-    "@livekit/react-native-webrtc": "144.1.2",
     "firebase": "^12.18.0",
     "livekit-client": "2.22.2",
     "react-native-google-mobile-ads": "^16.5.0",

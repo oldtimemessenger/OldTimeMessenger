@@ -42,6 +42,14 @@ function readableFirebaseError(error: unknown): string {
   return 'Sign-in is temporarily unavailable. Please try again.';
 }
 
+function readableExchangeError(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (message.includes('network') || message.includes('fetch') || message.includes('timeout')) {
+    return 'Your sign-in was verified, but we could not reach Old Time. Check your connection and try again.';
+  }
+  return 'Your sign-in was verified, but Old Time could not finish signing you in. Please try again.';
+}
+
 export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
   const colors = useColors();
   const [name, setName] = useState('');
@@ -70,6 +78,22 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
     onAuthenticated(result, newProfile);
   }, [exchangeFirebaseToken, onAuthenticated]);
 
+  const handleExchangeFailure = useCallback((error: unknown, user: User, newProfile?: { name: string; username: string }) => {
+    Alert.alert(
+      'Finish signing in',
+      readableExchangeError(error),
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Try again',
+          onPress: () => void finishFirebaseSignIn(user, newProfile).catch((retryError) => {
+            Alert.alert('Finish signing in', readableExchangeError(retryError));
+          }),
+        },
+      ],
+    );
+  }, [finishFirebaseSignIn]);
+
   useEffect(() => {
     const idToken = googleResponse?.type === 'success' ? googleResponse.params.id_token : null;
     if (!idToken || processedGoogleToken.current === idToken) return;
@@ -77,13 +101,13 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
     setBusy(true);
     const credential = GoogleAuthProvider.credential(idToken);
     void signInWithCredential(auth, credential)
-      .then(({ user }) => finishFirebaseSignIn(user))
+      .then(({ user }) => finishFirebaseSignIn(user).catch((error) => handleExchangeFailure(error, user)))
       .catch(async (error) => {
         await signOut(auth).catch(() => undefined);
         Alert.alert('Google Sign-In unavailable', readableFirebaseError(error));
       })
       .finally(() => setBusy(false));
-  }, [finishFirebaseSignIn, googleResponse]);
+  }, [finishFirebaseSignIn, googleResponse, handleExchangeFailure]);
 
   async function submitEmail() {
     const cleanName = name.trim();
@@ -95,10 +119,12 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
       const credential = createAccount
         ? await createUserWithEmailAndPassword(auth, email.trim(), password)
         : await signInWithEmailAndPassword(auth, email.trim(), password);
-      await finishFirebaseSignIn(
-        credential.user,
-        createAccount ? { name: cleanName, username: cleanUsername } : undefined,
-      );
+      const newProfile = createAccount ? { name: cleanName, username: cleanUsername } : undefined;
+      try {
+        await finishFirebaseSignIn(credential.user, newProfile);
+      } catch (error) {
+        handleExchangeFailure(error, credential.user, newProfile);
+      }
     } catch (error) {
       await signOut(auth).catch(() => undefined);
       Alert.alert(createAccount ? 'Could not create account' : 'Could not sign in', readableFirebaseError(error));

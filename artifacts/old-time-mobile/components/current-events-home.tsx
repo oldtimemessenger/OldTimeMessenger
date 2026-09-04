@@ -152,11 +152,13 @@ export default function CurrentEventsHome({
           showsVerticalScrollIndicator={false}
           scrollEnabled={rooms.length > 0}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Ionicons name="mic-outline" size={34} color={colors.primary} />
-              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No live rooms yet</Text>
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Start a room to begin.</Text>
-            </View>
+            error ? null : (
+              <View style={styles.empty}>
+                <Ionicons name="mic-outline" size={34} color={colors.primary} />
+                <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No live rooms yet</Text>
+                <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Start a room to begin.</Text>
+              </View>
+            )
           }
           renderItem={({ item }) => (
             <Pressable

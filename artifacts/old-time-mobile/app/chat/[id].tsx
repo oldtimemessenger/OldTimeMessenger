@@ -5,7 +5,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -89,9 +89,11 @@ export default function ChatDetailScreen() {
   const [uploadLabel, setUploadLabel] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
   const [chatNotes, setChatNotes] = useState<Note[]>([]);
+  const [chatNotesError, setChatNotesError] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
   const openingIds = useRef(new Set<number>());
   const handledCameraUri = useRef<string | null>(null);
+  const notesRequestId = useRef(0);
   const inboxKey = getGetInboxQueryKey(session?.id ?? 0);
   const messagesKey = getListMessagesQueryKey(chatId, { viewerId: session?.id ?? 0 });
   const inbox = useGetInbox(session?.id ?? 0, {
@@ -180,20 +182,30 @@ export default function ChatDetailScreen() {
     }
   }, [session?.id, visibleMessages]);
 
+  const loadChatNotes = useCallback(async () => {
+    const requestId = ++notesRequestId.current;
+    const authToken = session?.authToken;
+    const userId = session?.id;
+    const contactId = contact?.id;
+    if (!authToken || !userId) return;
+    try {
+      const { items } = await getNotes(authToken, 'chat');
+      if (requestId !== notesRequestId.current) return;
+      setChatNotes(items.filter((note) => note.owner.id === userId || note.owner.id === contactId));
+      setChatNotesError(null);
+    } catch {
+      if (requestId !== notesRequestId.current) return;
+      // Keep the last known notes visible rather than implying there are none.
+      setChatNotesError('Notes could not be refreshed.');
+    }
+  }, [contact?.id, session?.authToken, session?.id]);
+
   useEffect(() => {
-    if (!session?.authToken) return;
-    let cancelled = false;
-    void getNotes(session.authToken, 'chat')
-      .then(({ items }) => {
-        if (!cancelled) setChatNotes(items.filter((note) => note.owner.id === session.id || note.owner.id === contact?.id));
-      })
-      .catch(() => {
-        if (!cancelled) setChatNotes([]);
-      });
+    void loadChatNotes();
     return () => {
-      cancelled = true;
+      notesRequestId.current += 1;
     };
-  }, [session?.authToken, session?.id, contact?.id]);
+  }, [loadChatNotes]);
 
   useEffect(() => {
     if (!mediaUri || !session || handledCameraUri.current === mediaUri) return;
@@ -278,8 +290,12 @@ export default function ChatDetailScreen() {
         },
       });
       await refreshChat();
-    } catch {
-      Alert.alert('Attachment not sent', 'The upload did not finish. Check your connection and try again.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      const safeMessage = message.includes('network') || message.includes('fetch') || message.includes('timeout')
+        ? 'Check your connection, then choose the attachment again to retry.'
+        : 'The attachment was not sent. Please choose it again and try once more.';
+      Alert.alert('Attachment not sent', safeMessage);
     } finally {
       setUploadLabel(null);
       setAttachmentMenu(false);
@@ -366,17 +382,20 @@ export default function ChatDetailScreen() {
         {contact?.phone ? <IconButton name="call-outline" label={`Call ${contact.name}`} onPress={() => void callContact()} /> : null}
       </View>
 
-      {chatNotes.length > 0 ? (
+      {chatNotes.length > 0 || chatNotesError ? (
         <View style={[styles.chatNotesStrip, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
           <Ionicons name="sparkles-outline" size={15} color={colors.primary} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chatNotesContent}>
-            {chatNotes.map((note) => (
-              <View key={note.id} style={[styles.chatNoteChip, { backgroundColor: colors.muted }]}>
-                <Text style={[styles.chatNoteOwner, { color: colors.primary }]}>{note.owner.id === session.id ? 'You' : note.owner.name}</Text>
-                <Text style={[styles.chatNoteText, { color: colors.foreground }]} numberOfLines={1}>{note.content}</Text>
-              </View>
-            ))}
-          </ScrollView>
+          {chatNotes.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chatNotesContent}>
+              {chatNotes.map((note) => (
+                <View key={note.id} style={[styles.chatNoteChip, { backgroundColor: colors.muted }]}>
+                  <Text style={[styles.chatNoteOwner, { color: colors.primary }]}>{note.owner.id === session.id ? 'You' : note.owner.name}</Text>
+                  <Text style={[styles.chatNoteText, { color: colors.foreground }]} numberOfLines={1}>{note.content}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          ) : null}
+          {chatNotesError ? <Pressable onPress={() => void loadChatNotes()} accessibilityRole="button" accessibilityLabel="Retry loading chat notes" style={styles.notesRetry}><Text style={{ color: colors.destructive, fontSize: 12 }}>{chatNotesError} Retry</Text></Pressable> : null}
         </View>
       ) : null}
 
@@ -837,6 +856,7 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 12, marginTop: 2 },
   contactHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 8, marginRight: 8 },
   chatNotesStrip: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  notesRetry: { paddingVertical: 8 },
   chatNotesContent: { gap: 7, paddingVertical: 6 },
   chatNoteChip: { maxWidth: 220, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 5 },
   chatNoteOwner: { fontSize: 11, fontWeight: '800' },

@@ -63,6 +63,7 @@ export default function MapScreen() {
   const [placeSearching, setPlaceSearching] = useState(false);
   const [currentEventsMode, setCurrentEventsMode] = useState(false);
   const [currentEventRooms, setCurrentEventRooms] = useState<CurrentEventRoom[]>([]);
+  const [currentEventsError, setCurrentEventsError] = useState<string | null>(null);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[] }>());
   const discoveryRequestId = useRef(0);
@@ -75,10 +76,21 @@ export default function MapScreen() {
     setVisibility(settings.locationAudience === 'public' ? 'friends' : settings.locationAudience);
   }, [settings.locationAudience]);
 
-  useEffect(() => {
+  const loadCurrentEventRooms = useCallback(async () => {
     if (!session?.authToken) return;
-    void getCurrentEventRooms().then(({ items }) => setCurrentEventRooms(items)).catch(() => setCurrentEventRooms([]));
+    try {
+      const { items } = await getCurrentEventRooms();
+      setCurrentEventRooms(items);
+      setCurrentEventsError(null);
+    } catch {
+      // Retain the last known rooms rather than presenting a failed request as an empty list.
+      setCurrentEventsError('Current Events could not be refreshed.');
+    }
   }, [session?.authToken]);
+
+  useEffect(() => {
+    void loadCurrentEventRooms();
+  }, [loadCurrentEventRooms]);
 
   const loadRegion = useCallback(async (nextRegion: SocialMapRegion, force = false) => {
     if (!session?.authToken) return;
@@ -304,6 +316,7 @@ export default function MapScreen() {
           <View style={styles.liveDot} />
           <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>{currentEventRooms.length}</Text>
         </Pressable>
+        {currentEventsError ? <Pressable onPress={() => void loadCurrentEventRooms()} style={[styles.currentEventsError, { top: insets.top + 56, backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Retry loading Current Events"><Ionicons name="cloud-offline-outline" size={15} color={colors.destructive} /><Text style={{ color: colors.destructive, fontSize: 12, fontWeight: '700' }}>Retry Current Events</Text></Pressable> : null}
         <SocialMap
           center={location}
           region={region}
@@ -650,6 +663,7 @@ function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; to
 const styles = StyleSheet.create({
   mapCanvas: { flex: 1, position: 'relative', overflow: 'hidden' },
   currentEventsButton: { position: 'absolute', zIndex: 8, left: 68, right: 68, minHeight: 40, borderRadius: 21, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
+  currentEventsError: { position: 'absolute', zIndex: 8, alignSelf: 'center', minHeight: 32, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#EF4444', marginLeft: 1 },
   loadingPill: { position: 'absolute', left: 14, zIndex: 7, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
   errorPill: { position: 'absolute', left: 14, zIndex: 7, minHeight: 40, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },

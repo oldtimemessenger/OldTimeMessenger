@@ -3,7 +3,7 @@ import { Server } from "socket.io";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { registerRealtimeServer } from "./lib/realtime";
-import { chatParticipantsTable, db, usersTable } from "@workspace/db";
+import { chatParticipantsTable, currentEventParticipantsTable, currentEventRoomsTable, db, usersTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { authenticateToken } from "./lib/chat-auth";
 
@@ -94,6 +94,21 @@ io.on("connection", (socket) => {
     return Boolean(membership);
   }
 
+  async function isCurrentEventParticipant(roomId: number): Promise<boolean> {
+    if (!Number.isInteger(roomId) || roomId <= 0) return false;
+    const [membership] = await db
+      .select({ userId: currentEventParticipantsTable.userId })
+      .from(currentEventParticipantsTable)
+      .innerJoin(currentEventRoomsTable, eq(currentEventRoomsTable.id, currentEventParticipantsTable.roomId))
+      .where(and(
+        eq(currentEventParticipantsTable.roomId, roomId),
+        eq(currentEventParticipantsTable.userId, userId),
+        eq(currentEventRoomsTable.isLive, true),
+      ))
+      .limit(1);
+    return Boolean(membership);
+  }
+
   const sessionCheck = setInterval(() => {
     void authenticateToken(rawToken).then((currentUserId) => {
       if (currentUserId !== userId) socket.disconnect(true);
@@ -112,6 +127,19 @@ io.on("connection", (socket) => {
       payload && typeof payload === "object" ? (payload as { chatId?: unknown }).chatId : null;
     if (typeof chatId !== "number") return;
     if (Number.isInteger(chatId) && chatId > 0) socket.leave(`chat_${chatId}`);
+  });
+  socket.on("join-current-event", async (payload: unknown) => {
+    const roomId =
+      payload && typeof payload === "object" ? (payload as { roomId?: unknown }).roomId : null;
+    if (typeof roomId !== "number") return;
+    if (await isCurrentEventParticipant(roomId)) socket.join(`current_event_${roomId}`);
+  });
+  socket.on("leave-current-event", (payload: unknown) => {
+    const roomId =
+      payload && typeof payload === "object" ? (payload as { roomId?: unknown }).roomId : null;
+    if (typeof roomId === "number" && Number.isInteger(roomId) && roomId > 0) {
+      socket.leave(`current_event_${roomId}`);
+    }
   });
   socket.on("typing", async (payload: unknown) => {
     if (!payload || typeof payload !== "object") return;
