@@ -791,6 +791,17 @@ router.get("/social/posts/:postId/comments", async (req, res): Promise<void> => 
         )
     : [];
   const likedIds = new Set(liked.map((row) => row.commentId));
+  const likeCounts = commentIds.length
+    ? await db
+        .select({
+          commentId: socialCommentLikesTable.commentId,
+          count: sql<number>`count(*)`,
+        })
+        .from(socialCommentLikesTable)
+        .where(inArray(socialCommentLikesTable.commentId, commentIds))
+        .groupBy(socialCommentLikesTable.commentId)
+    : [];
+  const likeCountById = new Map(likeCounts.map((row) => [row.commentId, Number(row.count)]));
   res.json(
     comments.map((comment) => ({
       ...comment,
@@ -801,6 +812,7 @@ router.get("/social/posts/:postId/comments", async (req, res): Promise<void> => 
         bio: comment.authorBio ?? "",
       },
       liked: likedIds.has(comment.id),
+      likeCount: likeCountById.get(comment.id) ?? 0,
     })),
   );
 });
@@ -845,7 +857,22 @@ router.post("/social/posts/:postId/comments", async (req, res): Promise<void> =>
       createdAt: Date.now(),
     })
     .returning();
-  res.status(201).json(created);
+  const [author] = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      username: usersTable.username,
+      bio: usersTable.bio,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, viewerId))
+    .limit(1);
+  res.status(201).json({
+    ...created,
+    author: author ? publicUser(author) : { id: viewerId, name: "You", username: `user${viewerId}`, bio: "" },
+    liked: false,
+    likeCount: 0,
+  });
 });
 
 router.delete("/social/comments/:commentId", async (req, res): Promise<void> => {

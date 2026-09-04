@@ -48,6 +48,7 @@ export type SocialComment = {
   createdAt: number;
   author: SocialUser;
   liked: boolean;
+  likeCount: number;
 };
 
 export type UserCard = SocialUser & {
