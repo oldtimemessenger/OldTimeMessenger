@@ -5,13 +5,14 @@
   "main": "expo-router/entry",
   "scripts": {
     "dev": "expo start --port $PORT",
-    "build": "node scripts/build.js",
+    "build": "node scripts/apply-chat-error-ui.mjs && node scripts/build.js",
     "check:private-navigation": "node scripts/navigation-regression.mjs",
     "serve": "node server/serve.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "node scripts/apply-chat-error-ui.mjs && tsc -p tsconfig.json --noEmit",
     "start": "expo start",
     "android": "expo start --android",
-    "ios": "expo start --ios"
+    "ios": "expo start --ios",
+    "fix:chat-error-ui": "node scripts/apply-chat-error-ui.mjs"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
