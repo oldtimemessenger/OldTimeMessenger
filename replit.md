@@ -32,6 +32,8 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 - Do not create a second source of truth or add new durable domains to the Replit/Drizzle data layer. Existing Drizzle-owned domains require a deliberate, reviewed migration to Supabase without dual-write ambiguity.
 - Use Supabase Realtime for persisted-data updates where appropriate; keep Socket.IO only where ephemeral custom socket behavior is genuinely needed.
 - Global `/api/readyz` covers critical core dependencies only. Optional providers must fail at their feature boundary without making the entire API unready.
+- Stabilization comes before any architecture migration: do not perform the proposed core-data migration, merge the `old_time` schema into `public`, change integer IDs to UUIDs, change Firebase authentication, or add Supabase directly to Expo without explicit approval.
+- Replit must remain replaceable infrastructure. Document the Supabase tables, Replit-dependent data and routes, backend-only functions, environment requirements, host portability, backup/restore process, and deployment process before proposing architectural changes.
 
 ## Product
 
