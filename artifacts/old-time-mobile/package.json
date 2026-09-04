@@ -70,6 +70,7 @@
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.24",
     "expo-video": "~3.0.16",
+    "event-target-shim": "6.0.2",
     "@config-plugins/react-native-webrtc": "13.0.0",
     "@livekit/react-native": "2.9.0",
     "@livekit/react-native-expo-plugin": "1.0.2",
