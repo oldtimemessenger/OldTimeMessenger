@@ -9,20 +9,6 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
-  "pnpm": {
-    "overrides": {
-      "brace-expansion@>=5.0.6": "5.0.5",
-      "brace-expansion@>=2.1.0 <3": "2.0.2",
-      "minimatch@3>brace-expansion": "1.1.12",
-      "glob@7>brace-expansion": "1.1.12",
-      "fast-uri": "3.1.5",
-      "js-yaml": "4.3.1",
-      "postcss": "8.5.18",
-      "uuid": "11.1.1",
-      "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0",
-      "esbuild": "0.27.3"
-    }
-  },
   "devDependencies": {
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"

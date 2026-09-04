@@ -19,19 +19,9 @@ expertMode = true
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
 
+# Secrets must live in Replit Secrets / EAS environment variables.
+# Never commit tokens, service keys, or private client secrets.
 [userenv]
-
-[userenv.shared]
-EXPO_TOKEN = "se7pRLia4z_dWFzqlKlmSDhZLLtS-Z4PeybF9cm8"
-EXPO_PUBLIC_DOMAIN = "old-time-messenger--kingvercetti59.replit.app"
-FIREBASE_PROJECT_ID = "oldtime-a23af"
-SUPABASE_URL = "https://kcwawiqtfmravkljfswu.supabase.co"
-EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID = "226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0.apps.googleusercontent.com"
-EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID = "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0"
-EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY = "goog_RuVhzxTiKfnEakKsFDLxBKubinh"
-EXPO_PUBLIC_REVENUECAT_IOS_API_KEY = "appl_WqFMDjPqFmGJBIrFYqRbYdIfIFE"
-EXPO_PUBLIC_REVENUECAT_TEST_API_KEY = "test_QKbBWxIjYoOmuCFGjBkLUmMXrXz"
-REVENUECAT_PROJECT_ID = "proj2b9a6899"
 
 [nix]
 channel = "stable-25_05"
