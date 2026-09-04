@@ -49,15 +49,24 @@ function baseUrl() {
 }
 
 async function request<T>(token: string, path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${baseUrl()}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  });
+  const origin = baseUrl();
+  if (!origin) {
+    throw new Error('Old Time could not reach the server. Check your connection and try again.');
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${origin}${path}`, {
+      ...init,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new Error('Old Time could not reach the server. Check your connection and try again.');
+  }
   const data = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(data && typeof data === 'object' && typeof data.error === 'string'
