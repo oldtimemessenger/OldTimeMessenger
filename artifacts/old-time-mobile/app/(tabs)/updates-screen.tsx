@@ -52,6 +52,7 @@ import {
   searchSocial,
   setFollowing,
   setUserBlocked,
+  setCommentLike,
   setPostRelation,
   setSharingExcluded,
   socialMediaUrl,
@@ -2378,31 +2379,126 @@ function SocialCommentsSheet({ post, token, colors, onClose, onPostChanged }: { 
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<SocialComment | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Record<number, boolean>>({});
+  const [likeInFlight, setLikeInFlight] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
+    setError(null);
     void getPostComments(token, post.id)
       .then((items) => { if (mounted) setComments(items); })
-      .catch(() => { if (mounted) setComments([]); })
+      .catch((requestError) => {
+        if (!mounted) return;
+        setError(requestError instanceof Error ? requestError.message : 'Comments are unavailable.');
+      })
       .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
   }, [post.id, token]);
+
+  const repliesByParent = useMemo(() => {
+    const grouped = new Map<number, SocialComment[]>();
+    for (const comment of comments) {
+      if (comment.parentId === null) continue;
+      const replies = grouped.get(comment.parentId) ?? [];
+      replies.push(comment);
+      grouped.set(comment.parentId, replies);
+    }
+    return grouped;
+  }, [comments]);
 
   async function submit() {
     const content = text.trim();
     if (!content || sending) return;
     setSending(true);
     try {
-      const comment = await createPostComment(token, post.id, content);
+      const comment = await createPostComment(token, post.id, content, replyingTo?.id ?? null);
       setComments((items) => [...items, comment]);
       setText('');
+      if (replyingTo) {
+        setExpandedReplies((items) => ({ ...items, [replyingTo.id]: true }));
+      }
+      setReplyingTo(null);
       onPostChanged({ ...post, counts: { ...post.counts, comments: post.counts.comments + 1 } });
     } catch (error) {
       Alert.alert('Comment not posted', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setSending(false);
     }
+  }
+
+  async function toggleLike(comment: SocialComment) {
+    if (likeInFlight[comment.id]) return;
+    const nextLiked = !comment.liked;
+    setLikeInFlight((items) => ({ ...items, [comment.id]: true }));
+    setComments((items) => items.map((item) => item.id === comment.id ? {
+      ...item,
+      liked: nextLiked,
+      likeCount: Math.max(0, item.likeCount + (nextLiked ? 1 : -1)),
+    } : item));
+    try {
+      await setCommentLike(token, comment.id, nextLiked);
+    } catch (requestError) {
+      setComments((items) => items.map((item) => item.id === comment.id ? {
+        ...item,
+        liked: comment.liked,
+        likeCount: comment.likeCount,
+      } : item));
+      Alert.alert('Comment like not updated', requestError instanceof Error ? requestError.message : 'Please try again.');
+    } finally {
+      setLikeInFlight((items) => {
+        const next = { ...items };
+        delete next[comment.id];
+        return next;
+      });
+    }
+  }
+
+  function renderComment(comment: SocialComment, depth = 0): React.ReactNode {
+    const replies = repliesByParent.get(comment.id) ?? [];
+    const expanded = expandedReplies[comment.id] !== false;
+    const indent = Math.min(depth, 4) * 20;
+    return (
+      <View key={comment.id} style={{ marginLeft: indent }}>
+        <View style={[styles.commentRow, { borderBottomColor: colors.border }]}>
+          <Avatar name={comment.author.name} size={depth ? 29 : 34} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.commentAuthor, { color: colors.foreground }]}>{comment.author.name} <Text style={{ color: colors.mutedForeground, fontWeight: '400' }}>@{comment.author.username}</Text></Text>
+            <Text style={[styles.commentContent, { color: colors.foreground }]}>{comment.content}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15, marginTop: 7 }}>
+              <Pressable
+                onPress={() => void toggleLike(comment)}
+                disabled={Boolean(likeInFlight[comment.id])}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: likeInFlight[comment.id] ? 0.55 : 1 }}
+                accessibilityRole="button"
+                accessibilityLabel={comment.liked ? 'Unlike comment' : 'Like comment'}
+              >
+                <Ionicons name={comment.liked ? 'heart' : 'heart-outline'} size={16} color={comment.liked ? colors.destructive : colors.mutedForeground} />
+                <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{comment.likeCount}</Text>
+              </Pressable>
+              <Pressable onPress={() => setReplyingTo(comment)} accessibilityRole="button" accessibilityLabel={`Reply to @${comment.author.username}`}>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: '600' }}>Reply</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+        {replies.length > 0 ? (
+          <Pressable
+            onPress={() => setExpandedReplies((items) => ({ ...items, [comment.id]: !expanded }))}
+            style={{ paddingVertical: 7 }}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? `Collapse ${replies.length} replies` : `Expand ${replies.length} replies`}
+          >
+            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>
+              {expanded ? 'Hide replies' : `View ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
+            </Text>
+          </Pressable>
+        ) : null}
+        {expanded ? replies.map((reply) => renderComment(reply, depth + 1)) : null}
+      </View>
+    );
   }
 
   return (
@@ -2416,24 +2512,26 @@ function SocialCommentsSheet({ post, token, colors, onClose, onPostChanged }: { 
           </View>
           <IconButton name="close" onPress={onClose} size={24} />
         </View>
-        {loading ? <ActivityIndicator color={colors.primary} style={{ margin: 34 }} /> : (
+        {loading ? <ActivityIndicator color={colors.primary} style={{ margin: 34 }} /> : error ? (
+          <Text style={[styles.profilePostsEmpty, { color: colors.destructive }]}>{error}</Text>
+        ) : (
           <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
-            {comments.length === 0 ? <Text style={[styles.profilePostsEmpty, { color: colors.mutedForeground }]}>Be the first person to comment.</Text> : comments.map((comment) => (
-              <View key={comment.id} style={[styles.commentRow, { borderBottomColor: colors.border }]}>
-                <Avatar name={comment.author.name} size={34} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.commentAuthor, { color: colors.foreground }]}>{comment.author.name} <Text style={{ color: colors.mutedForeground, fontWeight: '400' }}>@{comment.author.username}</Text></Text>
-                  <Text style={[styles.commentContent, { color: colors.foreground }]}>{comment.content}</Text>
-                </View>
-              </View>
-            ))}
+            {comments.length === 0 ? <Text style={[styles.profilePostsEmpty, { color: colors.mutedForeground }]}>Be the first person to comment.</Text> : comments.filter((comment) => comment.parentId === null).map((comment) => renderComment(comment))}
           </ScrollView>
         )}
+        {replyingTo ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingVertical: 8 }}>
+            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600', flex: 1 }}>Replying to @{replyingTo.author.username}</Text>
+            <Pressable onPress={() => setReplyingTo(null)} accessibilityRole="button" accessibilityLabel="Cancel reply">
+              <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+        ) : null}
         <View style={[styles.commentComposer, { borderTopColor: colors.border }]}>
           <TextInput
             value={text}
             onChangeText={setText}
-            placeholder="Write a comment…"
+            placeholder={replyingTo ? 'Write a reply…' : 'Write a comment…'}
             placeholderTextColor={colors.mutedForeground}
             multiline
             maxLength={1000}
