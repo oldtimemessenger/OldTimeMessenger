@@ -1,1 +1,1 @@
-import { Ionicons } from '@expo/vector-icons';
+@/home/workdir/artifacts/SLICE1-PATCHED-updates-screen.tsx
