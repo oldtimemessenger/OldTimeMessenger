@@ -7,26 +7,23 @@ export type AudioSession = {
 };
 
 export interface AudioService {
-  join(roomId: number, role: 'host' | 'moderator' | 'speaker' | 'listener'): Promise<AudioSession>;
+  readonly available: boolean;
+  join(roomId: number, role: 'host' | 'moderator' | 'speaker' | 'listener', credentials?: { url: string; token: string; canPublish: boolean }): Promise<AudioSession>;
   leave(): Promise<void>;
   setMuted(muted: boolean): Promise<void>;
+  setSpeaker?(speaker: boolean): Promise<void>;
 }
 
 class UnconfiguredAudioService implements AudioService {
-  private session: AudioSession | null = null;
+  readonly available = false;
 
   async join(roomId: number): Promise<AudioSession> {
-    this.session = { provider: 'unconfigured', connected: false, roomId };
-    return this.session;
+    return { provider: 'unconfigured', connected: false, roomId };
   }
 
-  async leave() {
-    this.session = null;
-  }
+  async leave() {}
 
-  async setMuted() {
-    // The provider adapter will own the real microphone once configured.
-  }
+  async setMuted(_muted: boolean) {}
 }
 
 export const audioService: AudioService = new UnconfiguredAudioService();

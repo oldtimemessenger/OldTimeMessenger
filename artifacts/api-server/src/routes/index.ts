@@ -6,6 +6,7 @@ import socialRouter from "./social";
 import mapRouter from "./map";
 import currentEventsRouter from "./current-events";
 import discoveryRouter from "./discovery";
+import callsRouter from "./calls";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(socialRouter);
 router.use(mapRouter);
 router.use(currentEventsRouter);
 router.use(discoveryRouter);
+router.use(callsRouter);
 
 export default router;

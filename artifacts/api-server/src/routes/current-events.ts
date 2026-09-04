@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
 import { getVerifiedCoinPurchases } from "../lib/revenuecat";
+import { createLiveKitToken, liveKitConfigured, liveKitPublicUrl } from "../lib/livekit";
 
 const router: IRouter = Router();
 
@@ -70,60 +71,13 @@ function distanceKm(left: { latitude: number; longitude: number }, right: { lati
 }
 
 function audioStatus() {
-  const provider = process.env.CURRENT_EVENTS_AUDIO_PROVIDER;
-  if (provider === "livekit" || provider === "agora" || provider === "daily") {
-    return { provider, configured: true };
-  }
-  return { provider: "unconfigured" as const, configured: false };
+  return liveKitConfigured()
+    ? { provider: "livekit" as const, configured: true }
+    : { provider: "unconfigured" as const, configured: false };
 }
 
 async function ensureWallet(userId: number) {
   await db.insert(currentEventWalletsTable).values({ userId, updatedAt: Date.now() }).onConflictDoNothing();
-}
-
-async function ensureSeedRooms() {
-  const [existing] = await db
-    .select({ id: currentEventRoomsTable.id })
-    .from(currentEventRoomsTable)
-    .where(eq(currentEventRoomsTable.isLive, true))
-    .limit(1);
-  if (existing) return;
-
-  const users = await db
-    .select({ id: usersTable.id })
-    .from(usersTable)
-    .orderBy(asc(usersTable.id))
-    .limit(4);
-  if (!users.length) return;
-
-  const now = Date.now();
-  const seeds = [
-    { title: "What today's headlines mean for your city", topic: "for-you" as const, latitude: 40.7128, longitude: -74.0060 },
-    { title: "Markets, rates, and the week ahead", topic: "markets" as const, latitude: 40.7306, longitude: -73.9352 },
-    { title: "The technology shaping everyday life", topic: "tech" as const, latitude: 40.7580, longitude: -73.9855 },
-  ];
-
-  for (const seed of seeds) {
-    const [room] = await db.insert(currentEventRoomsTable).values({
-      ...seed,
-      clubName: "Current Events",
-      isOpen: true,
-      isLive: true,
-      hostId: users[0].id,
-      createdAt: now,
-    }).returning();
-    await db.insert(currentEventParticipantsTable).values([
-      { roomId: room.id, userId: users[0].id, role: "host", muted: false, handRaised: false, joinedAt: now },
-      ...users.slice(1, 3).map((user) => ({
-        roomId: room.id,
-        userId: user.id,
-        role: "listener",
-        muted: true,
-        handRaised: false,
-        joinedAt: now,
-      })),
-    ]).onConflictDoNothing();
-  }
 }
 
 async function roomById(roomId: number, liveOnly = true) {
@@ -215,7 +169,6 @@ async function requireRoomParticipant(roomId: number, userId: number) {
 router.get("/current-events/rooms", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   if (viewerId === null) return;
-  await ensureSeedRooms();
   const parsed = z.object({
     topic: topics.optional(),
     latitude: z.coerce.number().finite().min(-90).max(90).optional(),
@@ -319,6 +272,34 @@ router.post("/current-events/rooms/:roomId/join", async (req, res): Promise<void
   res.json(await serializeRoom(room, viewerId));
 });
 
+router.post("/current-events/rooms/:roomId/token", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const roomId = parseId(req.params.roomId);
+  if (viewerId === null) return;
+  if (roomId === null) {
+    res.status(400).json({ error: "A valid room ID is required." });
+    return;
+  }
+  const membership = await requireRoomParticipant(roomId, viewerId);
+  if (!membership.room || !membership.participant) {
+    res.status(403).json({ error: "Join the room before connecting to audio." });
+    return;
+  }
+  if (!liveKitConfigured()) {
+    res.status(503).json({ error: "Live audio is not configured." });
+    return;
+  }
+  const canPublish = ["host", "moderator", "speaker"].includes(membership.participant.role)
+    && !membership.participant.muted;
+  const roomName = `current_event_${roomId}`;
+  res.json({
+    token: await createLiveKitToken({ room: roomName, userId: viewerId, canPublish }),
+    url: liveKitPublicUrl(),
+    roomName,
+    canPublish,
+  });
+});
+
 router.post("/current-events/rooms/:roomId/leave", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   const roomId = parseId(req.params.roomId);
@@ -333,8 +314,14 @@ router.post("/current-events/rooms/:roomId/leave", async (req, res): Promise<voi
     return;
   }
   if (room.hostId === viewerId) {
-    await db.update(currentEventRoomsTable).set({ isLive: false, endedAt: Date.now() }).where(eq(currentEventRoomsTable.id, roomId));
-    await db.delete(currentEventParticipantsTable).where(eq(currentEventParticipantsTable.roomId, roomId));
+    // Room chat is ephemeral. The current message model has no saved flag, so
+    // every message is removed with the room; a future saved-message field
+    // must be excluded from this cleanup.
+    await db.transaction(async (tx) => {
+      await tx.update(currentEventRoomsTable).set({ isLive: false, endedAt: Date.now() }).where(eq(currentEventRoomsTable.id, roomId));
+      await tx.delete(currentEventMessagesTable).where(eq(currentEventMessagesTable.roomId, roomId));
+      await tx.delete(currentEventParticipantsTable).where(eq(currentEventParticipantsTable.roomId, roomId));
+    });
   } else {
     await db.delete(currentEventParticipantsTable).where(and(eq(currentEventParticipantsTable.roomId, roomId), eq(currentEventParticipantsTable.userId, viewerId)));
   }

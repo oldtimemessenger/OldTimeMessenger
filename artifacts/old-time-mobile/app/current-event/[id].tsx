@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   createCurrentEventMessage,
   getCurrentEventMessages,
+  getCurrentEventLiveKitToken,
   getCurrentEventRoom,
   getCurrentEventWallet,
   joinCurrentEventRoom,
@@ -31,8 +32,8 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/ui';
 import { useColors } from '@/hooks/useColors';
-import { audioService } from '@/lib/audio-service';
 import { useRevenueCat } from '@/lib/revenuecat';
+import { audioService } from '@/lib/audio-service';
 
 const gifts = [
   { key: 'coffee' as const, label: 'Coffee', icon: 'cafe-outline' as const, cost: 25 },
@@ -60,6 +61,9 @@ export default function CurrentEventRoomScreen() {
   const [giftRecipientId, setGiftRecipientId] = useState<number | null>(null);
   const [reactionCount, setReactionCount] = useState(0);
   const [roomUnavailable, setRoomUnavailable] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [audioState, setAudioState] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
+  const [audioMuted, setAudioMuted] = useState(false);
   const roomEndedRef = useRef(false);
 
   const loadRoom = useCallback(async (join = false) => {
@@ -76,7 +80,6 @@ export default function CurrentEventRoomScreen() {
       }
       setRoom(nextRoom);
       setRoomUnavailable(false);
-      const session = await audioService.join(roomId, nextRoom.viewer.role ?? 'listener');
       if (nextRoom.viewer.participantId !== null) {
         const [messageResult, walletResult] = await Promise.all([
           getCurrentEventMessages(roomId),
@@ -92,7 +95,7 @@ export default function CurrentEventRoomScreen() {
         setRoomUnavailable(true);
         return;
       }
-      Alert.alert('Room unavailable', error instanceof Error ? error.message : 'This room could not be opened.', [{ text: 'Go back', onPress: () => router.back() }]);
+      setFeedback(error instanceof Error ? error.message : 'Room unavailable.');
     } finally {
       setLoading(false);
     }
@@ -105,9 +108,31 @@ export default function CurrentEventRoomScreen() {
     }, 5_000);
     return () => {
       clearInterval(interval);
-      void audioService.leave();
     };
   }, [loadRoom]);
+
+  const connectAudio = useCallback(async () => {
+    if (!room || room.viewer.participantId === null) return;
+    setAudioState('connecting');
+    try {
+      const token = await getCurrentEventLiveKitToken(room.id);
+      await audioService.join(room.id, room.viewer.role ?? 'listener', { ...token, canPublish: token.canPublish });
+      setAudioMuted(room.viewer.muted || !token.canPublish);
+      if (room.viewer.muted) await audioService.setMuted(true);
+      setAudioState('live');
+    } catch (error) {
+      setAudioState('error');
+      setFeedback(error instanceof Error ? error.message : 'Audio could not connect.');
+    }
+  }, [room]);
+
+  useEffect(() => {
+    if (room?.viewer.participantId !== null && room?.isLive) void connectAudio();
+    return () => { void audioService.leave(); };
+  // Reconnect only when this viewer enters/leaves a room, not on chat polling.
+  // `connectAudio` intentionally reads the room snapshot from this render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.id, room?.viewer.participantId, room?.isLive]);
 
   const speakers = useMemo(() => room?.participants.filter((participant) => ['host', 'moderator', 'speaker'].includes(participant.role)) ?? [], [room]);
   const listeners = useMemo(() => room?.participants.filter((participant) => participant.role === 'listener') ?? [], [room]);
@@ -120,13 +145,24 @@ export default function CurrentEventRoomScreen() {
     router.back();
   }
 
+  function confirmLeaveRoom() {
+    if (room?.viewer.role === 'host') {
+      Alert.alert('End room?', 'This ends the room for everyone and clears its unsaved chat.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'End room', style: 'destructive', onPress: () => void leaveRoom() },
+      ]);
+      return;
+    }
+    void leaveRoom();
+  }
+
   async function raiseHand() {
     if (!room) return;
     try {
       const nextRoom = await setCurrentEventHand(room.id, { raised: !room.viewer.handRaised });
       setRoom(nextRoom);
     } catch (error) {
-      Alert.alert('Could not update your hand', error instanceof Error ? error.message : 'Try again.');
+      setFeedback(error instanceof Error ? error.message : 'Could not update hand.');
     }
   }
 
@@ -135,8 +171,13 @@ export default function CurrentEventRoomScreen() {
     try {
       const nextRoom = await updateCurrentEventParticipant(room.id, participant.id, { action });
       setRoom(nextRoom);
+      if (participant.id === room.viewer.participantId && (action === 'mute' || action === 'unmute')) {
+        const nextMuted = action === 'mute';
+        setAudioMuted(nextMuted);
+        await audioService.setMuted(nextMuted);
+      }
     } catch (error) {
-      Alert.alert('Moderation unavailable', error instanceof Error ? error.message : 'Try again.');
+      setFeedback(error instanceof Error ? error.message : 'Moderation unavailable.');
     }
   }
 
@@ -147,7 +188,7 @@ export default function CurrentEventRoomScreen() {
       setMessages((items) => [...items, sent]);
       setMessage('');
     } catch (error) {
-      Alert.alert('Message not sent', error instanceof Error ? error.message : 'Try again.');
+      setFeedback(error instanceof Error ? error.message : 'Message not sent.');
     }
   }
 
@@ -162,8 +203,9 @@ export default function CurrentEventRoomScreen() {
       const result = await sendCurrentEventGift(room.id, { gift: gift.key, recipientId: activeRecipientId });
       setWallet((current) => ({ ...current, coins: result.coinsRemaining }));
       setGiftOpen(false);
+      setFeedback('Gift sent.');
     } catch (error) {
-      Alert.alert('Gift not sent', error instanceof Error ? error.message : 'Try again.');
+      setFeedback(error instanceof Error ? error.message : 'Gift not sent.');
     }
   }
 
@@ -182,7 +224,7 @@ export default function CurrentEventRoomScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <Pressable onPress={leaveRoom} accessibilityLabel="Leave Current Event room" style={styles.headerButton}>
+        <Pressable onPress={confirmLeaveRoom} accessibilityLabel="Leave Current Event room" style={styles.headerButton}>
           <Ionicons name="chevron-down" size={25} color={colors.foreground} />
         </Pressable>
         <View pointerEvents="none" style={styles.headerCenter}>
@@ -201,11 +243,17 @@ export default function CurrentEventRoomScreen() {
           <Pressable onPress={() => setStoreOpen(true)}><Text style={[styles.coinBalance, { color: colors.foreground }]}>◈ {wallet.coins}  +</Text></Pressable>
         </View>
 
-        {!room.audio.configured ? (
+        {audioState !== 'live' ? (
           <View style={[styles.audioNotice, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-            <Ionicons name="volume-mute-outline" size={18} color={colors.mutedForeground} />
-            <Text style={[styles.audioNoticeText, { color: colors.mutedForeground }]}>Live audio is coming soon. You can still join the room chat and support speakers.</Text>
+            <Ionicons name={audioState === 'error' ? 'warning-outline' : 'volume-high-outline'} size={18} color={colors.mutedForeground} />
+            <Text style={[styles.audioNoticeText, { color: colors.mutedForeground }]}>{audioState === 'connecting' ? 'Connecting audio…' : audioState === 'error' ? 'Audio did not connect.' : 'Preparing audio…'}</Text>
+            {audioState === 'error' ? <Pressable onPress={() => void connectAudio()}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Retry</Text></Pressable> : null}
           </View>
+        ) : null}
+        {feedback ? (
+          <Pressable onPress={() => setFeedback(null)} style={[styles.feedback, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+            <Text style={[styles.feedbackText, { color: colors.foreground }]}>{feedback}</Text>
+          </Pressable>
         ) : null}
 
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>On stage</Text>
@@ -218,7 +266,7 @@ export default function CurrentEventRoomScreen() {
               <Ionicons name={participant.muted ? 'mic-off' : 'mic'} size={14} color={participant.muted ? colors.mutedForeground : colors.primary} />
             </Pressable>
           ))}
-          {speakers.length === 0 ? <Text style={[styles.noSpeakers, { backgroundColor: colors.card, color: colors.mutedForeground, borderColor: colors.border }]}>The stage is open. Raise your hand to join the conversation.</Text> : null}
+          {speakers.length === 0 ? <Text style={[styles.noSpeakers, { backgroundColor: colors.card, color: colors.mutedForeground, borderColor: colors.border }]}>No speakers yet.</Text> : null}
         </View>
 
         {canModerate ? (
@@ -247,6 +295,10 @@ export default function CurrentEventRoomScreen() {
         </View>
 
         <View style={styles.roomActions}>
+          {['host', 'moderator', 'speaker'].includes(room.viewer.role ?? '') ? <Pressable onPress={() => { const next = !audioMuted; setAudioMuted(next); void audioService.setMuted(next); }} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name={audioMuted ? 'mic-off-outline' : 'mic-outline'} size={20} color={colors.foreground} />
+            <Text style={[styles.actionText, { color: colors.foreground }]}>{audioMuted ? 'unmute' : 'mute'}</Text>
+          </Pressable> : null}
           <Pressable onPress={raiseHand} style={[styles.actionButton, { backgroundColor: room.viewer.handRaised ? colors.primary : colors.card, borderColor: colors.border }]}>
             <Ionicons name="hand-left-outline" size={20} color={room.viewer.handRaised ? colors.primaryForeground : colors.foreground} />
             <Text style={[styles.actionText, { color: room.viewer.handRaised ? colors.primaryForeground : colors.foreground }]}>{room.viewer.handRaised ? 'hand raised' : 'ask to speak'}</Text>
@@ -267,7 +319,7 @@ export default function CurrentEventRoomScreen() {
       </ScrollView>
 
       <View style={[styles.leaveBar, { backgroundColor: colors.background, paddingBottom: insets.bottom + 10 }]}>
-        <Pressable onPress={leaveRoom} style={[styles.leaveButton, { backgroundColor: colors.destructive }]}><Ionicons name="exit-outline" size={19} color={colors.destructiveForeground} /><Text style={[styles.leaveText, { color: colors.destructiveForeground }]}>{room.viewer.role === 'host' ? 'end room' : 'leave quietly'}</Text></Pressable>
+        <Pressable onPress={confirmLeaveRoom} style={[styles.leaveButton, { backgroundColor: colors.destructive }]}><Ionicons name="exit-outline" size={19} color={colors.destructiveForeground} /><Text style={[styles.leaveText, { color: colors.destructiveForeground }]}>{room.viewer.role === 'host' ? 'end room' : 'leave quietly'}</Text></Pressable>
       </View>
 
       <Modal visible={chatOpen} animationType="slide" transparent onRequestClose={() => setChatOpen(false)}>
@@ -295,7 +347,7 @@ export default function CurrentEventRoomScreen() {
       <Modal visible={giftOpen} transparent animationType="slide" onRequestClose={() => setGiftOpen(false)}>
         <View style={styles.modalShadeRoot}><View style={styles.modalShade} /><View style={[styles.giftSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20 }]}>
           <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Send a gift</Text><Pressable onPress={() => setGiftOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
-          <Text style={[styles.sheetHint, { color: colors.mutedForeground }]}>{activeRecipientId ? 'Tap a gift to support the selected speaker.' : 'Join a speaker to send a gift.'}</Text>
+          <Text style={[styles.sheetHint, { color: colors.mutedForeground }]}>{activeRecipientId ? 'Choose a gift.' : 'Choose a speaker.'}</Text>
           <View style={styles.giftGrid}>{gifts.map((gift) => <Pressable key={gift.key} disabled={!activeRecipientId} onPress={() => void sendGift(gift)} style={[styles.giftItem, { backgroundColor: colors.muted }, !activeRecipientId && { opacity: 0.45 }]}><Ionicons name={gift.icon} size={25} color={colors.primary} /><Text style={[styles.giftLabel, { color: colors.foreground }]}>{gift.label}</Text><Text style={[styles.giftCost, { color: colors.mutedForeground }]}>◈ {gift.cost}</Text></Pressable>)}</View>
            <Text style={[styles.walletBalance, { color: colors.mutedForeground }]}>Balance ◈ {wallet.coins}</Text>
         </View></View>
@@ -311,9 +363,9 @@ export default function CurrentEventRoomScreen() {
                 const credited = await revenueCat.purchase(item);
                 const nextWallet = await getCurrentEventWallet();
                 setWallet(nextWallet);
-                Alert.alert('Coins added', `${credited} coins were added to your wallet.`);
+                setFeedback(`${credited} coins added.`);
               } catch (error: any) {
-                if (!error?.userCancelled) Alert.alert('Purchase unavailable', error?.message ?? 'Try again shortly.');
+                if (!error?.userCancelled) setFeedback(error?.message ?? 'Purchase unavailable.');
               }
             }} style={[styles.packRow, { backgroundColor: colors.muted, opacity: revenueCat.purchasing ? 0.55 : 1 }]}>
               <View><Text style={[styles.packName, { color: colors.foreground }]}>{item.product.title}</Text><Text style={[styles.packCoins, { color: colors.mutedForeground }]}>{item.product.description || 'Current Events coins'}</Text></View>
@@ -325,9 +377,9 @@ export default function CurrentEventRoomScreen() {
             try {
               const credited = await revenueCat.restore();
               setWallet(await getCurrentEventWallet());
-              Alert.alert('Purchases restored', credited ? `${credited} coins were recovered.` : 'Your wallet is already up to date.');
+              setFeedback(credited ? `${credited} coins restored.` : 'Wallet is up to date.');
             } catch (error: any) {
-              Alert.alert('Restore unavailable', error?.message ?? 'Try again shortly.');
+              setFeedback(error?.message ?? 'Restore unavailable.');
             }
           }} style={styles.walletLink}><Text style={[styles.walletLinkText, { color: colors.primary }]}>Restore purchases</Text></Pressable>
         </View></View>
@@ -382,6 +434,8 @@ const styles = StyleSheet.create({
   coinBalance: { fontSize: 13, fontWeight: '600' },
   audioNotice: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
   audioNoticeText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '400' },
+  feedback: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 11, paddingVertical: 9, marginBottom: 14 },
+  feedbackText: { fontSize: 12, fontWeight: '500' },
   sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '600', marginTop: 8, marginBottom: 11 },
   stageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   speakerCard: { width: '31%', minWidth: 98, alignItems: 'center', paddingVertical: 11, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },

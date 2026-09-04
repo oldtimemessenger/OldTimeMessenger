@@ -12,15 +12,22 @@ router.get("/healthz", (_req, res) => {
 
 router.get("/readyz", async (req, res) => {
   const required = [
-    "DATABASE_URL",
     "SESSION_SECRET",
-    "DEFAULT_OBJECT_STORAGE_BUCKET_ID",
-    "PRIVATE_OBJECT_DIR",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "REVENUECAT_SECRET_KEY",
+    "FIREBASE_PROJECT_ID",
     "TWILIO_ACCOUNT_SID",
     "TWILIO_AUTH_TOKEN",
     "TWILIO_VERIFY_SERVICE_SID",
+    "LIVEKIT_URL",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
   ];
   const missing = required.filter((name) => !process.env[name]);
+  if (!process.env.SUPABASE_DATABASE_URL && !process.env.DATABASE_URL) {
+    missing.push("SUPABASE_DATABASE_URL");
+  }
   try {
     await db.execute(sql`select 1`);
   } catch (error) {

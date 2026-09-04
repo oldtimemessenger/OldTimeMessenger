@@ -26,6 +26,8 @@ tags:
     description: Opt-in location pins and nearby discovery
   - name: current-events
     description: Voice-only live rooms for current events
+  - name: calls
+    description: Private in-app audio calls
 paths:
   /healthz:
     get:
@@ -197,6 +199,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /push-tokens:
+    post:
+      operationId: registerPushToken
+      tags: [auth]
+      summary: Register this signed-in device for Expo push notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenInput"
+      responses:
+        "201":
+          description: Push token registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushTokenResult"
+        "400":
+          description: Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: unregisterPushToken
+      tags: [auth]
+      summary: Deactivate this signed-in device's Expo push token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenRemoval"
+      responses:
+        "200":
+          description: Push token deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushTokenResult"
+        "400":
+          description: Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /users:
     get:
       operationId: listUsers
@@ -213,6 +262,34 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/User"
+  /users/contact-discovery:
+    post:
+      operationId: discoverContacts
+      tags: [users]
+      summary: Find contacts who allow discovery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phoneHashes:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  uniqueItems: true
+                  items:
+                    type: string
+                    pattern: "^[a-f0-9]{64}$"
+              required: [phoneHashes]
+      responses:
+        "200":
+          description: Matching people
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactDiscoveryResponse"
   /users/{userId}/presence-privacy:
     put:
       operationId: updatePresencePrivacy
@@ -301,6 +378,12 @@ paths:
                 contactPermission:
                   type: string
                   enum: [everyone, followers, nobody]
+                phoneNumber:
+                  type: [string, "null"]
+                  description: Optional phone number for finding friends
+                phoneDiscoveryPermission:
+                  type: string
+                  enum: [contacts, everyone, nobody]
       responses:
         "200":
           description: Profile updated
@@ -1285,6 +1368,53 @@ paths:
       parameters: [{ $ref: "#/components/parameters/PinId" }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MapPinReportInput" } } } }
       responses: { "201": { description: Report accepted, content: { application/json: { schema: { $ref: "#/components/schemas/ActionResult" } } } } }
+  /calls:
+    get:
+      operationId: listCalls
+      tags: [calls]
+      summary: List the authenticated user's call history
+      responses: { "200": { description: Call history, content: { application/json: { schema: { $ref: "#/components/schemas/CallList" } } } } }
+    post:
+      operationId: startCall
+      tags: [calls]
+      summary: Start an in-app audio call
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StartCallInput" } } } }
+      responses: { "201": { description: Ringing call, content: { application/json: { schema: { $ref: "#/components/schemas/Call" } } } }, "400": { description: Invalid recipient, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }, "409": { description: An active call exists, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } } }
+  /calls/{callId}:
+    get:
+      operationId: getCall
+      tags: [calls]
+      summary: Get a call available to the authenticated participant
+      parameters: [{ $ref: "#/components/parameters/CallId" }]
+      responses: { "200": { description: Call, content: { application/json: { schema: { $ref: "#/components/schemas/Call" } } } }, "404": { description: Call not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } } }
+  /calls/{callId}/accept:
+    post:
+      operationId: acceptCall
+      tags: [calls]
+      summary: Accept an incoming call
+      parameters: [{ $ref: "#/components/parameters/CallId" }]
+      responses: { "200": { description: Accepted call, content: { application/json: { schema: { $ref: "#/components/schemas/Call" } } } } }
+  /calls/{callId}/decline:
+    post:
+      operationId: declineCall
+      tags: [calls]
+      summary: Decline an incoming call
+      parameters: [{ $ref: "#/components/parameters/CallId" }]
+      responses: { "200": { description: Declined call, content: { application/json: { schema: { $ref: "#/components/schemas/Call" } } } } }
+  /calls/{callId}/end:
+    post:
+      operationId: endCall
+      tags: [calls]
+      summary: End an active call
+      parameters: [{ $ref: "#/components/parameters/CallId" }]
+      responses: { "200": { description: Ended call, content: { application/json: { schema: { $ref: "#/components/schemas/Call" } } } } }
+  /calls/{callId}/token:
+    post:
+      operationId: getCallLiveKitToken
+      tags: [calls]
+      summary: Get a short-lived audio token for an accepted call
+      parameters: [{ $ref: "#/components/parameters/CallId" }]
+      responses: { "200": { description: Participant token, content: { application/json: { schema: { $ref: "#/components/schemas/LiveKitToken" } } } }, "503": { description: LiveKit unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } } }
   /current-events/rooms:
     get:
       operationId: getCurrentEventRooms
@@ -1347,6 +1477,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentEventRoom"
+  /current-events/rooms/{roomId}/token:
+    post:
+      operationId: getCurrentEventLiveKitToken
+      tags: [current-events]
+      summary: Get a short-lived audio token for a joined Current Events room
+      parameters: [{ name: roomId, in: path, required: true, schema: { type: number, minimum: 1 } }]
+      responses: { "200": { description: Participant token, content: { application/json: { schema: { $ref: "#/components/schemas/CurrentEventLiveKitToken" } } } }, "403": { description: Not a room participant, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }, "503": { description: LiveKit unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } } }
   /current-events/rooms/{roomId}/leave:
     post:
       operationId: leaveCurrentEventRoom
@@ -1535,6 +1672,13 @@ components:
       scheme: bearer
       bearerFormat: opaque
   parameters:
+    CallId:
+      name: callId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     UserId:
       name: userId
       in: path
@@ -1684,6 +1828,29 @@ components:
         success:
           type: boolean
       required: [success]
+    PushTokenInput:
+      type: object
+      properties:
+        token:
+          type: string
+          pattern: "^(ExponentPushToken|ExpoPushToken)\\[[^\\]]+\\]$"
+        platform:
+          type: string
+          enum: [ios, android]
+      required: [token, platform]
+    PushTokenRemoval:
+      type: object
+      properties:
+        token:
+          type: string
+          pattern: "^(ExponentPushToken|ExpoPushToken)\\[[^\\]]+\\]$"
+      required: [token]
+    PushTokenResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required: [success]
     User:
       type: object
       properties:
@@ -1691,6 +1858,13 @@ components:
           type: number
         phone:
           type: string
+        hasRegisteredPhone:
+          type: boolean
+        phoneVerified:
+          type: boolean
+        phoneDiscoveryPermission:
+          type: string
+          enum: [contacts, everyone, nobody]
         name:
           type: string
         username:
@@ -1710,7 +1884,24 @@ components:
           type: number
         lastSeenVisible:
           type: boolean
-      required: [id, phone, name, username, bio, birthday, contactPermission, online, lastSeen, lastSeenVisible]
+      required: [id, phone, hasRegisteredPhone, phoneVerified, phoneDiscoveryPermission, name, username, bio, birthday, contactPermission, online, lastSeen, lastSeenVisible]
+    ContactDiscoveryMatch:
+      type: object
+      properties:
+        phoneHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        user:
+          $ref: "#/components/schemas/User"
+      required: [phoneHash, user]
+    ContactDiscoveryResponse:
+      type: object
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactDiscoveryMatch"
+      required: [matches]
     AuthenticatedUser:
       allOf:
         - $ref: "#/components/schemas/User"
@@ -2408,6 +2599,44 @@ components:
     CurrentEventTopic:
       type: string
       enum: [for-you, politics, markets, tech, culture, sports, world]
+    StartCallInput:
+      type: object
+      properties: { calleeId: { type: number, minimum: 1 } }
+      required: [calleeId]
+    Call:
+      type: object
+      properties:
+        id: { type: number }
+        callerId: { type: number }
+        calleeId: { type: number }
+        status: { type: string, enum: [ringing, accepted, declined, missed, ended] }
+        roomName: { type: string }
+        createdAt: { type: number }
+        acceptedAt: { type: [number, "null"] }
+        declinedAt: { type: [number, "null"] }
+        endedAt: { type: [number, "null"] }
+        missedAt: { type: [number, "null"] }
+        durationSeconds: { type: number }
+      required: [id, callerId, calleeId, status, roomName, createdAt, acceptedAt, declinedAt, endedAt, missedAt, durationSeconds]
+    CallList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/Call" } } }
+      required: [items]
+    LiveKitToken:
+      type: object
+      properties:
+        token: { type: string }
+        url: { type: string }
+        roomName: { type: string }
+      required: [token, url, roomName]
+    CurrentEventLiveKitToken:
+      type: object
+      properties:
+        token: { type: string }
+        url: { type: string }
+        roomName: { type: string }
+        canPublish: { type: boolean }
+      required: [token, url, roomName, canPublish]
     CurrentEventRoomInput:
       type: object
       properties:
