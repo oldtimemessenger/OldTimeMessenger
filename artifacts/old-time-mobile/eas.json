@@ -8,6 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
         "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
       }
     },
@@ -17,6 +18,10 @@
       "distribution": "internal",
       "ios": {
         "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
+        "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
       }
     },
     "preview": {
