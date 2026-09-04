@@ -43,6 +43,7 @@ import {
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
 import { fileForObjectPath, MAX_UPLOAD_BYTES } from "../lib/chat-storage";
+import { sendPushToUsers } from "../lib/push-notifications";
 
 const router: IRouter = Router();
 
@@ -1388,6 +1389,49 @@ router.get("/social/users/:userId/card", async (req, res): Promise<void> => {
   });
 });
 
+router.get("/social/users/:userId/connections", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const targetId = parseId(req.params.userId);
+  if (viewerId === null || targetId === null) return;
+  if (!(await userExists(targetId)) || await isBlocked(viewerId, targetId)) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  const type = req.query.type === "following" ? "following" : "followers";
+  const query = String(req.query.q ?? "").trim().slice(0, 80);
+  const relatedUserId = type === "followers"
+    ? socialFollowsTable.followerId
+    : socialFollowsTable.followingId;
+  const ownerId = type === "followers"
+    ? socialFollowsTable.followingId
+    : socialFollowsTable.followerId;
+  const rows = await db
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio })
+    .from(socialFollowsTable)
+    .innerJoin(usersTable, eq(usersTable.id, relatedUserId))
+    .where(and(
+      eq(ownerId, targetId),
+      query
+        ? or(
+            ilike(usersTable.name, `%${query}%`),
+            ilike(usersTable.username, `%${query}%`),
+          )
+        : undefined,
+    ))
+    .orderBy(desc(socialFollowsTable.createdAt), asc(usersTable.name))
+    .limit(50);
+  const blocked = await blockedUserIds(viewerId);
+  const viewerFollowing = await followingUserIds(viewerId);
+  res.json({
+    items: rows
+      .filter((user) => !blocked.has(user.id))
+      .map((user) => ({
+        ...publicUser(user),
+        following: viewerFollowing.has(user.id),
+      })),
+  });
+});
+
 router.get("/social/users/:userId/posts", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   const authorId = parseId(req.params.userId);
@@ -1748,14 +1792,19 @@ router.post("/social/stories", async (req, res): Promise<void> => {
       .where(and(eq(uploadSlotsTable.id, claimedUploadId), eq(uploadSlotsTable.status, "committing")));
     res.status(500).json({ error: "Unable to publish story." }); return;
   }
-  if (validTaggedUserIds.length) {
-    await Promise.all(validTaggedUserIds.map((recipientId) => db.insert(socialNotificationsTable).values({
+  const mentionRecipientIds = validTaggedUserIds.filter((id) => id !== viewerId);
+  if (mentionRecipientIds.length) {
+    await Promise.all(mentionRecipientIds.map((recipientId) => db.insert(socialNotificationsTable).values({
       recipientId,
       actorId: viewerId,
       type: "story_mention",
       storyId: created.id,
       createdAt: now,
     })));
+    void sendPushToUsers(mentionRecipientIds, {
+      title: "Old Time",
+      body: "You were mentioned in a story.",
+    }).catch((error) => req.log.warn({ err: error }, "Unable to queue story mention push notification"));
   }
   res.status(201).json((await serializeStories([created], viewerId))[0]);
 });
@@ -1780,7 +1829,11 @@ router.put("/social/stories/:storyId/reaction", async (req, res): Promise<void> 
   const access = await accessibleStory(req, res); if (!access) return;
   const parsed = storyReactionInput.safeParse(req.body); if (!parsed.success) { res.status(400).json({ error: "Invalid reaction." }); return; }
   await db.insert(socialStoryReactionsTable).values({ storyId: access.story.id, userId: access.viewerId, reaction: parsed.data.reaction, createdAt: Date.now() }).onConflictDoUpdate({ target: [socialStoryReactionsTable.storyId, socialStoryReactionsTable.userId], set: { reaction: parsed.data.reaction, createdAt: Date.now() } });
-  if (access.story.authorId !== access.viewerId) await db.insert(socialNotificationsTable).values({ recipientId: access.story.authorId, actorId: access.viewerId, type: "story_reaction", storyId: access.story.id, createdAt: Date.now() });
+  if (access.story.authorId !== access.viewerId) {
+    await db.insert(socialNotificationsTable).values({ recipientId: access.story.authorId, actorId: access.viewerId, type: "story_reaction", storyId: access.story.id, createdAt: Date.now() });
+    void sendPushToUsers([access.story.authorId], { title: "Old Time", body: "Someone reacted to your story." })
+      .catch((error) => req.log.warn({ err: error }, "Unable to queue story reaction push notification"));
+  }
   res.json({ success: true, active: true });
 });
 router.delete("/social/stories/:storyId/reaction", async (req, res): Promise<void> => {
@@ -1792,7 +1845,11 @@ router.post("/social/stories/:storyId/replies", async (req, res): Promise<void> 
   const access = await accessibleStory(req, res); if (!access) return;
   const parsed = storyReplyInput.safeParse(req.body); if (!parsed.success) { res.status(400).json({ error: "A valid reply is required." }); return; }
   const [reply] = await db.insert(socialStoryRepliesTable).values({ storyId: access.story.id, authorId: access.viewerId, content: parsed.data.content, createdAt: Date.now() }).returning();
-  if (access.story.authorId !== access.viewerId) await db.insert(socialNotificationsTable).values({ recipientId: access.story.authorId, actorId: access.viewerId, type: "story_reply", storyId: access.story.id, replyId: reply.id, createdAt: Date.now() });
+  if (access.story.authorId !== access.viewerId) {
+    await db.insert(socialNotificationsTable).values({ recipientId: access.story.authorId, actorId: access.viewerId, type: "story_reply", storyId: access.story.id, replyId: reply.id, createdAt: Date.now() });
+    void sendPushToUsers([access.story.authorId], { title: "Old Time", body: "Someone replied to your story." })
+      .catch((error) => req.log.warn({ err: error }, "Unable to queue story reply push notification"));
+  }
   const [author] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(eq(usersTable.id, access.viewerId)).limit(1);
   res.status(201).json({ ...reply, author: author ? publicUser(author) : { id: access.viewerId, name: "Old Time user", username: `user${access.viewerId}`, bio: "" } });
 });

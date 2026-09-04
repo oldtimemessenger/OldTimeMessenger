@@ -11,7 +11,7 @@ import { typography } from '@/constants/typography';
 import { t } from '@/lib/i18n';
 
 const tabDefinitions = {
-  updates: { label: 'Updates', icon: 'newspaper-outline', activeIcon: 'newspaper' },
+  updates: { label: 'Updates', icon: 'play-circle-outline', activeIcon: 'play-circle' },
   map: { label: 'Map', icon: 'location-outline', activeIcon: 'location' },
   index: { label: 'Chat', icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
   calls: { label: 'Calls', icon: 'call-outline', activeIcon: 'call' },
@@ -74,7 +74,7 @@ export default function TabLayout() {
   if (!hydrated) return null;
   if (!session) return <Redirect href="/" />;
   return <Tabs tabBar={(props) => <FloatingTabBar {...props} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.background } }}>
-    <Tabs.Screen name="updates" options={{ title: 'Updates', tabBarIcon: ({ color, size }) => <Ionicons name="radio-outline" color={color} size={size} /> }} />
+    <Tabs.Screen name="updates" options={{ title: 'Updates', tabBarIcon: ({ color, size }) => <Ionicons name="play-circle-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="map" options={{ title: 'Map', tabBarIcon: ({ color, size }) => <Ionicons name="location-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="index" options={{ title: 'Chat', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="calls" options={{ title: 'Calls', tabBarIcon: ({ color, size }) => <Ionicons name="call-outline" color={color} size={size} /> }} />

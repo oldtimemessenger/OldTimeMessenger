@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Contacts from 'expo-contacts';
+import * as Crypto from 'expo-crypto';
 import { Image } from 'expo-image';
 import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, useListUsers, useLogout, type InboxItem, type User } from '@workspace/api-client-react';
 import { Avatar, EmptyState, IconButton, LoadingState, Screen, StoryAvatar } from '@/components/ui';
@@ -10,7 +11,7 @@ import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { typography } from '@/constants/typography';
 import { useQueryClient } from '@tanstack/react-query';
-import { getStories, type Story } from '@/lib/social-api';
+import { discoverContacts as discoverServerContacts, getStories, type Story } from '@/lib/social-api';
 import { presenceLabel } from '@/lib/presence';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
@@ -50,7 +51,7 @@ export default function ChatsScreen() {
   const items = useMemo(() => (inbox.data ?? []).filter((item) => `${item.contact.name} ${item.lastMessage?.content ?? ''}`.toLowerCase().includes(search.toLowerCase())), [inbox.data, search]);
   const directoryUsers = useMemo(() => (users.data ?? [])
     .filter((user) => user.id !== session?.id)
-    .filter((user) => `${user.name} ${user.phone}`.toLowerCase().includes(newMessageSearch.trim().toLowerCase())), [newMessageSearch, session?.id, users.data]);
+    .filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(newMessageSearch.trim().toLowerCase())), [newMessageSearch, session?.id, users.data]);
 
   useEffect(() => {
     if (!session?.authToken) {
@@ -119,8 +120,11 @@ export default function ChatsScreen() {
   }
 
   function normalizePhone(value?: string) {
-    const digits = (value ?? '').replace(/\D/g, '');
-    return digits.length > 10 && digits.startsWith('1') ? digits.slice(1) : digits;
+    const raw = (value ?? '').trim();
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+    return raw.startsWith('+') && digits.length >= 8 && digits.length <= 15 ? `+${digits}` : '';
   }
 
   async function discoverContacts() {
@@ -148,11 +152,30 @@ export default function ChatsScreen() {
     setContactDiscoveryState('loading');
     try {
       const result = await Contacts.getContactsAsync({ fields: [Contacts.Fields.PhoneNumbers] });
-      const devicePhones = new Set(result.data.flatMap((contact) => (contact.phoneNumbers ?? []).map((phone) => normalizePhone(phone.number))).filter(Boolean));
-      const matched = (users.data ?? []).filter((user) => user.id !== session?.id && devicePhones.has(normalizePhone(user.phone)));
-      const matchedPhones = new Set(matched.map((user) => normalizePhone(user.phone)));
+      if (!session?.authToken) throw new Error('Sign in to find contacts.');
+      const phoneToHash = new Map<string, string>();
+      const localNamesByHash = new Map<string, string>();
+      for (const contact of result.data) {
+        for (const phone of (contact.phoneNumbers ?? []).map((entry) => normalizePhone(entry.number)).filter(Boolean)) {
+          const hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, phone);
+          phoneToHash.set(phone, hash);
+          if (contact.name) localNamesByHash.set(hash, contact.name);
+        }
+      }
+      const hashes = [...new Set(phoneToHash.values())];
+      const pages = await Promise.all(Array.from({ length: Math.ceil(hashes.length / 500) }, (_, index) =>
+        discoverServerContacts(session.authToken, hashes.slice(index * 500, index * 500 + 500))));
+      const matches = pages.flatMap((page) => page.matches);
+      const matched = matches.map((match) => ({
+        ...match.user,
+        name: localNamesByHash.get(match.phoneHash) ?? match.user.name,
+      })) as User[];
+      const matchedHashes = new Set(matches.map((match) => match.phoneHash));
       const notOnApp = result.data
-        .filter((contact) => contact.name && (contact.phoneNumbers ?? []).some((phone) => !matchedPhones.has(normalizePhone(phone.number))))
+        .filter((contact) => contact.name && (contact.phoneNumbers ?? []).some((phone) => {
+          const normalized = normalizePhone(phone.number);
+          return normalized && !matchedHashes.has(phoneToHash.get(normalized) ?? '');
+        }))
         .map((contact) => contact.name as string)
         .filter((name, index, names) => names.indexOf(name) === index)
         .slice(0, 8);

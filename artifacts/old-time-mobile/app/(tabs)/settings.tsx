@@ -12,6 +12,7 @@ import { useLogout } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib/social-api';
 import { t } from '@/lib/i18n';
+import { unregisterDeviceForPush } from '@/lib/push-notifications';
 
 type Panel = 'profile' | 'phone' | 'notifications' | 'socialPrivacy' | 'storage' | 'appearance' | 'power' | 'language' | 'saved' | 'calls' | 'chatSettings' | 'faq' | null;
 
@@ -73,6 +74,7 @@ export default function SettingsScreen() {
     if (signingOut) return;
     setSigningOut(true);
     try {
+      if (session?.authToken) await unregisterDeviceForPush(session.authToken);
       await logout.mutateAsync(undefined);
     } catch {
       // A failed server revoke must not trap someone in a local session.

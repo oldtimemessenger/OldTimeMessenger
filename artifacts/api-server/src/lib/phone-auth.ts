@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 const TWILIO_VERIFY_BASE = "https://verify.twilio.com/v2/Services";
 const TEST_BYPASS_PHONE = "+11234567890";
@@ -26,6 +26,11 @@ export function normalizePhone(input: string): string | null {
 
 export function privacyHash(value: string): string {
   return createHmac("sha256", requiredSessionSecret()).update(value).digest("base64url");
+}
+
+/** Stable, non-secret identifier used only for private contact matching. */
+export function contactDiscoveryHash(normalizedPhone: string): string {
+  return createHash("sha256").update(normalizedPhone).digest("hex");
 }
 
 function twilioConfiguration(): {

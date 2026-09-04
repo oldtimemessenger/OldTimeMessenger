@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import {
   Chat,
   CreateChatBody,
@@ -35,6 +35,10 @@ import {
   VerifyOtpBody,
   VerifyOtpResponse,
   LogoutResponse,
+  RegisterPushTokenBody,
+  RegisterPushTokenResponse,
+  UnregisterPushTokenBody,
+  UnregisterPushTokenResponse,
 } from "@workspace/api-zod";
 import {
   authChallengesTable,
@@ -51,6 +55,7 @@ import {
   uploadSlotsTable,
   usersTable,
 } from "@workspace/db";
+import { registerPushToken, sendPushToUsers, unregisterPushToken } from "../lib/push-notifications";
 import { disconnectUser, emitToChat, emitToUser } from "../lib/realtime";
 import {
   callerMatches,
@@ -60,6 +65,7 @@ import {
 } from "../lib/chat-auth";
 import {
   checkPhoneVerification,
+  contactDiscoveryHash,
   isTestOtpBypassPhone,
   normalizePhone,
   privacyHash,
@@ -87,6 +93,8 @@ const OTP_RESEND_DELAY_MS = 60 * 1000;
 const MAX_PHONE_REQUESTS_PER_WINDOW = 5;
 const MAX_IP_REQUESTS_PER_WINDOW = 20;
 const MAX_OTP_ATTEMPTS = 5;
+const GROUP_MESSAGE_EXPIRY_MS = 60_000;
+const DIRECT_MESSAGE_EXPIRY_MS = 2 * 60_000;
 
 function now(): number {
   return Date.now();
@@ -96,7 +104,10 @@ function parseUser(user: ChatUser, viewerId = user.id) {
   const revealPresence = viewerId === user.id || user.lastSeenVisible;
   return {
     id: user.id,
-    phone: user.phone.startsWith("firebase:") ? "" : user.phone,
+    phone: viewerId === user.id && !user.phone.startsWith("firebase:") ? user.phone : "",
+    hasRegisteredPhone: !user.phone.startsWith("firebase:"),
+    phoneVerified: viewerId === user.id ? user.phoneVerified : false,
+    phoneDiscoveryPermission: viewerId === user.id ? user.phoneDiscoveryPermission : "nobody",
     name: user.name,
     username: user.username,
     bio: user.bio,
@@ -137,10 +148,18 @@ function parseMessage(message: MessageRecord) {
   };
 }
 
+function visibleMessageCondition(timestamp: number) {
+  return or(
+    eq(messagesTable.saved, true),
+    isNull(messagesTable.expiresAt),
+    gt(messagesTable.expiresAt, timestamp),
+  );
+}
+
 async function cleanupExpiredMessages(): Promise<void> {
   const expired = await db
     .delete(messagesTable)
-    .where(and(lt(messagesTable.expiresAt, now()), eq(messagesTable.saved, false)))
+    .where(and(lte(messagesTable.expiresAt, now()), eq(messagesTable.saved, false)))
     .returning();
   for (const message of expired) {
     emitToChat(message.chatId, "message-expired", { chatId: message.chatId, messageId: message.id });
@@ -227,6 +246,11 @@ async function getChatParticipants(chatId: number): Promise<number[]> {
     .from(chatParticipantsTable)
     .where(eq(chatParticipantsTable.chatId, chatId));
   return rows.map((row) => row.userId);
+}
+
+async function messageExpiryForChat(chatId: number, createdAt: number): Promise<number> {
+  const chat = await getChatById(chatId);
+  return createdAt + (chat?.isGroup ? GROUP_MESSAGE_EXPIRY_MS : DIRECT_MESSAGE_EXPIRY_MS);
 }
 
 async function getChatById(chatId: number): Promise<ChatRecord | undefined> {
@@ -589,6 +613,8 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
       .insert(usersTable)
       .values({
         phone,
+          phoneDiscoveryHash: contactDiscoveryHash(phone),
+          phoneVerified: true,
         name: `User ${phone.slice(-4)}`,
         username: defaultUsernameForPhone(phone),
         online: true,
@@ -599,7 +625,7 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
   } else {
     const [updated] = await db
       .update(usersTable)
-      .set({ online: true, lastSeen: timestamp })
+        .set({ online: true, lastSeen: timestamp, phoneVerified: true, phoneDiscoveryHash: contactDiscoveryHash(phone) })
       .where(eq(usersTable.id, user.id))
       .returning();
     user = updated;
@@ -656,6 +682,8 @@ router.post("/auth/complete-birthday", async (req, res): Promise<void> => {
       .insert(usersTable)
       .values({
         phone: challenge.phone,
+          phoneDiscoveryHash: contactDiscoveryHash(challenge.phone),
+          phoneVerified: true,
         birthday,
         name: `User ${challenge.phone.slice(-4)}`,
         username: defaultUsernameForPhone(challenge.phone),
@@ -667,7 +695,7 @@ router.post("/auth/complete-birthday", async (req, res): Promise<void> => {
   } else {
     const [updated] = await db
       .update(usersTable)
-      .set({ birthday, online: true, lastSeen: timestamp })
+        .set({ birthday, online: true, lastSeen: timestamp, phoneVerified: true, phoneDiscoveryHash: contactDiscoveryHash(challenge.phone) })
       .where(eq(usersTable.id, user.id))
       .returning();
     user = updated;
@@ -694,6 +722,30 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
     .where(eq(usersTable.id, userId));
   disconnectUser(userId);
   res.json(LogoutResponse.parse({ success: true }));
+});
+
+router.post("/push-tokens", async (req, res): Promise<void> => {
+  const userId = await requireChatAuth(req, res);
+  const parsed = RegisterPushTokenBody.safeParse(req.body);
+  if (userId === null) return;
+  if (!parsed.success) {
+    res.status(400).json({ error: "A valid Expo push token and native platform are required." });
+    return;
+  }
+  await registerPushToken(userId, parsed.data.token, parsed.data.platform);
+  res.status(201).json(RegisterPushTokenResponse.parse({ success: true }));
+});
+
+router.delete("/push-tokens", async (req, res): Promise<void> => {
+  const userId = await requireChatAuth(req, res);
+  const parsed = UnregisterPushTokenBody.safeParse(req.body);
+  if (userId === null) return;
+  if (!parsed.success) {
+    res.status(400).json({ error: "A valid Expo push token is required." });
+    return;
+  }
+  await unregisterPushToken(userId, parsed.data.token);
+  res.json(UnregisterPushTokenResponse.parse({ success: true }));
 });
 
 router.get("/users", async (req, res): Promise<void> => {
@@ -748,22 +800,52 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   const bio = typeof body.bio === "string" ? body.bio.trim() : undefined;
   const birthday = typeof body.birthday === "string" ? body.birthday : undefined;
   const contactPermission = body.contactPermission;
+  const phoneNumber = body.phoneNumber;
+  const phoneDiscoveryPermission = body.phoneDiscoveryPermission;
   const validBirthday = birthday === undefined || isValidBirthday(birthday);
   if (
     !Number.isInteger(userId) ||
     userId <= 0 ||
-    (name === undefined && username === undefined && bio === undefined && birthday === undefined && contactPermission === undefined) ||
+    (name === undefined && username === undefined && bio === undefined && birthday === undefined && contactPermission === undefined && phoneNumber === undefined && phoneDiscoveryPermission === undefined) ||
     (name !== undefined && (name.length < 1 || name.length > 80)) ||
     (username !== undefined && !/^[a-z0-9_]{3,24}$/.test(username)) ||
     (bio !== undefined && bio.length > 150) ||
     !validBirthday ||
     (contactPermission !== undefined &&
-      !["everyone", "followers", "nobody"].includes(contactPermission))
+      !["everyone", "followers", "nobody"].includes(contactPermission)) ||
+    (phoneNumber !== undefined && phoneNumber !== null && typeof phoneNumber !== "string") ||
+    (phoneDiscoveryPermission !== undefined &&
+      !["contacts", "everyone", "nobody"].includes(phoneDiscoveryPermission))
   ) {
     res.status(400).json({ error: "Enter a valid profile value, including a real birthday that is not in the future." });
     return;
   }
   if (!(await callerMatches(req, res, userId))) return;
+  const [currentUser] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!currentUser) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  let normalizedPhone: string | null | undefined;
+  if (phoneNumber !== undefined) {
+    if (!currentUser.firebaseUid) {
+      res.status(403).json({ error: "Only email or Google accounts can change a registered phone number here." });
+      return;
+    }
+    normalizedPhone = phoneNumber === null ? null : normalizePhone(phoneNumber);
+    if (phoneNumber !== null && !normalizedPhone) {
+      res.status(400).json({ error: "Enter a valid phone number including country code." });
+      return;
+    }
+    if (normalizedPhone && normalizedPhone !== currentUser.phone) {
+      const [taken] = await db.select({ id: usersTable.id }).from(usersTable)
+        .where(and(eq(usersTable.phone, normalizedPhone), ne(usersTable.id, userId))).limit(1);
+      if (taken) {
+        res.status(409).json({ error: "That phone number is already registered." });
+        return;
+      }
+    }
+  }
   if (username !== undefined) {
     const [taken] = await db
       .select({ id: usersTable.id })
@@ -783,6 +865,16 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
       ...(bio !== undefined ? { bio } : {}),
       ...(birthday !== undefined ? { birthday } : {}),
       ...(contactPermission !== undefined ? { contactPermission } : {}),
+      ...(phoneDiscoveryPermission !== undefined ? { phoneDiscoveryPermission } : {}),
+      ...(normalizedPhone === null ? {
+        phone: `firebase:${currentUser.firebaseUid}`,
+        phoneDiscoveryHash: null,
+        phoneVerified: false,
+      } : normalizedPhone !== undefined && normalizedPhone !== currentUser.phone ? {
+        phone: normalizedPhone,
+        phoneDiscoveryHash: contactDiscoveryHash(normalizedPhone),
+        phoneVerified: false,
+      } : {}),
     })
     .where(eq(usersTable.id, userId))
     .returning();
@@ -805,6 +897,30 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
     }
   }
   res.json(parseUser(updated));
+});
+
+router.post("/users/contact-discovery", async (req, res): Promise<void> => {
+  const userId = await requireChatAuth(req, res);
+  if (userId === null) return;
+  const hashes = req.body?.phoneHashes;
+  if (!Array.isArray(hashes) || hashes.length < 1 || hashes.length > 500 ||
+    hashes.some((hash) => typeof hash !== "string" || !/^[a-f0-9]{64}$/.test(hash)) ||
+    new Set(hashes).size !== hashes.length) {
+    res.status(400).json({ error: "Provide between 1 and 500 unique contact entries." });
+    return;
+  }
+  const matches = await db.select().from(usersTable).where(and(
+    inArray(usersTable.phoneDiscoveryHash, hashes),
+    ne(usersTable.id, userId),
+    inArray(usersTable.phoneDiscoveryPermission, ["contacts", "everyone"]),
+  ));
+  const visible = [];
+  for (const user of matches) {
+    if (!(await usersAreBlocked(userId, user.id)) && user.phoneDiscoveryHash) {
+      visible.push({ phoneHash: user.phoneDiscoveryHash, user: parseUser(user, userId) });
+    }
+  }
+  res.json({ matches: visible });
 });
 
 router.put("/users/:userId/presence", async (req, res): Promise<void> => {
@@ -868,7 +984,7 @@ router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
     const [lastMessage] = await db
       .select()
       .from(messagesTable)
-      .where(eq(messagesTable.chatId, chat.id))
+      .where(and(eq(messagesTable.chatId, chat.id), visibleMessageCondition(now())))
       .orderBy(desc(messagesTable.timestamp))
       .limit(1);
     const [{ count }] = await db
@@ -879,6 +995,7 @@ router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
           eq(messagesTable.chatId, chat.id),
           eq(messagesTable.senderId, contact.id),
           eq(messagesTable.read, false),
+          visibleMessageCondition(now()),
         ),
       );
     items.push({
@@ -928,7 +1045,7 @@ router.get(
           await db
             .select()
             .from(messagesTable)
-            .where(eq(messagesTable.chatId, chat.id))
+            .where(and(eq(messagesTable.chatId, chat.id), visibleMessageCondition(now())))
             .orderBy(desc(messagesTable.timestamp))
             .limit(1)
         )[0]
@@ -1037,7 +1154,7 @@ router.get("/chats/:chatId/messages", async (req, res): Promise<void> => {
   const messages = await db
     .select()
     .from(messagesTable)
-    .where(eq(messagesTable.chatId, params.data.chatId))
+    .where(and(eq(messagesTable.chatId, params.data.chatId), visibleMessageCondition(now())))
     .orderBy(messagesTable.timestamp);
   res.json(ListMessagesResponse.parse(messages.map(parseMessage)));
 });
@@ -1124,6 +1241,8 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
       return;
     }
   }
+  const createdAt = now();
+  const expiresAt = await messageExpiryForChat(params.data.chatId, createdAt);
   let message: MessageRecord;
   try {
     message = await db.transaction(async (tx) => {
@@ -1134,7 +1253,8 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
           senderId: body.data.senderId,
           content,
           attachment: input.attachment ?? null,
-          timestamp: now(),
+          timestamp: createdAt,
+          expiresAt,
           read: false,
         })
         .returning();
@@ -1180,6 +1300,16 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
   for (const participantId of participants) {
     emitToUser(participantId, "inbox-updated", response);
   }
+  const [sender] = await db.select({ name: usersTable.name }).from(usersTable)
+    .where(eq(usersTable.id, body.data.senderId)).limit(1);
+  void sendPushToUsers(
+    participants.filter((participantId) => participantId !== body.data.senderId),
+    {
+      title: sender?.name ?? "New message",
+      body: content ? content.slice(0, 120) : "Sent an attachment",
+      data: { chatId: params.data.chatId },
+    },
+  ).catch((error) => req.log.warn({ err: error }, "Unable to queue message push notification"));
   res.status(201).json(CreateMessageResponse.parse(response));
 });
 
@@ -1210,6 +1340,7 @@ router.post("/chats/:chatId/read", async (req, res): Promise<void> => {
         eq(messagesTable.chatId, params.data.chatId),
         ne(messagesTable.senderId, body.data.viewerId),
         eq(messagesTable.read, false),
+          visibleMessageCondition(now()),
       ),
     )
     .returning({ id: messagesTable.id });
@@ -1231,7 +1362,11 @@ router.post("/messages/:messageId/open", async (req, res): Promise<void> => {
   }
   if (!(await callerMatches(req, res, body.data.recipientId))) return;
   await cleanupExpiredMessages();
-  const [message] = await db.select().from(messagesTable).where(eq(messagesTable.id, params.data.messageId)).limit(1);
+  const [message] = await db
+    .select()
+    .from(messagesTable)
+    .where(and(eq(messagesTable.id, params.data.messageId), visibleMessageCondition(now())))
+    .limit(1);
   if (!message) {
     res.status(404).json({ error: "Message not found." });
     return;
@@ -1253,7 +1388,7 @@ router.post("/messages/:messageId/open", async (req, res): Promise<void> => {
     const openedAt = now();
     const [updated] = await db
       .update(messagesTable)
-      .set({ openedAt, expiresAt: openedAt + 30_000 })
+      .set({ openedAt })
       .where(
         and(
           eq(messagesTable.id, message.id),
@@ -1268,7 +1403,7 @@ router.post("/messages/:messageId/open", async (req, res): Promise<void> => {
       const [latest] = await db
         .select()
         .from(messagesTable)
-        .where(eq(messagesTable.id, message.id))
+        .where(and(eq(messagesTable.id, message.id), visibleMessageCondition(now())))
         .limit(1);
       if (!latest) {
         res.status(404).json({ error: "Message expired before it could be opened." });
@@ -1291,7 +1426,11 @@ router.post("/messages/:messageId/save", async (req, res): Promise<void> => {
   }
   if (!(await callerMatches(req, res, body.data.recipientId))) return;
   await cleanupExpiredMessages();
-  const [message] = await db.select().from(messagesTable).where(eq(messagesTable.id, params.data.messageId)).limit(1);
+  const [message] = await db
+    .select()
+    .from(messagesTable)
+    .where(and(eq(messagesTable.id, params.data.messageId), visibleMessageCondition(now())))
+    .limit(1);
   if (!message) {
     res.status(404).json({ error: "Message not found." });
     return;

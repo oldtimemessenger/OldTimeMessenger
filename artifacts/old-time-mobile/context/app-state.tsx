@@ -113,7 +113,7 @@ const initialPosts: UpdatePost[] = [];
 const defaultSettings: AppSettings = {
   darkMode: false,
   accent: '#243C82',
-  notifications: true,
+  notifications: false,
   sounds: true,
   previews: true,
   lastSeen: true,

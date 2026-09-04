@@ -67,7 +67,6 @@ export default function CurrentEventsHome({
   const [isOpen, setIsOpen] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const loadRooms = useCallback(async () => {
     setLoading(true);
@@ -117,10 +116,7 @@ export default function CurrentEventsHome({
         <View pointerEvents="none" style={styles.headerTitleSlot}>
           <Text style={[typography.navigationTitle, styles.headerTitle, { color: colors.foreground }]}>Current Events</Text>
         </View>
-        <Pressable onPress={() => setNotificationsOpen(true)} accessibilityRole="button" accessibilityLabel="Open Current Events notifications" style={styles.headerButton}>
-          <Ionicons name="notifications-outline" size={22} color={colors.foreground} />
-          {rooms.length > 0 ? <View style={styles.notificationDot} /> : null}
-        </Pressable>
+        <View style={styles.headerButton} />
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.topicScroller} contentContainerStyle={styles.topicRail}>
@@ -159,7 +155,7 @@ export default function CurrentEventsHome({
             <View style={styles.empty}>
               <Ionicons name="mic-outline" size={34} color={colors.primary} />
               <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No live rooms yet</Text>
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Start a room and bring people into the conversation.</Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Start a room to begin.</Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -194,51 +190,6 @@ export default function CurrentEventsHome({
         <Ionicons name="add" size={20} color={colors.primaryForeground} />
         <Text style={styles.hostButtonText}>host a room</Text>
       </Pressable>
-
-      <Modal visible={notificationsOpen} transparent animationType="slide" onRequestClose={() => setNotificationsOpen(false)}>
-        <View style={styles.modalShade}>
-          <View style={[styles.notificationsSheet, { backgroundColor: colors.card }]}>
-            <View style={[styles.notificationsHeader, { borderBottomColor: colors.border }]}>
-              <View>
-                <Text style={[styles.notificationsEyebrow, { color: colors.mutedForeground }]}>CURRENT EVENTS</Text>
-                <Text style={[styles.notificationsTitle, { color: colors.foreground }]}>Notifications</Text>
-              </View>
-              <Pressable onPress={() => setNotificationsOpen(false)} accessibilityRole="button" accessibilityLabel="Close notifications" style={[styles.closeButton, { backgroundColor: colors.muted }]}>
-                <Ionicons name="close" size={22} color={colors.foreground} />
-              </Pressable>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notificationsList}>
-              {rooms.length === 0 ? (
-                <View style={styles.notificationsEmpty}>
-                  <Ionicons name="notifications-off-outline" size={34} color={colors.mutedForeground} />
-                  <Text style={[styles.emptyTitle, { color: colors.foreground }]}>You’re all caught up</Text>
-                  <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Live room updates will appear here.</Text>
-                </View>
-              ) : rooms.map((room) => (
-                <Pressable
-                  key={room.id}
-                  onPress={() => {
-                    setNotificationsOpen(false);
-                    onOpenRoom(room);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open notification for ${room.title}`}
-                  style={[styles.notificationRow, { borderBottomColor: colors.border }]}
-                >
-                  <View style={styles.notificationIcon}>
-                    <Ionicons name="radio-outline" size={20} color="#FFFFFF" />
-                  </View>
-                  <View style={styles.notificationCopy}>
-                    <Text style={[styles.notificationRoomTitle, { color: colors.foreground }]} numberOfLines={2}>{room.title}</Text>
-                    <Text style={[styles.notificationRoomMeta, { color: colors.mutedForeground }]}>{room.clubName} is live now · {room.counts.listeners} listening</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       <Modal visible={hostOpen} transparent animationType="slide" onRequestClose={() => setHostOpen(false)}>
         <View style={styles.modalShade}>

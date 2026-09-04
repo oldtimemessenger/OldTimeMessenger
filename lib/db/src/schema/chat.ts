@@ -17,6 +17,9 @@ import { z } from "zod/v4";
 export const usersTable = pgTable("chat_users", {
   id: serial("id").primaryKey(),
   phone: text("phone").notNull().unique(),
+  phoneDiscoveryHash: text("phone_discovery_hash"),
+  phoneVerified: boolean("phone_verified").notNull().default(false),
+  phoneDiscoveryPermission: text("phone_discovery_permission").notNull().default("contacts"),
   firebaseUid: text("firebase_uid").unique(),
   email: text("email"),
   name: text("name").notNull(),
@@ -27,7 +30,9 @@ export const usersTable = pgTable("chat_users", {
   online: boolean("online").notNull().default(false),
   lastSeen: pgBigint("last_seen", { mode: "number" }).notNull(),
   lastSeenVisible: boolean("last_seen_visible").notNull().default(true),
-});
+}, (table) => ({
+  phoneDiscoveryHashIndex: uniqueIndex("chat_users_phone_discovery_hash_idx").on(table.phoneDiscoveryHash),
+}));
 
 export const chatsTable = pgTable("chat_chats", {
   id: serial("id").primaryKey(),

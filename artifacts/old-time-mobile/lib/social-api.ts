@@ -56,6 +56,9 @@ export type UserCard = SocialUser & {
   muted: boolean;
   canMessage: boolean;
 };
+export type SocialConnection = SocialUser & {
+  following: boolean;
+};
 
 export type ContactPermission = 'everyone' | 'followers' | 'nobody';
 export type MessageRequest = {
@@ -259,6 +262,20 @@ export function getUserCard(token: string, userId: number) {
   return request<UserCard>(token, `/api/social/users/${userId}/card`);
 }
 
+export function getUserConnections(
+  token: string,
+  userId: number,
+  type: 'followers' | 'following',
+  query?: string,
+) {
+  const params = new URLSearchParams({ type, limit: '50' });
+  if (query?.trim()) params.set('q', query.trim());
+  return request<{ items: SocialConnection[] }>(
+    token,
+    `/api/social/users/${userId}/connections?${params.toString()}`,
+  );
+}
+
 export function getUserPosts(token: string, userId: number) {
   return request<{ items: SocialPost[] }>(token, `/api/social/users/${userId}/posts?limit=30`);
 }
@@ -266,7 +283,7 @@ export function getUserPosts(token: string, userId: number) {
 export function updateUserProfile(
   token: string,
   userId: number,
-  input: { name?: string; username?: string; bio?: string; birthday?: string; contactPermission?: ContactPermission },
+  input: { name?: string; username?: string; bio?: string; birthday?: string; contactPermission?: ContactPermission; phoneNumber?: string | null; phoneDiscoveryPermission?: 'contacts' | 'everyone' | 'nobody' },
 ) {
   return request<{
     id: number;
@@ -279,9 +296,29 @@ export function updateUserProfile(
     online: boolean;
     lastSeen: number;
     lastSeenVisible: boolean;
+    hasRegisteredPhone: boolean;
+    phoneVerified: boolean;
+    phoneDiscoveryPermission: 'contacts' | 'everyone' | 'nobody';
   }>(token, `/api/users/${userId}/profile`, {
     method: 'PUT',
     body: JSON.stringify(input),
+  });
+}
+
+export type DiscoveredContact = {
+  phoneHash: string;
+  user: {
+    id: number; phone: string; name: string; username: string; bio: string;
+    birthday: string | null; contactPermission: ContactPermission; online: boolean;
+    lastSeen: number; lastSeenVisible: boolean; hasRegisteredPhone: boolean;
+    phoneVerified: boolean; phoneDiscoveryPermission: 'contacts' | 'everyone' | 'nobody';
+  };
+};
+
+export function discoverContacts(token: string, phoneHashes: string[]) {
+  return request<{ matches: DiscoveredContact[] }>(token, '/api/users/contact-discovery', {
+    method: 'POST',
+    body: JSON.stringify({ phoneHashes }),
   });
 }
 
@@ -297,6 +334,9 @@ export function completeBirthday(challengeId: string, birthday: string) {
     online: boolean;
     lastSeen: number;
     lastSeenVisible: boolean;
+    hasRegisteredPhone: boolean;
+    phoneVerified: boolean;
+    phoneDiscoveryPermission: 'contacts' | 'everyone' | 'nobody';
     authToken: string;
   }>(null, '/api/auth/complete-birthday', {
     method: 'POST',

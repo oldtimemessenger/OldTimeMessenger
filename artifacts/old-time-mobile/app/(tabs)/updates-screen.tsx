@@ -43,6 +43,7 @@ import {
   updateNote,
   deleteNote,
   getUserCard,
+  getUserConnections,
   getUserPosts,
   getPostComments,
   createPostComment,
@@ -64,6 +65,7 @@ import {
   type Story,
   type Note,
   type UserCard,
+  type SocialConnection,
 } from '@/lib/social-api';
 
 const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
@@ -99,6 +101,78 @@ type StatusUserGroup = {
   seen: boolean;
 };
 
+function MediaFeedFloatingHeader({
+  tab,
+  onSelectTab,
+  onOpenHub,
+  onOpenCommunity,
+  onOpenSearch,
+  onOpenMessages,
+  onOpenProfile,
+  unreadRequests,
+  ownCard,
+  session,
+}: {
+  tab: FeedTab;
+  onSelectTab: (tab: FeedTab) => void;
+  onOpenHub: () => void;
+  onOpenCommunity: () => void;
+  onOpenSearch: () => void;
+  onOpenMessages: () => void;
+  onOpenProfile: () => void;
+  unreadRequests: number;
+  ownCard: any;
+  session: any;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.mediaFeedHeader, { top: insets.top }]}>
+      <View style={styles.mediaFeedHeaderActions}>
+        <View style={styles.mediaFeedHeaderGroup}>
+          <Pressable
+            onPress={onOpenHub}
+            accessibilityRole="button"
+            accessibilityLabel="Open Current Updates"
+            style={styles.floatingUpdatesButton}
+          >
+            <Ionicons name="newspaper" size={17} color="#fff" />
+            <Text style={styles.floatingUpdatesText}>Current</Text>
+          </Pressable>
+          <Pressable
+            onPress={onOpenCommunity}
+            accessibilityRole="button"
+            accessibilityLabel="Open Community"
+            style={styles.floatingIconButton}
+          >
+            <Ionicons name="albums" size={21} color="#fff" />
+          </Pressable>
+        </View>
+        <View style={styles.mediaFeedHeaderGroup}>
+          <Pressable onPress={onOpenSearch} accessibilityRole="button" accessibilityLabel="Search people" style={styles.floatingIconButton}>
+            <Ionicons name="search" size={21} color="#fff" />
+          </Pressable>
+          <Pressable onPress={onOpenMessages} accessibilityRole="button" accessibilityLabel="Open messages" style={styles.floatingIconButton}>
+            <Ionicons name="mail" size={21} color="#fff" />
+            {unreadRequests > 0 && <View style={[styles.headerUnreadDot, styles.floatingUnreadDot]} />}
+          </Pressable>
+          <Pressable onPress={onOpenProfile} accessibilityRole="button" accessibilityLabel="Open your profile">
+            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={32} color="#4C63F5" />
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.mediaFeedTabs}>
+        <Pressable onPress={() => onSelectTab('following')} accessibilityRole="tab" accessibilityState={{ selected: tab === 'following' }}>
+          <Text style={[styles.mediaFeedTabText, tab === 'following' && styles.mediaFeedTabTextActive]}>Following</Text>
+        </Pressable>
+        <Pressable onPress={() => onSelectTab('for-you')} accessibilityRole="tab" accessibilityState={{ selected: tab === 'for-you' }}>
+          <Text style={[styles.mediaFeedTabText, tab === 'for-you' && styles.mediaFeedTabTextActive]}>For You</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export default function UpdatesScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -111,7 +185,7 @@ export default function UpdatesScreen() {
   const { statuses, posts, interests, interestWeights, followedCreators, hiddenPostIds, markStatusViewed, togglePostLike, togglePostSaved, addPostComment, recordPostInteraction, recordInterestFeedback, toggleInterest, toggleFollow, hidePost: persistHiddenPost, session, settings, updateSettings } = useApp();
   const requestUploadUrl = useRequestUploadUrl();
 
-  const [viewMode, setViewMode] = useState<'landing' | 'feed' | 'creator-feed' | 'status'>('landing');
+  const [viewMode, setViewMode] = useState<'media-feed' | 'landing' | 'feed' | 'creator-feed' | 'status'>('media-feed');
   const [showCommunity, setShowCommunity] = useState(false);
   const [communityFilter, setCommunityFilter] = useState<CommunityFilter>('friends');
   const [tab, setTab] = useState<FeedTab>('for-you');
@@ -152,7 +226,19 @@ export default function UpdatesScreen() {
   const [interestPrompt, setInterestPrompt] = useState<{ topic: string; title: string } | null>(null);
   const [noteEditor, setNoteEditor] = useState<Note | 'new' | null>(null);
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const promptedContent = useRef(new Set<string>());
+
+  const showFeedback = useCallback((message: string) => {
+    setFeedback(message);
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = setTimeout(() => setFeedback(null), 2800);
+  }, []);
+
+  useEffect(() => () => {
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+  }, []);
 
   useEffect(() => {
     const surface = showCommunity ? 'community-feed' : viewMode === 'creator-feed' ? 'creator-feed' : 'updates';
@@ -351,13 +437,13 @@ export default function UpdatesScreen() {
 
   function selectFeedTab(nextTab: FeedTab) {
     setTab(nextTab);
+    setFeedIndex(0);
     if (nextTab === 'interests') void loadSocial('for-you', 'interests');
     else void loadSocial(nextTab);
   }
 
   function openCommunity() {
     setShowCommunity(true);
-    setViewMode('landing');
     setCommunityCursor(null);
     void loadSocial('community', communityFilter);
   }
@@ -376,13 +462,13 @@ export default function UpdatesScreen() {
 
   async function shareSocialPost(post: SocialPost) {
     if (post.visibility !== 'public') {
-      Alert.alert('Sharing is off', 'Only public posts can be shared outside Old Time.');
+      showFeedback('Only public posts can be shared outside Old Time.');
       return;
     }
     try {
       await Share.share({ message: `${post.author.name} on Old Time:\n\n${post.content}` });
     } catch (error) {
-      Alert.alert('Share did not open', error instanceof Error ? error.message : 'Please try again.');
+      showFeedback(error instanceof Error ? error.message : 'Sharing is unavailable right now.');
     }
   }
 
@@ -400,165 +486,194 @@ export default function UpdatesScreen() {
   const editingNote = noteEditor !== null && noteEditor !== 'new' ? noteEditor : null;
 
   return (
-     <View style={{ flex: 1, backgroundColor: colors.background }} testID="updates-screen">
-       <Screen title="Updates" left={
-         <View style={styles.headerLeftActions}>
-           <IconButton name="albums-outline" label="Open community" onPress={openCommunity} />
-         </View>
-       } right={
-        <View style={styles.socialHeaderActions}>
-          <View>
-            <IconButton name="mail-outline" label="Open messages" onPress={openMessagesInbox} />
-            {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
-          </View>
-          <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
-          <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
-            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} />
-          </Pressable>
-           <IconButton
-             name="add"
-             label={showCommunity ? 'Create a community post' : 'Create a photo or video'}
-             onPress={() => {
-               setPostComposerSurface(showCommunity ? 'community' : 'creator');
-               setCompose('post');
-             }}
+     <View style={{ flex: 1, backgroundColor: '#000' }} testID="updates-screen">
+       {/* Layer 0: Main Media Feed */}
+       <CreatorFeedPager
+         posts={creatorPosts}
+         initialIndex={feedIndex}
+         token={session?.authToken ?? ''}
+         colors={colors}
+         headerControls={
+           <MediaFeedFloatingHeader
+             tab={tab}
+             onSelectTab={selectFeedTab}
+             onOpenHub={() => setViewMode('landing')}
+             onOpenCommunity={openCommunity}
+             onOpenSearch={() => setShowPeopleSearch(true)}
+             onOpenMessages={openMessagesInbox}
+             onOpenProfile={() => setProfileUserId(session?.id ?? 0)}
+             unreadRequests={messageRequests.filter(r => r.status === 'pending').length}
+             ownCard={ownCard}
+             session={session}
            />
-        </View>
-      }>
-         {showCommunity ? (
-           <CommunityFeed
-             posts={socialPosts}
-             loading={socialLoading}
-             error={socialError}
-             colors={colors}
-             token={session?.authToken ?? ''}
-             filter={communityFilter}
-             interests={interests}
-             onFilterChange={changeCommunityFilter}
-             onClose={closeCommunity}
-             onRetry={() => void loadSocial('community', communityFilter)}
-             onEndReached={() => void loadMoreCommunity()}
-             loadingMore={communityLoadingMore}
-             onOpenProfile={setProfileUserId}
-             onComment={setSocialCommentPost}
-             onShare={(post) => void shareSocialPost(post)}
-              onCreatePost={() => {
-                setPostComposerSurface('community');
-                setCompose('post');
-              }}
-             onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
-           />
-          ) : <FlatList
-           testID="landing-grid"
-             data={tab === 'interests' ? [] : creatorGridItems}
-           numColumns={3}
-            keyExtractor={item => String(item.id)}
-           columnWrapperStyle={{ gap: 2 }}
-           ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
-           contentContainerStyle={{ paddingHorizontal: 2, paddingBottom: 100 }}
-           showsVerticalScrollIndicator={false}
-            ListHeaderComponent={<>
-               <SocialHubPanel
-                 posts={socialPosts}
-                 stories={socialStories}
-                 card={ownCard}
-                 loading={socialLoading}
-                 error={socialError}
-                 colors={colors}
-                 token={session?.authToken ?? ''}
-                 onRetry={() => void loadSocial()}
-                 onOpenProfile={setProfileUserId}
-                 onOpenStory={(story) => setServerStoryOpen(story)}
+         }
+         onComment={setSocialCommentPost}
+         onShare={(post) => void shareSocialPost(post)}
+         onOpenProfile={(userId) => { setProfileUserId(userId); }}
+         onChanged={(updated) => setSocialPosts((items) => items.map((item) => item.id === updated.id ? updated : item))}
+       />
+
+       {/* Layer 1: Current Updates (Hub) Modal */}
+       <Modal visible={viewMode === 'landing'} transparent animationType="slide" onRequestClose={() => setViewMode('media-feed')}>
+         <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <Screen title="Current Updates" left={
+             <View style={styles.headerLeftActions}>
+               <IconButton name="chevron-down" label="Back to Feed" onPress={() => setViewMode('media-feed')} />
+               <IconButton name="albums-outline" label="Open community" onPress={openCommunity} />
+             </View>
+           } right={
+             <View style={styles.socialHeaderActions}>
+               <View>
+                 <IconButton name="mail-outline" label="Open messages" onPress={openMessagesInbox} />
+                 {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
+               </View>
+               <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
+               <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
+                 <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} />
+               </Pressable>
+               <IconButton
+                 name="add"
+                 label="Create a photo or video"
+                 onPress={() => {
+                   setPostComposerSurface('creator');
+                   setCompose('post');
+                 }}
+               />
+             </View>
+           }>
+             <FlatList
+               testID="landing-grid"
+               data={tab === 'interests' ? [] : creatorGridItems}
+               numColumns={3}
+               keyExtractor={item => String(item.id)}
+               columnWrapperStyle={{ gap: 2 }}
+               ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
+               contentContainerStyle={{ paddingHorizontal: 2, paddingBottom: 100 }}
+               showsVerticalScrollIndicator={false}
+               ListHeaderComponent={<>
+                 <SocialHubPanel
+                   posts={socialPosts}
+                   stories={socialStories}
+                   card={ownCard}
+                   loading={socialLoading}
+                   error={socialError}
+                   colors={colors}
+                   token={session?.authToken ?? ''}
+                   onRetry={() => void loadSocial()}
+                   onOpenProfile={setProfileUserId}
+                   onOpenStory={(story) => setServerStoryOpen(story)}
                    onCreatePost={() => {
                      setPostComposerSurface('creator');
                      setCompose('post');
                    }}
-                  onCreateStory={() => setCompose('status')}
-                interestPrompt={interestPrompt}
-                onDismissInterestPrompt={() => setInterestPrompt(null)}
-                onInterestFeedback={(interested) => {
-                  if (!interestPrompt) return;
-                  recordInterestFeedback(interestPrompt.topic, interested);
-                  if (interested && !interests.includes(interestPrompt.topic)) toggleInterest(interestPrompt.topic);
-                  setInterestPrompt(null);
-                }}
-                  onComment={setSocialCommentPost}
-                  onShare={(post) => void shareSocialPost(post)}
-                 onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
+                   onCreateStory={() => setCompose('status')}
+                   interestPrompt={interestPrompt}
+                   onDismissInterestPrompt={() => setInterestPrompt(null)}
+                   onInterestFeedback={(interested) => {
+                     if (!interestPrompt) return;
+                     recordInterestFeedback(interestPrompt.topic, interested);
+                     if (interested && !interests.includes(interestPrompt.topic)) toggleInterest(interestPrompt.topic);
+                     setInterestPrompt(null);
+                   }}
+                   onComment={setSocialCommentPost}
+                   onShare={(post) => void shareSocialPost(post)}
+                   onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
+                 />
+                 <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 }}>
+                   <AdMobBanner />
+                 </View>
+                 <View style={[styles.feedTabs, { borderBottomColor: colors.border }]}>
+                   {(['for-you', 'following', 'interests'] as FeedTab[]).map(item => (
+                     <Pressable key={item} testID={`tab-${item}`} onPress={() => selectFeedTab(item)} style={[styles.feedTab, tab === item && { borderBottomColor: colors.primary }]}>
+                       <Text style={[styles.feedTabText, { color: tab === item ? colors.primary : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : item === 'following' ? 'Following' : 'Interests'}</Text>
+                     </Pressable>
+                   ))}
+                 </View>
+                 {tab === 'interests' && <InterestPanel interests={interests} onToggle={toggleInterest} languages={settings.feedLanguages} onToggleLanguage={chooseFeedLanguage} onBack={() => setTab('for-you')} colors={colors} />}
+                 {tab !== 'interests' && creatorGridItems.length === 0 && (
+                   <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '600' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
+                 )}
+               </>}
+               renderItem={({ item, index }) => (
+                 <Pressable testID={`grid-item-${'platform' in item ? `discovery-${item.id}` : 'starterAction' in item ? `starter-${item.id}` : item.id}`} onPress={() => {
+                   if ('platform' in item) {
+                     void openDiscoveryItem(item);
+                     return;
+                   }
+                   if ('starterAction' in item) {
+                     if (item.starterAction === 'map') router.push('/(tabs)/map');
+                     else if (item.starterAction === 'story') setCompose('status');
+                     else if (item.starterAction === 'interests') setTab('interests');
+                     else openCommunity();
+                     return;
+                   }
+                   const nativeIndex = creatorPosts.findIndex((post) => post.id === item.id);
+                   setFeedIndex(Math.max(0, nativeIndex));
+                   setViewMode('media-feed');
+                 }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: colors.card, justifyContent: 'flex-end', padding: 8 }}>
+                   {'platform' in item ? (
+                     <DiscoveryGridCard item={item} />
+                   ) : 'starterAction' in item ? (
+                     <StarterGridCard item={item} />
+                   ) : item.media?.[0] ? (
+                     <Image source={{ uri: socialMediaUrl(item.media[0].objectPath) }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                   ) : null}
+                   {'platform' in item || 'starterAction' in item ? null : <><View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.15)' }]} />
+                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                       <Ionicons name={item.media?.[0]?.type === 'video' ? 'play' : 'image-outline'} size={12} color="#fff" />
+                       <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{item.counts.likes}</Text>
+                     </View></>}
+                 </Pressable>
+               )}
+             />
+           </Screen>
+         </View>
+       </Modal>
+
+       {/* Layer 2: Community Modal */}
+       <Modal visible={showCommunity} transparent animationType="slide" onRequestClose={closeCommunity}>
+         <View style={{ flex: 1, backgroundColor: colors.background }}>
+           <Screen title="Community" left={
+             <View style={styles.headerLeftActions}>
+               <IconButton name="chevron-down" label="Back" onPress={closeCommunity} />
+             </View>
+           } right={
+             <View style={styles.socialHeaderActions}>
+               <IconButton
+                 name="add"
+                 label="Create community post"
+                 onPress={() => {
+                   setPostComposerSurface('community');
+                   setCompose('post');
+                 }}
                />
-                <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 }}>
-                  <AdMobBanner />
-                </View>
-
-              <View style={[styles.feedTabs, { borderBottomColor: colors.border }]}>
-                {(['for-you', 'following', 'interests'] as FeedTab[]).map(item => (
-                  <Pressable key={item} testID={`tab-${item}`} onPress={() => selectFeedTab(item)} style={[styles.feedTab, tab === item && { borderBottomColor: colors.primary }]}>
-                    <Text style={[styles.feedTabText, { color: tab === item ? colors.primary : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : item === 'following' ? 'Following' : 'Interests'}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {tab === 'interests' && <InterestPanel interests={interests} onToggle={toggleInterest} languages={settings.feedLanguages} onToggleLanguage={chooseFeedLanguage} onBack={() => setTab('for-you')} colors={colors} />}
-
-               {tab !== 'interests' && creatorGridItems.length === 0 && (
-                <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '600' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
-              )}
-           </>}
-           renderItem={({ item, index }) => (
-               <Pressable testID={`grid-item-${'platform' in item ? `discovery-${item.id}` : 'starterAction' in item ? `starter-${item.id}` : item.id}`} onPress={() => {
-                 if ('platform' in item) {
-                   void openDiscoveryItem(item);
-                   return;
-                 }
-                 if ('starterAction' in item) {
-                   if (item.starterAction === 'map') router.push('/(tabs)/map');
-                   else if (item.starterAction === 'story') setCompose('status');
-                   else if (item.starterAction === 'interests') setTab('interests');
-                   else openCommunity();
-                   return;
-                 }
-                 const nativeIndex = creatorPosts.findIndex((post) => post.id === item.id);
-                 setFeedIndex(Math.max(0, nativeIndex));
-                 setViewMode('creator-feed');
-               }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: colors.card, justifyContent: 'flex-end', padding: 8 }}>
-                 {'platform' in item ? (
-                   <DiscoveryGridCard item={item} />
-                 ) : 'starterAction' in item ? (
-                   <StarterGridCard item={item} />
-                 ) : item.media?.[0] ? (
-                  <Image source={{ uri: socialMediaUrl(item.media[0].objectPath) }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                ) : null}
-                {'platform' in item || 'starterAction' in item ? null : <><View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.15)' }]} />
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Ionicons name={item.media?.[0]?.type === 'video' ? 'play' : 'image-outline'} size={12} color="#fff" />
-                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{item.counts.likes}</Text>
-                  </View></>}
-             </Pressable>
-           )}
-          />}
-      </Screen>
-
-      <Modal visible={viewMode === 'creator-feed'} transparent animationType="slide" onRequestClose={() => {
-        setViewMode('landing');
-        void adManager.showInterstitialAtTransition('creator-feed');
-      }}>
-        {viewMode === 'creator-feed' ? (
-          <CreatorFeedPager
-            posts={creatorPosts}
-            initialIndex={feedIndex}
-            token={session?.authToken ?? ''}
-            colors={colors}
-            onClose={() => {
-              setViewMode('landing');
-              void adManager.showInterstitialAtTransition('creator-feed');
-            }}
-            onComment={setSocialCommentPost}
-            onShare={(post) => void shareSocialPost(post)}
-            onOpenProfile={(userId) => { setViewMode('landing'); setProfileUserId(userId); }}
-            onChanged={(updated) => setSocialPosts((items) => items.map((item) => item.id === updated.id ? updated : item))}
-          />
-        ) : null}
-      </Modal>
+             </View>
+           }>
+             <CommunityFeed
+               posts={socialPosts}
+               loading={socialLoading}
+               error={socialError}
+               colors={colors}
+               token={session?.authToken ?? ''}
+               filter={communityFilter}
+               interests={interests}
+               onFilterChange={changeCommunityFilter}
+               onClose={closeCommunity}
+               onRetry={() => void loadSocial('community', communityFilter)}
+               onEndReached={() => void loadMoreCommunity()}
+               loadingMore={communityLoadingMore}
+               onOpenProfile={setProfileUserId}
+               onComment={setSocialCommentPost}
+               onShare={(post) => void shareSocialPost(post)}
+               onCreatePost={() => {
+                 setPostComposerSurface('community');
+                 setCompose('post');
+               }}
+               onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
+             />
+           </Screen>
+         </View>
+       </Modal>
 
       <Modal visible={viewMode === 'feed'} transparent animationType="slide" onRequestClose={() => setViewMode('landing')}>
         {viewMode === 'feed' ? (
@@ -654,6 +769,7 @@ export default function UpdatesScreen() {
                  allowReposts: Boolean(data.allowReposts),
                   });
                   setSocialPosts((items) => [post, ...items]);
+                   if (postComposerSurface === 'community') setShowCommunity(true);
                 }
                 setCapturedStatusMedia(null);
              }}
@@ -692,9 +808,9 @@ export default function UpdatesScreen() {
             onMessageRequest={(userId, name) => {
               if (!session?.authToken) return;
               void createMessageRequest(session.authToken, userId).then(() => {
-                Alert.alert('Message request sent', `${name} can accept your request before a chat opens.`);
+                showFeedback(`Message request sent to ${name}.`);
               }).catch((error) => {
-                Alert.alert('Request unavailable', error instanceof Error ? error.message : 'This message request cannot be sent.');
+                showFeedback(error instanceof Error ? error.message : 'Message request unavailable.');
               });
             }}
             onExclude={(person) => {
@@ -706,7 +822,8 @@ export default function UpdatesScreen() {
                     ? [...settings.excludedPeople, person]
                     : settings.excludedPeople.filter((item) => item.id !== person.id),
                 });
-              }).catch((error) => Alert.alert('Sharing list not updated', error instanceof Error ? error.message : 'Please try again.'));
+                showFeedback(active ? `${person.name} won’t see future shares.` : `${person.name} can see future shares.`);
+              }).catch((error) => showFeedback(error instanceof Error ? error.message : 'Sharing list was not updated.'));
             }}
             onNotifications={() => {
               setProfileUserId(null);
@@ -726,8 +843,8 @@ export default function UpdatesScreen() {
                   onPress: () => {
                     void setUserBlocked(session.authToken, userId, true).then(() => {
                       setProfileUserId(null);
-                      Alert.alert('User blocked', `${name} can no longer find you.`);
-                    }).catch((error) => Alert.alert('Could not block user', error instanceof Error ? error.message : 'Please try again.'));
+                      showFeedback(`${name} was blocked.`);
+                    }).catch((error) => showFeedback(error instanceof Error ? error.message : 'Could not block user.'));
                   },
                 },
               ]);
@@ -735,6 +852,7 @@ export default function UpdatesScreen() {
             unreadCount={unreadNotifications}
              onComment={setSocialCommentPost}
              onShare={(post) => void shareSocialPost(post)}
+              onFeedback={showFeedback}
           />
         ) : null}
       </Modal>
@@ -886,6 +1004,7 @@ export default function UpdatesScreen() {
         {serverStoryOpen ? <ServerStoryViewer items={buildStoryViewerItems(socialStories)} initialItemId={userStoryViewerItemId(serverStoryOpen.id)} token={session?.authToken ?? ''} onClose={() => setServerStoryOpen(null)} /> : null}
       </Modal>
 
+      {feedback ? <View pointerEvents="none" style={[styles.inlineFeedback, { backgroundColor: colors.foreground }]}><Text style={[styles.inlineFeedbackText, { color: colors.background }]}>{feedback}</Text></View> : null}
     </View>
   );
 }
@@ -970,12 +1089,12 @@ function DiscoveryGridCard({ item }: { item: DiscoveryItem }) {
   );
 }
 
-function CreatorFeedPager({ posts, initialIndex, token, colors, onClose, onComment, onShare, onOpenProfile, onChanged }: {
+function CreatorFeedPager({ posts, initialIndex, token, colors, headerControls, onComment, onShare, onOpenProfile, onChanged }: {
   posts: SocialPost[];
   initialIndex: number;
   token: string;
   colors: any;
-  onClose: () => void;
+  headerControls?: React.ReactNode;
   onComment: (post: SocialPost) => void;
   onShare: (post: SocialPost) => void;
   onOpenProfile: (userId: number) => void;
@@ -986,6 +1105,15 @@ function CreatorFeedPager({ posts, initialIndex, token, colors, onClose, onComme
   const initialPostId = posts[Math.min(initialIndex, Math.max(posts.length - 1, 0))]?.id;
   const initialFeedIndex = Math.max(0, feedItems.findIndex((item) => item.kind === 'content' && item.content.id === initialPostId));
   const [currentIndex, setCurrentIndex] = useState(initialFeedIndex);
+  const listRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    if (listRef.current && feedItems.length > initialFeedIndex) {
+      listRef.current.scrollToIndex({ index: initialFeedIndex, animated: false });
+      setCurrentIndex(initialFeedIndex);
+    }
+  }, [initialFeedIndex, feedItems.length]);
+
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     const firstVisible = viewableItems.find((entry: any) => entry?.item?.key);
     if (!firstVisible) return;
@@ -997,10 +1125,9 @@ function CreatorFeedPager({ posts, initialIndex, token, colors, onClose, onComme
 
   return (
     <View style={styles.creatorFeedPager} testID="creator-feed-pager">
-      <Pressable onPress={onClose} style={[styles.creatorFeedBack, { top: Math.max(insets.top, 20) + 10 }]} accessibilityRole="button" accessibilityLabel="Back to Updates">
-        <Ionicons name="chevron-back" size={30} color="#fff" />
-      </Pressable>
+      {headerControls}
       <FlatList
+        ref={listRef}
         data={feedItems}
         keyExtractor={(item) => item.key}
         pagingEnabled
@@ -1011,6 +1138,12 @@ function CreatorFeedPager({ posts, initialIndex, token, colors, onClose, onComme
         getItemLayout={(_, index) => ({ length: WINDOW_HEIGHT, offset: WINDOW_HEIGHT * index, index })}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+        ListEmptyComponent={
+          <View style={{ width: WINDOW_WIDTH, height: WINDOW_HEIGHT, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="videocam-outline" size={48} color="rgba(255,255,255,0.2)" />
+            <Text style={{ color: 'rgba(255,255,255,0.6)', marginTop: 12, fontWeight: '600' }}>No updates right now</Text>
+          </View>
+        }
         renderItem={({ item, index }) => item.kind === 'native-ad' ? (
           <View style={styles.creatorFeedPage}>
             <AdMobNativeFeedAd surface="creator-feed" placement={item.placement} fullScreen />
@@ -1082,7 +1215,7 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
       <Pressable onPress={() => setMuted((value) => !value)} style={[styles.creatorMuteButton, { top: Math.max(insets.top, 20) + 14 }]} accessibilityRole="button" accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}>
         <Ionicons name={muted ? 'volume-mute' : 'volume-medium'} size={20} color="#fff" />
       </Pressable>
-      <View style={[styles.creatorFeedActions, { bottom: Math.max(insets.bottom, 16) + 94 }]}>
+      <View style={[styles.creatorFeedActions, { bottom: Math.max(insets.bottom, 16) + 110 }]}>
         <Pressable onPress={() => void changeRelation('like')} style={styles.creatorAction} accessibilityRole="button" accessibilityLabel="Like post">
           <Ionicons name={post.viewer.liked ? 'heart' : 'heart-outline'} size={34} color={post.viewer.liked ? '#FFD54A' : '#fff'} />
           <Text style={styles.creatorActionCount}>{post.counts.likes}</Text>
@@ -1100,9 +1233,9 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
           <Text style={styles.creatorActionCount}>Share</Text>
         </Pressable>
       </View>
-      <View style={[styles.creatorFeedCaption, { bottom: Math.max(insets.bottom, 16) + 28 }]}>
+      <View style={[styles.creatorFeedCaption, { bottom: Math.max(insets.bottom, 16) + 84 }]}>
         <Pressable onPress={onOpenProfile} accessibilityRole="button" accessibilityLabel={`Open ${post.author.name}'s profile`}>
-          <Text style={styles.creatorAuthor}>@{post.author.username}</Text>
+          <Text style={styles.creatorAuthor}>{post.author.username}</Text>
         </Pressable>
         {post.content ? <Text style={styles.creatorCaption}>{post.content}</Text> : null}
       </View>
@@ -1522,6 +1655,11 @@ function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, 
             </View>
             <Text pointerEvents="none" style={styles.storyTextHint}>Tap the text to edit · drag it anywhere</Text>
           </View>
+        ) : mediaRequired ? (
+          <View style={styles.mediaComposerPrompt}>
+            <Ionicons name="image-outline" size={34} color="#fff" />
+            <Text style={styles.mediaComposerPromptText}>{mediaUri ? 'Media ready to share' : 'Choose a photo or video'}</Text>
+          </View>
         ) : (
           <TextInput
             autoFocus
@@ -1834,7 +1972,7 @@ function CommunityFeed({
           <View style={styles.communityTitleRow}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.communityIntroTitle, { color: colors.foreground }]}>Community</Text>
-              <Text style={[styles.communityIntroText, { color: colors.mutedForeground }]}>Posts from your people and interests.</Text>
+              <Text style={[styles.communityIntroText, { color: colors.mutedForeground }]}>From people and interests.</Text>
             </View>
             <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Back to Updates" style={[styles.communityCloseButton, { borderColor: colors.border }]}>
               <Ionicons name="close" size={20} color={colors.foreground} />
@@ -1858,7 +1996,7 @@ function CommunityFeed({
           {filter === 'interests' && interests.length === 0 ? (
             <View style={[styles.communityFilterHint, { backgroundColor: colors.secondary }]}>
               <Ionicons name="options-outline" size={16} color={colors.primary} />
-              <Text style={[styles.communityFilterHintText, { color: colors.foreground }]}>Choose interests in Updates to personalize this view.</Text>
+               <Text style={[styles.communityFilterHintText, { color: colors.foreground }]}>Choose interests to personalize this view.</Text>
             </View>
           ) : null}
         </View>
@@ -1931,7 +2069,7 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment
           <Avatar name={post.author.name} size={38} color={colors.primary} />
           <View>
             <Text style={[styles.socialAuthorName, { color: colors.foreground }]}>{post.author.name}</Text>
-            <Text style={[styles.socialAuthorMeta, { color: colors.mutedForeground }]}>@{post.author.username} · {audienceLabel(post.visibility)}</Text>
+            <Text style={[styles.socialAuthorMeta, { color: colors.mutedForeground }]}>{audienceLabel(post.visibility)}</Text>
           </View>
         </Pressable>
         <Pressable onPress={() => Alert.alert('Post options', 'Choose what you want to do with this post.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Report', style: 'destructive', onPress: () => void reportSocialContent(token, { targetType: 'post', targetId: post.id, reason: 'other' }).then(() => Alert.alert('Report sent', 'Thanks for helping keep Old Time safe.')).catch(() => Alert.alert('Report unavailable', 'Please try again.')) }])} accessibilityRole="button" accessibilityLabel="Open post options" hitSlop={10}>
@@ -1995,13 +2133,14 @@ function relativeSocialTime(timestamp: number) {
   return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
 }
 
-function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequest, onExclude, onNotifications, onRequests, onBlock, unreadCount, onComment, onShare }: { userId: number; own: boolean; token: string; colors: any; onClose: () => void; onMessageRequest: (userId: number, name: string) => void; onExclude: (person: { id: number; name: string }) => void; onNotifications: () => void; onRequests: () => void; onBlock: (userId: number, name: string) => void; unreadCount: number; onComment: (post: SocialPost) => void; onShare: (post: SocialPost) => void }) {
+function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequest, onExclude, onNotifications, onRequests, onBlock, unreadCount, onComment, onShare, onFeedback }: { userId: number; own: boolean; token: string; colors: any; onClose: () => void; onMessageRequest: (userId: number, name: string) => void; onExclude: (person: { id: number; name: string }) => void; onNotifications: () => void; onRequests: () => void; onBlock: (userId: number, name: string) => void; unreadCount: number; onComment: (post: SocialPost) => void; onShare: (post: SocialPost) => void; onFeedback: (message: string) => void }) {
   const [card, setCard] = useState<UserCard | null>(null);
   const [profilePosts, setProfilePosts] = useState<SocialPost[]>([]);
   const [profilePostsLoading, setProfilePostsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [following, setFollowingState] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionType, setConnectionType] = useState<'followers' | 'following' | null>(null);
   useEffect(() => {
     let mounted = true;
     setLoading(true);
@@ -2028,9 +2167,10 @@ function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequ
     try {
       await setFollowing(token, userId, next);
       setCard({ ...card, following: next, followerCount: Math.max(0, card.followerCount + (next ? 1 : -1)) });
+      onFeedback(next ? `Following ${card.name}.` : `Unfollowed ${card.name}.`);
     } catch {
       setFollowingState(!next);
-      Alert.alert('Follow not saved', 'Please try again.');
+      onFeedback('Follow was not updated.');
     }
   }
   return (
@@ -2047,11 +2187,11 @@ function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequ
           >
             <Avatar name={card.name} size={86} color={colors.primary} />
             <Text style={[styles.socialProfileName, { color: colors.foreground }]}>{own ? 'You' : card.name}</Text>
-            <Text style={[styles.socialProfileHandle, { color: colors.mutedForeground }]}>@{card.username}</Text>
+            <Text style={[styles.socialProfileHandle, { color: colors.mutedForeground }]}>{card.username}</Text>
             {card.bio ? <Text style={[styles.socialProfileBio, { color: colors.foreground }]}>{card.bio}</Text> : null}
             <View style={styles.socialProfileStats}>
-              <View><Text style={[styles.profileStatValue, { color: colors.foreground }]}>{card.followerCount}</Text><Text style={[styles.profileStatLabel, { color: colors.mutedForeground }]}>Followers</Text></View>
-              <View><Text style={[styles.profileStatValue, { color: colors.foreground }]}>{card.followingCount}</Text><Text style={[styles.profileStatLabel, { color: colors.mutedForeground }]}>Following</Text></View>
+              <Pressable onPress={() => setConnectionType('followers')} accessibilityRole="button" accessibilityLabel={`View ${card.followerCount} followers`}><Text style={[styles.profileStatValue, { color: colors.foreground }]}>{card.followerCount}</Text><Text style={[styles.profileStatLabel, { color: colors.mutedForeground }]}>Followers</Text></Pressable>
+              <Pressable onPress={() => setConnectionType('following')} accessibilityRole="button" accessibilityLabel={`View ${card.followingCount} following`}><Text style={[styles.profileStatValue, { color: colors.foreground }]}>{card.followingCount}</Text><Text style={[styles.profileStatLabel, { color: colors.mutedForeground }]}>Following</Text></Pressable>
             </View>
             <View style={styles.socialProfileActions}>
               {own ? <Pressable onPress={onNotifications} style={[styles.profileIconAction, { borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Open notifications"><Ionicons name="notifications-outline" size={19} color={colors.primary} />{unreadCount > 0 ? <View style={{ position: 'absolute', top: -1, right: -1, width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.destructive }} /> : null}<Text style={{ color: colors.foreground, fontWeight: '600' }}>Notifications</Text></Pressable> : null}
@@ -2086,16 +2226,65 @@ function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequ
               </View>
             ) : (
               <Text style={[styles.profilePostsEmpty, { color: colors.mutedForeground }]}>
-                {own ? 'Your public and audience-approved posts will appear here.' : 'No visible posts yet.'}
+                 {own ? 'Your posts will appear here.' : 'No visible posts yet.'}
               </Text>
             )}
-            {!own ? <Pressable onPress={() => { onExclude({ id: card.id, name: card.name }); Alert.alert('Sharing list updated', `${card.name} was added or removed from your excluded audience list.`); }} style={styles.excludeAction}><Ionicons name="eye-off-outline" size={17} color={colors.mutedForeground} /><Text style={{ color: colors.mutedForeground }}>Toggle excluded from sharing</Text></Pressable> : null}
+            {!own ? <Pressable onPress={() => onExclude({ id: card.id, name: card.name })} style={styles.excludeAction}><Ionicons name="eye-off-outline" size={17} color={colors.mutedForeground} /><Text style={{ color: colors.mutedForeground }}>Sharing visibility</Text></Pressable> : null}
             {!own ? <Pressable onPress={() => onBlock(card.id, card.name)} style={styles.excludeAction}><Ionicons name="ban-outline" size={17} color={colors.destructive} /><Text style={{ color: colors.destructive }}>Block {card.name}</Text></Pressable> : null}
             <Pressable onPress={onClose} style={[styles.profileDone, { borderColor: colors.border }]}><Text style={{ color: colors.primary, fontWeight: '600' }}>Done</Text></Pressable>
           </ScrollView>
         ) : null}
+        {connectionType ? <ConnectionListSheet type={connectionType} userId={userId} token={token} colors={colors} onClose={() => setConnectionType(null)} /> : null}
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+function ConnectionListSheet({ type, userId, token, colors, onClose }: { type: 'followers' | 'following'; userId: number; token: string; colors: any; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const [items, setItems] = useState<SocialConnection[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const timer = setTimeout(() => {
+      setLoading(true);
+      setError(null);
+      void getUserConnections(token, userId, type, query.trim() || undefined)
+        .then((page) => { if (mounted) setItems(page.items); })
+        .catch((requestError) => { if (mounted) setError(requestError instanceof Error ? requestError.message : 'Connections are unavailable.'); })
+        .finally(() => { if (mounted) setLoading(false); });
+    }, query.trim() ? 220 : 0);
+    return () => { mounted = false; clearTimeout(timer); };
+  }, [query, token, type, userId]);
+
+  return (
+    <View style={styles.connectionOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={[styles.connectionSheet, { backgroundColor: colors.card }]}>
+        <View style={styles.sheetTop}>
+          <Text style={[styles.notificationsTitle, { color: colors.foreground }]}>{type === 'followers' ? 'Followers' : 'Following'}</Text>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        <View style={[styles.peopleSearchInput, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+          <Ionicons name="search-outline" size={17} color={colors.mutedForeground} />
+          <TextInput value={query} onChangeText={setQuery} placeholder="Search" placeholderTextColor={colors.mutedForeground} style={[styles.peopleSearchText, { color: colors.foreground }]} autoCapitalize="none" autoCorrect={false} />
+        </View>
+        {loading ? <ActivityIndicator color={colors.primary} style={{ margin: 30 }} /> : error ? (
+          <Text style={[styles.profilePostsEmpty, { color: colors.destructive }]}>{error}</Text>
+        ) : items.length ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+            {items.map((person) => (
+              <View key={person.id} style={[styles.peopleSearchRow, { borderBottomColor: colors.border }]}>
+                <Avatar name={person.name} size={42} color={colors.primary} />
+                <View style={{ flex: 1 }}><Text style={[styles.socialAuthorName, { color: colors.foreground }]}>{person.name}</Text>{person.bio ? <Text numberOfLines={1} style={[styles.socialAuthorMeta, { color: colors.mutedForeground }]}>{person.bio}</Text> : null}</View>
+              </View>
+            ))}
+          </ScrollView>
+        ) : <Text style={[styles.profilePostsEmpty, { color: colors.mutedForeground }]}>{query.trim() ? 'No matches.' : `No ${type} yet.`}</Text>}
+      </View>
+    </View>
   );
 }
 
@@ -2497,7 +2686,7 @@ function SearchPeopleSheet({ query, results, loading, error, colors, onChangeQue
             autoFocus
             value={query}
             onChangeText={onChangeQuery}
-            placeholder="Search name or @username"
+            placeholder="Search name or username"
             placeholderTextColor={colors.mutedForeground}
             style={[styles.peopleSearchText, { color: colors.foreground }]}
             autoCapitalize="none"
@@ -2505,7 +2694,6 @@ function SearchPeopleSheet({ query, results, loading, error, colors, onChangeQue
             returnKeyType="search"
           />
         </View>
-        <Text style={[styles.peopleSearchHint, { color: colors.mutedForeground }]}>This searches social profiles, not your private chats.</Text>
         {loading ? <ActivityIndicator color={colors.primary} style={{ margin: 30 }} /> : error ? (
           <Text style={[styles.profilePostsEmpty, { color: colors.destructive }]}>{error}</Text>
         ) : query.trim().length < 2 ? (
@@ -2532,7 +2720,7 @@ function SearchPeopleSheet({ query, results, loading, error, colors, onChangeQue
                 <Avatar name={person.name} size={44} color={colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.socialAuthorName, { color: colors.foreground }]}>{person.name}</Text>
-                  <Text style={[styles.socialAuthorMeta, { color: colors.mutedForeground }]}>@{person.username}</Text>
+                  <Text style={[styles.socialAuthorMeta, { color: colors.mutedForeground }]}>{person.username}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
               </Pressable>
@@ -2696,6 +2884,78 @@ function InterestPanel({ interests, onToggle, languages, onToggleLanguage, onBac
 }
 
 const styles = StyleSheet.create({
+  mediaFeedHeader: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  mediaFeedHeaderActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mediaFeedHeaderGroup: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  mediaFeedTabs: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+  mediaFeedTabText: {
+    color: 'rgba(255,255,255,0.66)',
+    fontSize: 16,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  mediaFeedTabTextActive: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+  floatingUpdatesButton: {
+    height: 36,
+    borderRadius: 18,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  floatingUpdatesText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  floatingUnreadDot: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#FF3B30',
+  },
+  floatingIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
   creatorFeedPager: { flex: 1, backgroundColor: '#000' },
   creatorFeedPage: { width: WINDOW_WIDTH, height: WINDOW_HEIGHT, backgroundColor: '#111' },
   creatorFeedBack: { position: 'absolute', left: 12, zIndex: 50, width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.28)' },
@@ -2786,6 +3046,8 @@ const styles = StyleSheet.create({
   repostPermissionHint: { color: 'rgba(255,255,255,0.78)', fontSize: 11, marginTop: 2 },
   repostPermissionSwitch: { width: 40, height: 24, borderRadius: 14, padding: 3, justifyContent: 'center' },
   repostPermissionThumb: { width: 18, height: 18, borderRadius: 9 },
+  mediaComposerPrompt: { alignItems: 'center', gap: 10 },
+  mediaComposerPromptText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   socialAction: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5 },
   socialPostTime: { fontSize: 10, marginLeft: 'auto' },
   sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
@@ -2866,6 +3128,10 @@ const styles = StyleSheet.create({
   commentContent: { fontSize: 14, lineHeight: 19, marginTop: 3 },
   commentComposer: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   commentInput: { flex: 1, minHeight: 42, maxHeight: 96, borderRadius: 19, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14 },
+  inlineFeedback: { position: 'absolute', left: 18, right: 18, bottom: Platform.OS === 'web' ? 46 : 26, minHeight: 42, borderRadius: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', zIndex: 100 },
+  inlineFeedbackText: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  connectionOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.58)', zIndex: 10 },
+  connectionSheet: { minHeight: WINDOW_HEIGHT * 0.54, maxHeight: WINDOW_HEIGHT * 0.76, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20 },
   serverStoryViewer: { flex: 1, justifyContent: 'space-between' },
   serverStoryShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.32)' },
   serverStoryTop: { paddingTop: 54, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 10 },

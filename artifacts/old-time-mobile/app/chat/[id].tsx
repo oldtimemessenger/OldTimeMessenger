@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Keyboard,
   Linking,
   Modal,
   Platform,
@@ -21,6 +22,7 @@ import {
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useQueryClient } from '@tanstack/react-query';
+import { io } from 'socket.io-client';
 import {
   getGetInboxQueryKey,
   getListMessagesQueryKey,
@@ -62,6 +64,10 @@ function storageUrl(objectPath: string) {
 function remainingSeconds(expiresAt: number | null, clock: number) {
   if (!expiresAt) return null;
   return Math.max(0, Math.ceil((expiresAt - clock) / 1000));
+}
+
+function expiryLabel(seconds: number) {
+  return seconds >= 60 ? `${Math.ceil(seconds / 60)}m` : `${seconds}s`;
 }
 
 export default function ChatDetailScreen() {
@@ -107,9 +113,14 @@ export default function ChatDetailScreen() {
   const openMessage = useOpenMessage();
   const saveMessage = useSaveMessage();
   const requestUploadUrl = useRequestUploadUrl();
+  const composerSuggestions = useMemo(() => getComposerSuggestions(new Date()), []);
   const contact = useMemo(
     () => inbox.data?.find((item) => item.chat.id === chatId)?.contact,
     [inbox.data, chatId],
+  );
+  const visibleMessages = useMemo(
+    () => (messages.data ?? []).filter((message) => message.saved || !message.expiresAt || message.expiresAt > clock),
+    [clock, messages.data],
   );
 
   useEffect(() => {
@@ -124,8 +135,34 @@ export default function ChatDetailScreen() {
   }, [chatId, session?.id]);
 
   useEffect(() => {
+    if (!session?.authToken || !chatId) return;
+    const socket = io(apiBaseUrl(), {
+      auth: { token: session.authToken },
+      reconnection: true,
+    });
+    const refreshMessages = (payload?: { chatId?: number }) => {
+      if (!payload || payload.chatId === chatId) {
+        void queryClient.invalidateQueries({ queryKey: messagesKey });
+      }
+    };
+    const refreshInbox = () => {
+      void queryClient.invalidateQueries({ queryKey: inboxKey });
+    };
+
+    socket.on('connect', () => socket.emit('join-chat', { chatId }));
+    socket.on('new-message', refreshMessages);
+    socket.on('message-updated', refreshMessages);
+    socket.on('message-expired', refreshMessages);
+    socket.on('inbox-updated', refreshInbox);
+    return () => {
+      socket.emit('leave-chat', { chatId });
+      socket.disconnect();
+    };
+  }, [chatId, inboxKey, messagesKey, queryClient, session?.authToken]);
+
+  useEffect(() => {
     if (!session) return;
-    for (const message of messages.data ?? []) {
+    for (const message of visibleMessages) {
       if (
         message.senderId !== session.id &&
         !message.openedAt &&
@@ -141,7 +178,7 @@ export default function ChatDetailScreen() {
         );
       }
     }
-  }, [messages.data, session?.id]);
+  }, [session?.id, visibleMessages]);
 
   useEffect(() => {
     if (!session?.authToken) return;
@@ -345,7 +382,7 @@ export default function ChatDetailScreen() {
 
       <FlatList
         inverted
-        data={[...(messages.data ?? [])].reverse()}
+        data={[...visibleMessages].reverse()}
         keyExtractor={(message) => String(message.id)}
         contentContainerStyle={styles.messageList}
         keyboardDismissMode="interactive"
@@ -365,10 +402,10 @@ export default function ChatDetailScreen() {
                 style={[
                   styles.bubble,
                   {
-                    backgroundColor: mine ? '#EEFFDE' : colors.card,
-                    borderColor: colors.border,
-                    borderBottomRightRadius: mine ? 5 : 16,
-                    borderBottomLeftRadius: mine ? 16 : 5,
+                    backgroundColor: mine ? colors.primary : colors.muted,
+                    borderColor: 'transparent',
+                    borderBottomRightRadius: mine ? 6 : 20,
+                    borderBottomLeftRadius: mine ? 20 : 6,
                   },
                 ]}
               >
@@ -394,32 +431,27 @@ export default function ChatDetailScreen() {
                   </View>
                 ) : null}
                 {item.content ? (
-                  <Text style={[styles.messageText, { color: colors.foreground }]}>{item.content}</Text>
+                  <Text style={[styles.messageText, { color: mine ? colors.primaryForeground : colors.foreground }]}>{item.content}</Text>
                 ) : null}
-                {!mine && seconds !== null && (
-                  <View style={styles.retentionRow}>
+                {seconds !== null && !item.saved ? (
+                  <View style={styles.messageMeta}>
                     <Ionicons name="timer-outline" size={13} color={colors.destructive} />
                     <Text style={[styles.retentionText, { color: colors.destructive }]}>
-                      {seconds}s until removed
+                      {expiryLabel(seconds)}
                     </Text>
-                    {!item.saved && (
+                    {!mine ? (
                       <Pressable testID={`save-message-${item.id}`} onPress={() => save(item)}>
                         <Text style={[styles.saveText, { color: colors.primary }]}>Save</Text>
                       </Pressable>
-                    )}
+                    ) : null}
+                    <MessageTime item={item} mine={mine} colors={colors} />
                   </View>
-                )}
-                {!mine && item.saved && (
-                  <Text style={[styles.savedText, { color: colors.primary }]}>Saved in chat</Text>
-                )}
-                <Text style={[styles.messageTime, { color: colors.mutedForeground }]}>
-                  {new Date(item.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                  {mine ? (
-                    <Text style={{ color: item.read ? colors.primary : colors.mutedForeground }}>
-                      {'  '}{item.read ? '✓✓' : '✓'}
-                    </Text>
-                  ) : null}
-                </Text>
+                ) : item.saved ? (
+                  <View style={styles.messageMeta}>
+                    <Text style={[styles.savedText, { color: colors.primary }]}>Saved</Text>
+                    <MessageTime item={item} mine={mine} colors={colors} />
+                  </View>
+                ) : <MessageTime item={item} mine={mine} colors={colors} />}
               </View>
             </View>
           );
@@ -428,7 +460,7 @@ export default function ChatDetailScreen() {
           <View style={styles.emptyChat}>
             <Ionicons name="lock-closed-outline" size={18} color={colors.mutedForeground} />
             <Text style={{ color: colors.mutedForeground }}>
-              Opened messages disappear after 30 seconds unless you save them.
+              Messages disappear after 1 minute unless you save them.
             </Text>
           </View>
         }
@@ -441,59 +473,99 @@ export default function ChatDetailScreen() {
         </View>
       )}
 
-      <View
-        style={[
-          styles.composer,
-          {
-            paddingBottom: insets.bottom + 8,
-            backgroundColor: colors.card,
-            borderTopColor: colors.border,
-          },
-        ]}
-      >
-        <IconButton
-          name="attach-outline"
-          onPress={() => setAttachmentMenu(true)}
-          label="Add attachment"
-        />
-        <IconButton
-          name="happy-outline"
-          onPress={() => setEmojiOpen(true)}
-          label="Open emoji picker"
-        />
-        <TextInput
-          ref={inputRef}
-          value={text}
-          onChangeText={setText}
-          placeholder="Message"
-          placeholderTextColor={colors.mutedForeground}
-          style={[styles.messageInput, { backgroundColor: colors.background, color: colors.foreground }]}
-          multiline
-          maxLength={2000}
-          blurOnSubmit={false}
-          onSubmitEditing={settings.enterToSend ? send : undefined}
-        />
+      <View style={[styles.composerArea, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
         {!text.trim() ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.suggestionRow}
+            keyboardShouldPersistTaps="handled"
+          >
+            {composerSuggestions.map((suggestion) => (
+              <Pressable
+                key={suggestion.id}
+                onPress={() => {
+                  setText((current) => `${current}${current && !current.endsWith(' ') ? ' ' : ''}${suggestion.value}`);
+                  inputRef.current?.focus();
+                }}
+                style={({ pressed }) => [styles.suggestionChip, { backgroundColor: colors.muted, opacity: pressed ? 0.65 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Add ${suggestion.label || suggestion.value}`}
+              >
+                <Text style={styles.suggestionEmoji}>{suggestion.emoji}</Text>
+                {suggestion.label ? <Text style={[styles.suggestionLabel, { color: colors.foreground }]}>{suggestion.label}</Text> : null}
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
+        <View
+          style={[
+            styles.composer,
+            {
+              paddingBottom: insets.bottom + 8,
+            },
+          ]}
+        >
           <IconButton
             name="camera-outline"
-            label="Open camera"
             onPress={() =>
               router.push({ pathname: '/camera', params: { returnChatId: String(chatId) } })
             }
+            label="Open camera"
           />
-        ) : (
-          <Pressable
-            testID="send-message"
-            onPress={send}
-            disabled={createMessage.isPending}
-            style={({ pressed }) => [
-              styles.send,
-              { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 },
-            ]}
-          >
-            <Ionicons name="send" size={17} color="#fff" />
-          </Pressable>
-        )}
+          <View style={[styles.messagePill, { backgroundColor: colors.muted }]}>
+            <TextInput
+              ref={inputRef}
+              value={text}
+              onChangeText={setText}
+              placeholder="Message"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.messageInput, { color: colors.foreground }]}
+              multiline
+              maxLength={2000}
+              blurOnSubmit={false}
+              onSubmitEditing={settings.enterToSend ? send : undefined}
+            />
+            <IconButton
+              name="images-outline"
+              onPress={() => setAttachmentMenu(true)}
+              label="Add photo or video"
+              size={21}
+            />
+            <IconButton
+              name="happy-outline"
+              onPress={() => {
+                Keyboard.dismiss();
+                setEmojiOpen(true);
+              }}
+              label="Open emoji picker"
+              size={21}
+            />
+            {!text.trim() ? (
+              <IconButton
+                name="mic-outline"
+                onPress={() => Alert.alert('Voice messages', 'Voice notes are coming soon.')}
+                label="Record voice message"
+                size={21}
+              />
+            ) : null}
+          </View>
+          {text.trim() ? (
+            <Pressable
+              testID="send-message"
+              onPress={send}
+              disabled={createMessage.isPending}
+              style={({ pressed }) => [
+                styles.send,
+                { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+            >
+              <Ionicons name="arrow-up" size={18} color="#fff" />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       <Modal
@@ -565,6 +637,27 @@ export default function ChatDetailScreen() {
   );
 }
 
+function MessageTime({
+  item,
+  mine,
+  colors,
+}: {
+  item: Message;
+  mine: boolean;
+  colors: ReturnType<typeof useColors>;
+}) {
+  return (
+    <Text style={[styles.messageTime, { color: mine ? 'rgba(255,255,255,0.72)' : colors.mutedForeground }]}>
+      {new Date(item.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+      {mine ? (
+        <Text style={{ color: item.read ? colors.primary : colors.mutedForeground }}>
+          {'  '}{item.read ? '✓✓' : '✓'}
+        </Text>
+      ) : null}
+    </Text>
+  );
+}
+
 function AttachmentAction({
   icon,
   label,
@@ -589,7 +682,22 @@ function AttachmentAction({
 function EmojiPickerSheet({ visible, onClose, onSelect }: { visible: boolean; onClose: () => void; onSelect: (emoji: string) => void }) {
   const colors = useColors();
   const [activeCategory, setActiveCategory] = useState(emojiPickerGroups[0].id);
+  const [search, setSearch] = useState('');
+  const [recent, setRecent] = useState(['❤️', '😂', '👍', '🙏', '🔥', '😍', '😭', '🎉']);
   const category = emojiPickerGroups.find((item) => item.id === activeCategory) ?? emojiPickerGroups[0];
+  const query = search.trim().toLowerCase();
+  const visibleEmojis = query
+    ? category.emojis.filter((emoji) => emoji.includes(query) || emojiSearchTerms[emoji]?.includes(query))
+    : category.emojis;
+
+  useEffect(() => {
+    if (visible) setSearch('');
+  }, [visible]);
+
+  function selectEmoji(emoji: string) {
+    setRecent((current) => [emoji, ...current.filter((item) => item !== emoji)].slice(0, 12));
+    onSelect(emoji);
+  }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -597,12 +705,30 @@ function EmojiPickerSheet({ visible, onClose, onSelect }: { visible: boolean; on
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={[styles.emojiSheet, { backgroundColor: colors.card }]}>
           <View style={styles.emojiHeader}>
-            <View>
-              <Text style={[styles.emojiTitle, { color: colors.foreground }]}>Choose an emoji</Text>
-              <Text style={[styles.emojiSubtitle, { color: colors.mutedForeground }]}>Your keyboard still supports every emoji variant.</Text>
-            </View>
+            <Text style={[styles.emojiTitle, { color: colors.foreground }]}>Emoji</Text>
             <IconButton name="close" onPress={onClose} size={22} />
           </View>
+          <View style={[styles.emojiSearch, { backgroundColor: colors.muted }]}>
+            <Ionicons name="search" size={17} color={colors.mutedForeground} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search emoji"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.emojiSearchInput, { color: colors.foreground }]}
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {search ? <Pressable onPress={() => setSearch('')} hitSlop={8}><Ionicons name="close-circle" size={17} color={colors.mutedForeground} /></Pressable> : null}
+          </View>
+          <Text style={[styles.emojiSectionLabel, { color: colors.mutedForeground }]}>Recent</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recentEmojiRow}>
+            {recent.map((emoji) => (
+              <Pressable key={emoji} onPress={() => selectEmoji(emoji)} style={styles.recentEmojiButton} accessibilityRole="button" accessibilityLabel={`Insert ${emoji}`}>
+                <Text style={styles.recentEmojiText}>{emoji}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojiCategoryRail}>
             {emojiPickerGroups.map((item) => (
               <Pressable
@@ -618,17 +744,84 @@ function EmojiPickerSheet({ visible, onClose, onSelect }: { visible: boolean; on
             ))}
           </ScrollView>
           <ScrollView contentContainerStyle={styles.emojiGrid} showsVerticalScrollIndicator={false}>
-            {category.emojis.map((emoji, index) => (
-              <Pressable key={`${category.id}-${emoji}-${index}`} onPress={() => onSelect(emoji)} style={styles.emojiButton} accessibilityRole="button" accessibilityLabel={`Insert ${emoji}`}>
+            {visibleEmojis.map((emoji, index) => (
+              <Pressable key={`${category.id}-${emoji}-${index}`} onPress={() => selectEmoji(emoji)} style={({ pressed }) => [styles.emojiButton, { backgroundColor: pressed ? colors.muted : 'transparent' }]} accessibilityRole="button" accessibilityLabel={`Insert ${emoji}`}>
                 <Text style={styles.emojiText}>{emoji}</Text>
               </Pressable>
             ))}
+            {visibleEmojis.length === 0 ? <Text style={[styles.noEmojiResults, { color: colors.mutedForeground }]}>No emoji found</Text> : null}
           </ScrollView>
         </View>
       </View>
     </Modal>
   );
 }
+
+type ComposerSuggestion = {
+  id: string;
+  emoji: string;
+  label: string;
+  value: string;
+};
+
+function getComposerSuggestions(date: Date): ComposerSuggestion[] {
+  const month = date.getMonth();
+  const day = date.getDate();
+  const hour = date.getHours();
+  const suggestions: ComposerSuggestion[] = [
+    { id: 'heart', emoji: '❤️', label: '', value: '❤️' },
+    { id: 'laugh', emoji: '😂', label: '', value: '😂' },
+    { id: 'thumbs-up', emoji: '👍', label: '', value: '👍' },
+  ];
+
+  if ((month === 8 && day >= 1 && day <= 10) || (month === 4 && day >= 1 && day <= 8)) {
+    suggestions.push({ id: 'seasonal', emoji: '🇺🇸', label: month === 8 ? 'Happy Labor Day' : 'Happy Memorial Day', value: month === 8 ? 'Happy Labor Day 🇺🇸' : 'Happy Memorial Day 🇺🇸' });
+  } else if (month === 1 && day <= 16) {
+    suggestions.push({ id: 'seasonal', emoji: '💌', label: "Happy Valentine's Day", value: "Happy Valentine's Day 💌" });
+  } else if (month === 9 && day >= 20) {
+    suggestions.push({ id: 'seasonal', emoji: '🎃', label: 'Happy Halloween', value: 'Happy Halloween 🎃' });
+  } else if (month === 10 && day >= 15) {
+    suggestions.push({ id: 'seasonal', emoji: '🦃', label: 'Happy Thanksgiving', value: 'Happy Thanksgiving 🦃' });
+  } else if (month === 11) {
+    suggestions.push({ id: 'seasonal', emoji: '🎄', label: 'Happy Holidays', value: 'Happy Holidays 🎄' });
+  } else {
+    suggestions.push({ id: 'seasonal', emoji: month >= 5 && month <= 7 ? '☀️' : '✨', label: month >= 5 && month <= 7 ? 'Summer mood' : 'Good vibes', value: month >= 5 && month <= 7 ? '☀️' : '✨' });
+  }
+
+  suggestions.push(
+    hour < 12
+      ? { id: 'time', emoji: '☀️', label: 'Good morning', value: 'Good morning ☀️' }
+      : hour >= 20
+        ? { id: 'time', emoji: '🌙', label: 'Good night', value: 'Good night 🌙' }
+        : { id: 'time', emoji: '🔥', label: 'Streak', value: '🔥' },
+  );
+  return suggestions;
+}
+
+const emojiSearchTerms: Record<string, string> = {
+  '❤️': 'heart love red',
+  '😂': 'laugh tears funny',
+  '🤣': 'laugh rolling funny',
+  '👍': 'thumbs up approve yes',
+  '👎': 'thumbs down no',
+  '🙏': 'pray please thanks',
+  '🔥': 'fire lit hot',
+  '😍': 'heart eyes love',
+  '😭': 'cry tears sad',
+  '😡': 'angry mad',
+  '🎉': 'party celebration',
+  '💯': 'hundred perfect',
+  '✨': 'sparkles magic',
+  '🤔': 'thinking',
+  '😉': 'wink',
+  '😎': 'cool sunglasses',
+  '🥳': 'party celebrate',
+  '👋': 'wave hello bye',
+  '👏': 'clap applause',
+  '💔': 'broken heart',
+  '✅': 'check done yes',
+  '❌': 'x no wrong',
+};
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -653,14 +846,14 @@ const styles = StyleSheet.create({
   bubble: {
     maxWidth: '82%',
     minWidth: 92,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingTop: 8,
-    paddingBottom: 6,
+    borderRadius: 20,
+    borderWidth: 0,
+    paddingHorizontal: 13,
+    paddingTop: 9,
+    paddingBottom: 7,
   },
-  messageText: { fontSize: 14, lineHeight: 21, paddingHorizontal: 5 },
-  messageTime: { fontSize: 10, alignSelf: 'flex-end', marginTop: 4, paddingHorizontal: 5 },
+  messageText: { fontSize: 16, lineHeight: 21 },
+  messageTime: { fontSize: 10, alignSelf: 'flex-end', marginTop: 4 },
   attachmentImage: { width: 220, height: 260, borderRadius: 11, marginBottom: 4 },
   fileRow: {
     width: 230,
@@ -671,10 +864,10 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   fileName: { fontSize: 13, fontWeight: '700' },
-  retentionRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 5, marginTop: 5 },
-  retentionText: { fontSize: 11, fontWeight: '600', flex: 1 },
+  messageMeta: { minHeight: 14, flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  retentionText: { fontSize: 11, fontWeight: '600' },
   saveText: { fontSize: 11, fontWeight: '800' },
-  savedText: { fontSize: 11, fontWeight: '700', paddingHorizontal: 5, marginTop: 5 },
+  savedText: { fontSize: 11, fontWeight: '700' },
   emptyChat: {
     flex: 1,
     alignItems: 'center',
@@ -690,22 +883,49 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 7,
   },
-  composer: {
+  composerArea: {
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  suggestionRow: {
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 3,
+  },
+  suggestionChip: {
+    minHeight: 38,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  suggestionEmoji: { fontSize: 22 },
+  suggestionLabel: { fontSize: 16, fontWeight: '500' },
+  composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingTop: 8,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingTop: 9,
+  },
+  messagePill: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 110,
+    borderRadius: 23,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingLeft: 2,
+    paddingRight: 5,
   },
   messageInput: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 44,
     maxHeight: 110,
-    borderRadius: 10,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    fontSize: 16,
   },
   send: {
     width: 40,
@@ -739,13 +959,19 @@ const styles = StyleSheet.create({
   attachmentIcon: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
   attachmentLabel: { fontSize: 12, fontWeight: '600', color: '#4A4A4A' },
   emojiOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.42)' },
-  emojiSheet: { maxHeight: '72%', minHeight: 360, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 14, paddingBottom: 10 },
-  emojiHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, marginBottom: 10 },
-  emojiTitle: { fontSize: 17, fontWeight: '800' },
-  emojiSubtitle: { fontSize: 11, marginTop: 3 },
-  emojiCategoryRail: { gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
-  emojiCategory: { width: 38, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingBottom: 22 },
-  emojiButton: { width: '12.5%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-  emojiText: { fontSize: 27, lineHeight: 34 },
+  emojiSheet: { maxHeight: '78%', minHeight: 430, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12, paddingBottom: 10 },
+  emojiHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, marginBottom: 9 },
+  emojiTitle: { fontSize: 20, fontWeight: '800' },
+  emojiSearch: { height: 40, borderRadius: 20, marginHorizontal: 16, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  emojiSearchInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
+  emojiSectionLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.7, marginTop: 11, marginLeft: 18, marginBottom: 2 },
+  recentEmojiRow: { gap: 4, paddingHorizontal: 14, paddingBottom: 7 },
+  recentEmojiButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+  recentEmojiText: { fontSize: 25 },
+  emojiCategoryRail: { gap: 7, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(120,120,130,0.18)' },
+  emojiCategory: { width: 38, height: 35, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10, paddingTop: 6, paddingBottom: 22 },
+  emojiButton: { width: '12.5%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  emojiText: { fontSize: 28, lineHeight: 35 },
+  noEmojiResults: { width: '100%', textAlign: 'center', paddingVertical: 30, fontSize: 14 },
 });
