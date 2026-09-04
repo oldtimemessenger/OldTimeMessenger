@@ -31,7 +31,7 @@
         "NSCameraUsageDescription": "Old Time uses your camera to share photos, video, and your status.",
         "NSPhotoLibraryUsageDescription": "Old Time uses your photo library to share images in chats.",
         "NSContactsUsageDescription": "Old Time uses your contacts to help you find friends who already use the app.",
-        "NSLocationWhenInUseUsageDescription": "Old Time uses your location to show nearby map pins, Stories, and places shared by people near you."
+        "NSLocationWhenInUseUsageDescription": "Old Time uses your location to share live location in a chat."
       }
     },
     "android": {
@@ -62,9 +62,9 @@
         }
       ],
       "expo-contacts",
-      "expo-notifications",
-      "@livekit/react-native-expo-plugin",
-      "@config-plugins/react-native-webrtc",
+       "expo-notifications",
+       "@livekit/react-native-expo-plugin",
+       "@config-plugins/react-native-webrtc",
       "expo-video",
       [
         "react-native-google-mobile-ads",
@@ -77,6 +77,15 @@
           "optimizeAdLoading": true
         }
       ]
-    ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5d0acf68-ca5f-479f-8fa6-2fbf81342ebb"
+      }
+    }
   }
 }
