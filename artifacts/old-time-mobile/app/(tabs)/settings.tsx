@@ -4,12 +4,14 @@ import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Style
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { File, Paths } from 'expo-file-system';
+import { signOut as firebaseSignOut } from 'firebase/auth';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, PrimaryButton, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
-import { useLogout } from '@workspace/api-client-react';
+import { useDeleteAccount, useLogout } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { auth } from '@/firebaseConfig';
 import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib/social-api';
 import { t } from '@/lib/i18n';
 import { unregisterDeviceForPush } from '@/lib/push-notifications';
@@ -30,6 +32,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const queryClient = useQueryClient();
   const logout = useLogout();
+  const deleteAccount = useDeleteAccount();
   const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, removeSavedMessage, setSession, resetLocalData } = useApp();
   const translate = (key: Parameters<typeof t>[1]) => t(settings.language, key);
 
@@ -37,6 +40,7 @@ export default function SettingsScreen() {
   const [query, setQuery] = useState('');
   const [cacheStatus, setCacheStatus] = useState<'idle' | 'clearing' | 'cleared' | 'error'>('idle');
   const [signingOut, setSigningOut] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [updatingNotifications, setUpdatingNotifications] = useState(false);
 
   // Profile state
@@ -108,6 +112,50 @@ export default function SettingsScreen() {
     }
     queryClient.clear();
     setSession(null);
+  }
+
+  async function permanentlyDeleteAccount() {
+    if (deletingAccount) return;
+    setDeletingAccount(true);
+    try {
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) throw new Error('Please sign in again before deleting your account.');
+      const idToken = await firebaseUser.getIdToken(true);
+      await deleteAccount.mutateAsync({ data: { idToken } });
+      queryClient.clear();
+      resetLocalData();
+      setSession(null);
+      await firebaseSignOut(auth).catch(() => undefined);
+    } catch (error) {
+      Alert.alert(
+        'Account was not deleted',
+        error instanceof Error ? error.message : 'Old Time could not delete your account. Please try again.',
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
+  function confirmAccountDeletion() {
+    Alert.alert(
+      'Delete your Old Time account?',
+      'This permanently removes your private account data. Shared messages and public posts may remain without your identity.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => Alert.alert(
+            'This cannot be undone',
+            'Are you sure you want to permanently delete your account?',
+            [
+              { text: 'Keep account', style: 'cancel' },
+              { text: 'Delete account', style: 'destructive', onPress: () => void permanentlyDeleteAccount() },
+            ],
+          ),
+        },
+      ],
+    );
   }
 
   async function chooseProfilePhoto() {
@@ -517,6 +565,26 @@ export default function SettingsScreen() {
                 <View style={{ flex: 1, marginLeft: 16 }}>
                   <Text style={[styles.panelRowLabel, { color: colors.destructive }]}>Clear personal app data</Text>
                   <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>Start fresh without deleting your account.</Text>
+                </View>
+              </Pressable>
+              <Pressable
+                disabled={deletingAccount}
+                onPress={confirmAccountDeletion}
+                style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: 'transparent' }]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.settingIcon, { backgroundColor: `${colors.destructive}22` }]}>
+                  {deletingAccount
+                    ? <ActivityIndicator size="small" color={colors.destructive} />
+                    : <Ionicons name="person-remove-outline" size={16} color={colors.destructive} />}
+                </View>
+                <View style={{ flex: 1, marginLeft: 16 }}>
+                  <Text style={[styles.panelRowLabel, { color: colors.destructive }]}>
+                    {deletingAccount ? 'Deleting account…' : 'Delete account'}
+                  </Text>
+                  <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>
+                    Permanently delete your Old Time account and private data.
+                  </Text>
                 </View>
               </Pressable>
             </PanelSection>

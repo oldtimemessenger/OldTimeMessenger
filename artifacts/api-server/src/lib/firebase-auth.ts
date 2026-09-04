@@ -19,3 +19,25 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedIdT
   }
   return token;
 }
+
+export async function deleteFirebaseAuthUser(uid: string): Promise<void> {
+  if (!uid.trim()) {
+    throw new Error("Firebase user ID is required.");
+  }
+  if (getApps().length === 0) {
+    initializeApp({ projectId: firebaseProjectId() });
+  }
+  try {
+    await getAuth().deleteUser(uid);
+  } catch (error: unknown) {
+    if (
+      typeof error === "object"
+      && error !== null
+      && "code" in error
+      && error.code === "auth/user-not-found"
+    ) {
+      return;
+    }
+    throw error;
+  }
+}

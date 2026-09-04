@@ -157,6 +157,20 @@ export const LogoutResponse = zod.object({
 
 
 /**
+ * @summary Permanently delete the authenticated account
+ */
+export const deleteAccountBodyIdTokenMin = 100;
+
+
+
+export const DeleteAccountBody = zod.object({
+  "idToken": zod.string().min(deleteAccountBodyIdTokenMin)
+})
+
+export const DeleteAccountResponse = zod.void()
+
+
+/**
  * @summary Register this signed-in device for Expo push notifications
  */
 export const registerPushTokenBodyTokenRegExp = new RegExp('^(ExponentPushToken|ExpoPushToken)\\[[^\\]]+\\]$');
@@ -392,7 +406,7 @@ export const GetInboxResponseItem = zod.object({
   "timestamp": zod.number(),
   "read": zod.boolean(),
   "attachment": zod.union([zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),
@@ -448,7 +462,7 @@ export const GetDirectChatResponse = zod.object({
   "timestamp": zod.number(),
   "read": zod.boolean(),
   "attachment": zod.union([zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),
@@ -520,7 +534,7 @@ export const ListMessagesResponseItem = zod.object({
   "timestamp": zod.number(),
   "read": zod.boolean(),
   "attachment": zod.union([zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),
@@ -582,7 +596,7 @@ export const CreateMessageBody = zod.union([zod.object({
   "senderId": zod.number().optional(),
   "content": zod.string().max(createMessageBodyOneContentMax),
   "attachment": zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),
@@ -595,7 +609,7 @@ export const CreateMessageBody = zod.union([zod.object({
   "senderId": zod.number().optional(),
   "content": zod.string().max(createMessageBodyTwoContentMax).optional(),
   "attachment": zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),
@@ -608,7 +622,7 @@ export const CreateMessageBody = zod.union([zod.object({
   "senderId": zod.number(),
   "content": zod.string().max(createMessageBodyThreeContentMax).optional(),
   "attachment": zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),
@@ -637,7 +651,7 @@ export const CreateMessageResponse = zod.object({
   "timestamp": zod.number(),
   "read": zod.boolean(),
   "attachment": zod.union([zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),
@@ -703,7 +717,7 @@ export const OpenMessageResponse = zod.object({
   "timestamp": zod.number(),
   "read": zod.boolean(),
   "attachment": zod.union([zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),
@@ -750,7 +764,7 @@ export const SaveMessageResponse = zod.object({
   "timestamp": zod.number(),
   "read": zod.boolean(),
   "attachment": zod.union([zod.object({
-  "type": zod.enum(['image', 'video', 'file']),
+  "type": zod.enum(['image', 'video', 'audio', 'file']),
   "objectPath": zod.string().min(1),
   "name": zod.string().min(1),
   "mimeType": zod.string().min(1),

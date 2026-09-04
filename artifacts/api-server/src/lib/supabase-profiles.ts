@@ -74,3 +74,24 @@ export async function syncFirebaseProfile(profile: FirebaseProfile): Promise<voi
     throw new Error(`Supabase profile creation failed with status ${create.status}.`);
   }
 }
+
+export async function deleteSupabaseProfileByFirebaseUid(uid: string): Promise<void> {
+  if (!uid.trim()) {
+    throw new Error("Firebase user ID is required.");
+  }
+  const { url, serviceRoleKey } = supabaseConfiguration();
+  const filter = encodeURIComponent(uid);
+  const deletion = await fetch(
+    `${url}/rest/v1/profiles?firebase_uid=eq.${filter}`,
+    {
+      method: "DELETE",
+      headers: {
+        ...headers(serviceRoleKey),
+        prefer: "return=minimal",
+      },
+    },
+  );
+  if (!deletion.ok) {
+    throw new Error(`Supabase profile deletion failed with status ${deletion.status}.`);
+  }
+}

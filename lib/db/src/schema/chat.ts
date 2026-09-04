@@ -85,7 +85,7 @@ export const messagesTable = pgTable("chat_messages", {
   senderId: integer("sender_id").notNull(),
   content: text("content").notNull().default(""),
   attachment: jsonb("attachment").$type<{
-    type: "image" | "video" | "file";
+    type: "image" | "video" | "audio" | "file";
     objectPath: string;
     name: string;
     mimeType: string;
