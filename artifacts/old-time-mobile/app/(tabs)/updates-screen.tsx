@@ -26,7 +26,7 @@ import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
 import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
 import { AdMobBanner } from '@/components/admob-banner';
 import { adManager } from '@/lib/ad-manager';
-import { createChat, listUsers, useRequestUploadUrl, type User } from '@workspace/api-client-react';
+import { createChat, createMessage, getDirectChat, listUsers, useRequestUploadUrl, type User } from '@workspace/api-client-react';
 import {
   createStory,
   createNote,
@@ -227,6 +227,8 @@ export default function UpdatesScreen() {
   const [interestPrompt, setInterestPrompt] = useState<{ topic: string; title: string } | null>(null);
   const [noteEditor, setNoteEditor] = useState<Note | 'new' | null>(null);
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [sharePost, setSharePost] = useState<SocialPost | null>(null);
+  const [shareInOldTime, setShareInOldTime] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const promptedContent = useRef(new Set<string>());
@@ -477,13 +479,24 @@ export default function UpdatesScreen() {
     void loadSocial('community', filter);
   }
 
-  async function shareSocialPost(post: SocialPost) {
+  function shareSocialPost(post: SocialPost) {
+    setShareInOldTime(false);
+    setSharePost(post);
+  }
+
+  function closeSocialShare() {
+    setSharePost(null);
+    setShareInOldTime(false);
+  }
+
+  async function systemShareSocialPost(post: SocialPost) {
     if (post.visibility !== 'public') {
       showFeedback('Only public posts can be shared outside Old Time.');
       return;
     }
     try {
       await Share.share({ message: `${post.author.name} on Old Time:\n\n${post.content}` });
+      closeSocialShare();
     } catch (error) {
       showFeedback(error instanceof Error ? error.message : 'Sharing is unavailable right now.');
     }
@@ -525,7 +538,7 @@ export default function UpdatesScreen() {
            />
          }
          onComment={setSocialCommentPost}
-         onShare={(post) => void shareSocialPost(post)}
+         onShare={shareSocialPost}
          onOpenProfile={(userId) => { setProfileUserId(userId); }}
          onChanged={(updated) => setSocialPosts((items) => items.map((item) => item.id === updated.id ? updated : item))}
        />
@@ -593,7 +606,7 @@ export default function UpdatesScreen() {
                      setInterestPrompt(null);
                    }}
                    onComment={setSocialCommentPost}
-                   onShare={(post) => void shareSocialPost(post)}
+                   onShare={shareSocialPost}
                    onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
                  />
                  <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 }}>
@@ -681,7 +694,7 @@ export default function UpdatesScreen() {
                loadingMore={communityLoadingMore}
                onOpenProfile={setProfileUserId}
                onComment={setSocialCommentPost}
-               onShare={(post) => void shareSocialPost(post)}
+               onShare={shareSocialPost}
                onCreatePost={() => {
                  setPostComposerSurface('community');
                  setCompose('post');
@@ -814,6 +827,36 @@ export default function UpdatesScreen() {
         ) : null}
       </Modal>
 
+      <Modal visible={sharePost !== null} transparent animationType="slide" onRequestClose={closeSocialShare}>
+        {sharePost ? shareInOldTime ? (
+          <SharePostInOldTimeSheet
+            post={sharePost}
+            viewerId={session?.id ?? 0}
+            colors={colors}
+            onBack={() => setShareInOldTime(false)}
+            onClose={closeSocialShare}
+            onShared={(name) => {
+              closeSocialShare();
+              showFeedback(`Shared with ${name}.`);
+            }}
+          />
+        ) : (
+          <SocialPostShareSheet
+            post={sharePost}
+            colors={colors}
+            onClose={closeSocialShare}
+            onShareInOldTime={() => {
+              if (sharePost.visibility !== 'public') {
+                showFeedback('Only public posts can be shared in another conversation.');
+                return;
+              }
+              setShareInOldTime(true);
+            }}
+            onSystemShare={() => void systemShareSocialPost(sharePost)}
+          />
+        ) : null}
+      </Modal>
+
       <Modal visible={profileUserId !== null} transparent animationType="slide" onRequestClose={() => setProfileUserId(null)}>
         {profileUserId !== null ? (
           <SocialProfileSheet
@@ -868,7 +911,7 @@ export default function UpdatesScreen() {
             }}
             unreadCount={unreadNotifications}
              onComment={setSocialCommentPost}
-             onShare={(post) => void shareSocialPost(post)}
+             onShare={shareSocialPost}
               onFeedback={showFeedback}
           />
         ) : null}
@@ -1196,6 +1239,7 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
   const [muted, setMuted] = useState(true);
   const [userPaused, setUserPaused] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
+  const [saveInFlight, setSaveInFlight] = useState(false);
   const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const relationInFlightRef = useRef<{ like: boolean; save: boolean }>({ like: false, save: false });
   const media = post.media?.[0];
@@ -1220,6 +1264,7 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
       viewer: { ...post.viewer, liked: relation === 'like' ? nextActive : post.viewer.liked, reposted: relation === 'repost' ? nextActive : post.viewer.reposted, saved: relation === 'save' ? nextActive : post.viewer.saved },
     };
     if (relation === 'like' || relation === 'save') relationInFlightRef.current[relation] = true;
+    if (relation === 'save') setSaveInFlight(true);
     onChanged(next);
     try {
       await setPostRelation(token, post.id, relation, nextActive);
@@ -1228,6 +1273,7 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
       Alert.alert('Could not update post', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       if (relation === 'like' || relation === 'save') relationInFlightRef.current[relation] = false;
+      if (relation === 'save') setSaveInFlight(false);
     }
   }
 
@@ -1290,7 +1336,14 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
           <Ionicons name="chatbubble-ellipses-outline" size={32} color="#fff" />
           <Text style={styles.creatorActionCount}>{post.counts.comments}</Text>
         </Pressable>
-        <Pressable onPress={() => void changeRelation('save')} style={styles.creatorAction} accessibilityRole="button" accessibilityLabel="Save post">
+        <Pressable
+          onPress={() => void changeRelation('save')}
+          disabled={saveInFlight}
+          style={[styles.creatorAction, { opacity: saveInFlight ? 0.55 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel={post.viewer.saved ? 'Unsave post' : 'Save post'}
+          accessibilityState={{ disabled: saveInFlight, selected: post.viewer.saved, busy: saveInFlight }}
+        >
           <Ionicons name={post.viewer.saved ? 'bookmark' : 'bookmark-outline'} size={31} color={post.viewer.saved ? '#FFD54A' : '#fff'} />
           <Text style={styles.creatorActionCount}>{post.counts.saves}</Text>
         </Pressable>
@@ -2104,10 +2157,13 @@ function CommunityFeed({
 
 function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment, onChanged }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onComment?: () => void; onChanged: (post: SocialPost) => void }) {
   const [busy, setBusy] = useState(false);
+  const [saveInFlight, setSaveInFlight] = useState(false);
+  const saveInFlightRef = useRef(false);
   const media = post.media[0];
   const canRepost = post.visibility === 'public' && post.allowReposts;
 
   async function toggle(relation: 'like' | 'save' | 'repost') {
+    if (relation === 'save' && saveInFlightRef.current) return;
     if (busy) return;
     const countKey = relation === 'like' ? 'likes' : relation === 'save' ? 'saves' : 'reposts';
     const viewerKey = relation === 'like' ? 'liked' : relation === 'save' ? 'saved' : 'reposted';
@@ -2118,6 +2174,10 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment
       viewer: { ...post.viewer, [viewerKey]: active },
     };
     onChanged(next);
+    if (relation === 'save') {
+      saveInFlightRef.current = true;
+      setSaveInFlight(true);
+    }
     setBusy(true);
     try {
       await setPostRelation(token, post.id, relation, active);
@@ -2126,6 +2186,10 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment
       Alert.alert('Action not saved', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setBusy(false);
+      if (relation === 'save') {
+        saveInFlightRef.current = false;
+        setSaveInFlight(false);
+      }
     }
   }
   return (
@@ -2164,7 +2228,14 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment
           <Ionicons name="chatbubble-outline" size={18} color={colors.mutedForeground} />
           <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{post.counts.comments}</Text>
         </Pressable>
-        <Pressable onPress={() => void toggle('save')} style={styles.socialAction} accessibilityRole="button" accessibilityLabel={post.viewer.saved ? 'Unsave post' : 'Save post'}>
+        <Pressable
+          onPress={() => void toggle('save')}
+          disabled={saveInFlight}
+          style={[styles.socialAction, { opacity: saveInFlight ? 0.55 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel={post.viewer.saved ? 'Unsave post' : 'Save post'}
+          accessibilityState={{ disabled: saveInFlight, selected: post.viewer.saved, busy: saveInFlight }}
+        >
           <Ionicons name={post.viewer.saved ? 'bookmark' : 'bookmark-outline'} size={18} color={post.viewer.saved ? colors.primary : colors.mutedForeground} />
           <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{post.counts.saves}</Text>
         </Pressable>
@@ -2184,7 +2255,7 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment
           <Text style={{ color: canRepost ? colors.mutedForeground : colors.border, fontSize: 12 }}>{post.counts.reposts}</Text>
         </Pressable>
         <Pressable onPress={onShare} style={styles.socialAction} accessibilityRole="button" accessibilityLabel="Share post">
-          <Ionicons name="arrow-redo-outline" size={18} color={canRepost ? colors.mutedForeground : colors.border} />
+          <Ionicons name="arrow-redo-outline" size={18} color={colors.mutedForeground} />
         </Pressable>
         <Text style={[styles.socialPostTime, { color: colors.mutedForeground }]}>{relativeSocialTime(post.createdAt)}</Text>
       </View>
@@ -2197,6 +2268,166 @@ function relativeSocialTime(timestamp: number) {
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
+}
+
+function socialPostReference(post: SocialPost) {
+  const preview = post.content.trim().slice(0, 1400);
+  const fallback = `${post.author.name} shared a ${post.kind} post.`;
+  return `Shared an Old Time post from @${post.author.username}\n\n${preview || fallback}\n\nPost #${post.id}`;
+}
+
+function SocialPostShareSheet({ post, colors, onClose, onShareInOldTime, onSystemShare }: {
+  post: SocialPost;
+  colors: any;
+  onClose: () => void;
+  onShareInOldTime: () => void;
+  onSystemShare: () => void;
+}) {
+  return (
+    <KeyboardAvoidingView behavior="padding" style={styles.sheetOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={[styles.shareMenuSheet, { backgroundColor: colors.card }]}>
+        <View style={styles.sheetTop}>
+          <View>
+            <Text style={[styles.sheetEyebrow, { color: colors.mutedForeground }]}>SOCIAL POST</Text>
+            <Text style={[styles.notificationsTitle, { color: colors.foreground }]}>Share post</Text>
+          </View>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        <View style={[styles.sharePostPreview, { backgroundColor: colors.muted }]}>
+          <Text style={[styles.commentAuthor, { color: colors.foreground }]}>@{post.author.username}</Text>
+          <Text style={[styles.commentContent, { color: colors.foreground }]} numberOfLines={3}>
+            {post.content || `${post.author.name} shared a ${post.kind} post.`}
+          </Text>
+        </View>
+        <Pressable onPress={onShareInOldTime} style={[styles.shareOption, { borderBottomColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Share in Old Time">
+          <View style={[styles.shareOptionIcon, { backgroundColor: colors.secondary }]}>
+            <Ionicons name="chatbubbles-outline" size={22} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.shareOptionTitle, { color: colors.foreground }]}>Share in Old Time</Text>
+            <Text style={[styles.shareOptionHint, { color: colors.mutedForeground }]}>Send a reference in a conversation</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={19} color={colors.mutedForeground} />
+        </Pressable>
+        <Pressable onPress={onSystemShare} style={styles.shareOption} accessibilityRole="button" accessibilityLabel="System Share">
+          <View style={[styles.shareOptionIcon, { backgroundColor: colors.secondary }]}>
+            <Ionicons name="share-outline" size={22} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.shareOptionTitle, { color: colors.foreground }]}>System Share</Text>
+            <Text style={[styles.shareOptionHint, { color: colors.mutedForeground }]}>Use your device’s share options</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={19} color={colors.mutedForeground} />
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function SharePostInOldTimeSheet({ post, viewerId, colors, onBack, onClose, onShared }: {
+  post: SocialPost;
+  viewerId: number;
+  colors: any;
+  onBack: () => void;
+  onClose: () => void;
+  onShared: (name: string) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [query, setQuery] = useState('');
+  const [people, setPeople] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sharingId, setSharingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    void listUsers({ viewerId })
+      .then((items) => { if (active) setPeople(items.filter((person) => person.id !== viewerId)); })
+      .catch(() => { if (active) setError('People are unavailable right now.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [viewerId]);
+
+  const visiblePeople = people.filter((person) => `${person.name} ${person.username ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()));
+
+  async function shareWith(person: User) {
+    if (sharingId !== null) return;
+    setSharingId(person.id);
+    setError(null);
+    try {
+      const direct = await getDirectChat(viewerId, person.id);
+      const chat = direct.chat ?? await createChat({ userIds: [viewerId, person.id] });
+      await createMessage(chat.id, {
+        senderId: viewerId,
+        content: socialPostReference(post),
+      });
+      onShared(person.name);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `The post could not be shared with ${person.name}.`);
+      setSharingId(null);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView behavior="padding" style={[styles.messagesInboxOverlay, { backgroundColor: colors.card }]}>
+      <View style={[styles.messagesInboxSheet, { backgroundColor: colors.card, paddingTop: insets.top + 8 }]}>
+        <View style={styles.messagesInboxHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <IconButton name="chevron-back" onPress={onBack} size={24} label="Back to share options" />
+            <View>
+              <Text style={[styles.newMessageEyebrow, { color: colors.mutedForeground }]}>SHARE IN OLD TIME</Text>
+              <Text style={[styles.newMessageTitle, { color: colors.foreground }]}>Choose a conversation</Text>
+            </View>
+          </View>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        <View style={[styles.messagesSearch, { backgroundColor: colors.muted }]}>
+          <Ionicons name="search-outline" size={18} color={colors.mutedForeground} />
+          <TextInput
+            autoFocus
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search people"
+            placeholderTextColor={colors.mutedForeground}
+            style={[styles.messagesSearchInput, { color: colors.foreground }]}
+          />
+        </View>
+        <View style={[styles.shareReferenceHint, { backgroundColor: colors.secondary }]}>
+          <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+          <Text style={[styles.shareOptionHint, { color: colors.mutedForeground, flex: 1 }]}>
+            A text reference to the original post will be sent. Its media will not be copied.
+          </Text>
+        </View>
+        {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> : (
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: 10, paddingBottom: insets.bottom + 24 }}>
+            {error ? <Text style={[styles.newMessageError, { color: colors.destructive }]}>{error}</Text> : null}
+            {visiblePeople.map((person) => (
+              <Pressable
+                key={person.id}
+                onPress={() => void shareWith(person)}
+                style={[styles.messageContactRow, { borderBottomColor: colors.border, opacity: sharingId !== null && sharingId !== person.id ? 0.45 : 1 }]}
+                disabled={sharingId !== null}
+                accessibilityRole="button"
+                accessibilityLabel={`Share post with ${person.name}`}
+                accessibilityState={{ disabled: sharingId !== null, busy: sharingId === person.id }}
+              >
+                <Avatar name={person.name} size={50} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.messageContactName, { color: colors.foreground }]}>{person.name}</Text>
+                  {person.username ? <Text style={[styles.messageContactPreview, { color: colors.mutedForeground }]}>@{person.username}</Text> : null}
+                </View>
+                {sharingId === person.id ? <ActivityIndicator color={colors.primary} /> : <Ionicons name="send-outline" size={22} color={colors.primary} />}
+              </Pressable>
+            ))}
+            {!error && visiblePeople.length === 0 ? <View style={styles.messagesEmpty}><Ionicons name="people-outline" size={28} color={colors.primary} /><Text style={[styles.messagesEmptyTitle, { color: colors.foreground }]}>No one found</Text><Text style={[styles.messagesEmptyText, { color: colors.mutedForeground }]}>Try another name.</Text></View> : null}
+          </ScrollView>
+        )}
+      </View>
+    </KeyboardAvoidingView>
+  );
 }
 
 function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequest, onExclude, onNotifications, onRequests, onBlock, unreadCount, onComment, onShare, onFeedback }: { userId: number; own: boolean; token: string; colors: any; onClose: () => void; onMessageRequest: (userId: number, name: string) => void; onExclude: (person: { id: number; name: string }) => void; onNotifications: () => void; onRequests: () => void; onBlock: (userId: number, name: string) => void; unreadCount: number; onComment: (post: SocialPost) => void; onShare: (post: SocialPost) => void; onFeedback: (message: string) => void }) {
@@ -3213,6 +3444,13 @@ const styles = StyleSheet.create({
   mediaComposerPromptText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   socialAction: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5 },
   socialPostTime: { fontSize: 10, marginLeft: 'auto' },
+  shareMenuSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 28 },
+  sharePostPreview: { borderRadius: 15, padding: 13, marginTop: 12, marginBottom: 8 },
+  shareOption: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
+  shareOptionIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  shareOptionTitle: { fontSize: 15, fontWeight: '700' },
+  shareOptionHint: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  shareReferenceHint: { borderRadius: 13, padding: 11, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 9 },
   sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
   socialProfileSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, minHeight: 440, maxHeight: WINDOW_HEIGHT * 0.88, alignItems: 'center' },
   socialProfileContent: { width: '100%', alignItems: 'center', paddingBottom: 12 },
