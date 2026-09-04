@@ -7,10 +7,13 @@ import mapRouter from "./map";
 import currentEventsRouter from "./current-events";
 import discoveryRouter from "./discovery";
 import callsRouter from "./calls";
+import authBirthdayRouter from "./auth-birthday";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+// Firebase-safe birthday completion must win over the legacy handler in chat.ts.
+router.use(authBirthdayRouter);
 router.use(chatRouter);
 router.use(storageRouter);
 router.use(socialRouter);
