@@ -1259,7 +1259,20 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
 
   return (
     <View style={styles.creatorFeedPage}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={handleMediaTap} accessibilityRole="button" accessibilityLabel="Like this creator post">
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={handleMediaTap}
+        accessibilityRole="button"
+        accessibilityLabel={media?.type === 'video' ? 'Creator post video' : 'Like this creator post'}
+        accessibilityHint={media?.type === 'video' ? 'Pauses or resumes the video. Use the Like post button to like' : undefined}
+        accessibilityActions={media?.type === 'video' ? [{ name: 'activate', label: userPaused ? 'Resume video' : 'Pause video' }] : undefined}
+        onAccessibilityAction={media?.type === 'video' ? (event) => {
+          const actionName = event.nativeEvent.actionName;
+          if (actionName === 'activate') {
+            if (active) setUserPaused((value) => !value);
+          }
+        } : undefined}
+      >
         {mediaUrl && media?.type === 'video' ? <VideoSurface source={mediaUrl} style={StyleSheet.absoluteFill} muted={muted} paused={!active || userPaused} /> : mediaUrl ? <Image source={{ uri: mediaUrl }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
       </Pressable>
       <View style={styles.creatorFeedShade} pointerEvents="none" />
