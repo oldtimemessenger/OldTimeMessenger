@@ -1,6 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { File } from 'expo-file-system';
 import { fetch as expoFetch } from 'expo/fetch';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -8,6 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
   FlatList,
   Keyboard,
   Linking,
@@ -70,6 +80,11 @@ function expiryLabel(seconds: number) {
   return seconds >= 60 ? `${Math.ceil(seconds / 60)}m` : `${seconds}s`;
 }
 
+function durationLabel(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`;
+}
+
 export default function ChatDetailScreen() {
   const { id, mediaUri, mediaType } = useLocalSearchParams<{
     id: string;
@@ -90,10 +105,21 @@ export default function ChatDetailScreen() {
   const [clock, setClock] = useState(Date.now());
   const [chatNotes, setChatNotes] = useState<Note[]>([]);
   const [chatNotesError, setChatNotesError] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [failedAsset, setFailedAsset] = useState<PendingAsset | null>(null);
+  const [activeAudioMessageId, setActiveAudioMessageId] = useState<number | null>(null);
   const inputRef = useRef<TextInput>(null);
   const openingIds = useRef(new Set<number>());
   const handledCameraUri = useRef<string | null>(null);
   const notesRequestId = useRef(0);
+  const uploadInFlight = useRef(false);
+  const recordingStarting = useRef(false);
+  const recordingCancelRequested = useRef(false);
+  const recordLimitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder, 250);
+  const audioPlayer = useAudioPlayer(null, { updateInterval: 250 });
+  const audioStatus = useAudioPlayerStatus(audioPlayer);
   const inboxKey = getGetInboxQueryKey(session?.id ?? 0);
   const messagesKey = getListMessagesQueryKey(chatId, { viewerId: session?.id ?? 0 });
   const inbox = useGetInbox(session?.id ?? 0, {
@@ -129,6 +155,24 @@ export default function ChatDetailScreen() {
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') {
+        audioPlayer.pause();
+        if (recorder.isRecording) {
+          recordingCancelRequested.current = true;
+          void recorder.stop().catch(() => undefined);
+        }
+      }
+    });
+    return () => {
+      subscription.remove();
+      if (recordLimitTimer.current) clearTimeout(recordLimitTimer.current);
+      audioPlayer.pause();
+      if (recorder.isRecording) void recorder.stop().catch(() => undefined);
+    };
+  }, [audioPlayer, recorder]);
 
   useEffect(() => {
     if (session && chatId) {
@@ -251,7 +295,9 @@ export default function ChatDetailScreen() {
   }
 
   async function sendAsset(asset: PendingAsset) {
-    if (!session || uploadLabel) return;
+    if (!session || uploadInFlight.current) return false;
+    uploadInFlight.current = true;
+    setFailedAsset(null);
     try {
       setUploadLabel('Preparing attachment…');
       const localFile = new File(asset.uri);
@@ -290,16 +336,97 @@ export default function ChatDetailScreen() {
         },
       });
       await refreshChat();
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message.toLowerCase() : '';
       const safeMessage = message.includes('network') || message.includes('fetch') || message.includes('timeout')
-        ? 'Check your connection, then choose the attachment again to retry.'
-        : 'The attachment was not sent. Please choose it again and try once more.';
+        ? 'Check your connection, then retry your attachment.'
+        : 'The attachment was not sent. You can retry it below.';
+      setFailedAsset(asset);
       Alert.alert('Attachment not sent', safeMessage);
+      return false;
     } finally {
+      uploadInFlight.current = false;
       setUploadLabel(null);
       setAttachmentMenu(false);
     }
+  }
+
+  async function startVoiceRecording() {
+    if (recording || recordingStarting.current || uploadInFlight.current) return;
+    recordingStarting.current = true;
+    recordingCancelRequested.current = false;
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'Microphone access needed',
+          permission.canAskAgain
+            ? 'Allow microphone access to record a voice note.'
+            : 'Microphone access is off. Enable it in Settings to record a voice note.',
+          !permission.canAskAgain && Platform.OS !== 'web'
+            ? [{ text: 'Cancel', style: 'cancel' }, { text: 'Open Settings', onPress: () => void Linking.openSettings().catch(() => undefined) }]
+            : undefined,
+        );
+        return;
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      if (recordingCancelRequested.current) return;
+      recorder.record({ forDuration: 300 });
+      setRecording(true);
+      recordLimitTimer.current = setTimeout(() => void stopVoiceRecording(), 300000);
+    } catch {
+      Alert.alert('Recording unavailable', 'Your voice note could not be started. Please try again.');
+    } finally {
+      recordingStarting.current = false;
+    }
+  }
+
+  async function stopVoiceRecording(cancel = false) {
+    recordingCancelRequested.current = cancel;
+    if (recordLimitTimer.current) {
+      clearTimeout(recordLimitTimer.current);
+      recordLimitTimer.current = null;
+    }
+    if (!recorder.isRecording && !recording) {
+      if (recordingStarting.current) recordingCancelRequested.current = true;
+      return;
+    }
+    setRecording(false);
+    try {
+      await recorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
+      const uri = recorder.uri;
+      const duration = Math.max(recorder.currentTime, recorderState.durationMillis / 1000);
+      if (cancel || !uri || duration < 0.25) return;
+      const localFile = new File(uri);
+      await sendAsset({
+        uri,
+        name: `voice-note-${Date.now()}.${Platform.OS === 'web' ? 'webm' : 'm4a'}`,
+        mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
+        size: localFile.size || 1,
+        type: 'audio',
+        duration,
+      });
+    } catch {
+      if (!cancel) Alert.alert('Recording unavailable', 'Your voice note could not be saved. Please try again.');
+    }
+  }
+
+  function toggleAudio(message: Message) {
+    if (!message.attachment || message.attachment.type !== 'audio') return;
+    if (activeAudioMessageId === message.id) {
+      if (audioStatus.playing) audioPlayer.pause();
+      else audioPlayer.play();
+      return;
+    }
+    audioPlayer.replace({
+      uri: storageUrl(message.attachment.objectPath),
+      headers: { Authorization: `Bearer ${session?.authToken ?? ''}` },
+    });
+    setActiveAudioMessageId(message.id);
+    audioPlayer.play();
   }
 
   async function choosePhotoOrVideo() {
@@ -432,6 +559,39 @@ export default function ChatDetailScreen() {
                   <Image source={mediaSource} style={styles.attachmentImage} contentFit="cover" />
                 ) : item.attachment?.type === 'video' && mediaSource ? (
                   <VideoSurface source={mediaSource} style={styles.attachmentImage} controls loop={false} paused={!settings.autoplay} />
+                ) : item.attachment?.type === 'audio' ? (
+                  <Pressable
+                    onPress={() => toggleAudio(item)}
+                    style={[styles.audioRow, { backgroundColor: colors.background }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${activeAudioMessageId === item.id && audioStatus.playing ? 'Pause' : 'Play'} voice note`}
+                  >
+                    <View style={[styles.audioPlay, { backgroundColor: colors.primary }]}>
+                      <Ionicons name={activeAudioMessageId === item.id && audioStatus.playing ? 'pause' : 'play'} size={18} color="#fff" />
+                    </View>
+                    <View style={styles.audioDetails}>
+                      <View style={[styles.audioTrack, { backgroundColor: colors.border }]}>
+                        <View
+                          style={[
+                            styles.audioProgress,
+                            {
+                              backgroundColor: colors.primary,
+                              width: `${activeAudioMessageId === item.id && audioStatus.duration > 0
+                                ? Math.min(100, (audioStatus.currentTime / audioStatus.duration) * 100)
+                                : 0}%`,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.audioDuration, { color: colors.mutedForeground }]}>
+                        {durationLabel(activeAudioMessageId === item.id ? audioStatus.currentTime : 0)} / {durationLabel(
+                          activeAudioMessageId === item.id && audioStatus.duration > 0
+                            ? audioStatus.duration
+                            : (item.attachment.duration ?? 0),
+                        )}
+                      </Text>
+                    </View>
+                  </Pressable>
                 ) : item.attachment ? (
                   <View style={[styles.fileRow, { backgroundColor: colors.background }]}>
                     <Ionicons
@@ -491,6 +651,22 @@ export default function ChatDetailScreen() {
           <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>{uploadLabel}</Text>
         </View>
       )}
+      {failedAsset ? (
+        <View style={[styles.retryBanner, { backgroundColor: colors.secondary }]}>
+          <Text style={[styles.retryText, { color: colors.foreground }]}>{failedAsset.type === 'audio' ? 'Voice note not sent.' : 'Attachment not sent.'}</Text>
+          <Pressable
+            onPress={() => void sendAsset(failedAsset)}
+            disabled={Boolean(uploadLabel)}
+            accessibilityRole="button"
+            accessibilityLabel="Retry sending attachment"
+          >
+            <Text style={[styles.retryAction, { color: colors.primary }]}>Retry</Text>
+          </Pressable>
+          <Pressable onPress={() => setFailedAsset(null)} accessibilityRole="button" accessibilityLabel="Discard failed attachment">
+            <Ionicons name="close" size={18} color={colors.mutedForeground} />
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={[styles.composerArea, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
         {!text.trim() ? (
@@ -561,12 +737,26 @@ export default function ChatDetailScreen() {
               size={21}
             />
             {!text.trim() ? (
-              <IconButton
-                name="mic-outline"
-                onPress={() => Alert.alert('Voice messages', 'Voice notes are coming soon.')}
-                label="Record voice message"
-                size={21}
-              />
+              recording ? (
+                <View style={styles.recordingControls}>
+                  <Text style={[styles.recordingDuration, { color: colors.destructive }]}>{durationLabel(recorderState.durationMillis / 1000)}</Text>
+                  <Pressable onPress={() => void stopVoiceRecording(true)} accessibilityRole="button" accessibilityLabel="Cancel voice note">
+                    <Ionicons name="close-circle" size={22} color={colors.destructive} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  onPressIn={() => void startVoiceRecording()}
+                  onPressOut={() => void stopVoiceRecording()}
+                  disabled={Boolean(uploadLabel)}
+                  style={styles.voiceButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Hold to record voice message"
+                  testID="record-voice-note"
+                >
+                  <Ionicons name="mic-outline" size={21} color={colors.foreground} />
+                </Pressable>
+              )
             ) : null}
           </View>
           {text.trim() ? (
@@ -884,6 +1074,20 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   fileName: { fontSize: 13, fontWeight: '700' },
+  audioRow: {
+    width: 230,
+    minHeight: 58,
+    borderRadius: 11,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  audioPlay: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  audioDetails: { flex: 1, gap: 6 },
+  audioTrack: { height: 4, borderRadius: 2, overflow: 'hidden' },
+  audioProgress: { height: '100%', borderRadius: 2 },
+  audioDuration: { fontSize: 11, fontVariant: ['tabular-nums'] },
   messageMeta: { minHeight: 14, flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   retentionText: { fontSize: 11, fontWeight: '600' },
   saveText: { fontSize: 11, fontWeight: '800' },
@@ -903,6 +1107,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 7,
   },
+  retryBanner: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+  },
+  retryText: { fontSize: 12, fontWeight: '600' },
+  retryAction: { fontSize: 13, fontWeight: '800' },
   composerArea: {
     borderTopWidth: StyleSheet.hairlineWidth,
   },
@@ -947,6 +1161,9 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     fontSize: 16,
   },
+  voiceButton: { width: 38, height: 44, alignItems: 'center', justifyContent: 'center' },
+  recordingControls: { height: 44, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 7 },
+  recordingDuration: { fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   send: {
     width: 40,
     height: 40,

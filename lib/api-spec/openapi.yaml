@@ -199,6 +199,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /account:
+    delete:
+      operationId: deleteAccount
+      tags: [auth]
+      summary: Permanently delete the authenticated account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteAccountBody"
+      responses:
+        "204":
+          description: Account deleted
+        "400":
+          description: Invalid confirmation token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid session or Firebase identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Account deletion did not complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /push-tokens:
     post:
       operationId: registerPushToken
@@ -1917,12 +1951,19 @@ components:
           type: string
           minLength: 100
       required: [idToken]
+    DeleteAccountBody:
+      type: object
+      properties:
+        idToken:
+          type: string
+          minLength: 100
+      required: [idToken]
     Attachment:
       type: object
       properties:
         type:
           type: string
-          enum: [image, video, file]
+          enum: [image, video, audio, file]
         objectPath:
           type: string
           minLength: 1

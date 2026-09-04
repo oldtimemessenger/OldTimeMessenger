@@ -12,5 +12,6 @@ export type AttachmentType = typeof AttachmentType[keyof typeof AttachmentType];
 export const AttachmentType = {
   image: 'image',
   video: 'video',
+  audio: 'audio',
   file: 'file',
 } as const;

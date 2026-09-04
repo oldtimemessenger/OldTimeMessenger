@@ -137,12 +137,18 @@ export interface FirebaseSignInBody {
   idToken: string;
 }
 
+export interface DeleteAccountBody {
+  /** @minLength 100 */
+  idToken: string;
+}
+
 export type AttachmentType = typeof AttachmentType[keyof typeof AttachmentType];
 
 
 export const AttachmentType = {
   image: 'image',
   video: 'video',
+  audio: 'audio',
   file: 'file',
 } as const;
 
