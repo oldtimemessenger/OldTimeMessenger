@@ -18,6 +18,7 @@ export type PaceRoute = {
   title: string;
   description: string;
   kind: PaceKind;
+  visibility: 'public' | 'private';
   activity: PaceActivity;
   difficulty: PaceDifficulty;
   distanceKm: number;
@@ -40,6 +41,7 @@ export type PaceSuggestion = {
   title: string;
   description: string;
   kind: PaceKind;
+  visibility: 'public' | 'private';
   activity: PaceActivity;
   difficulty: PaceDifficulty;
   distanceKm: number;

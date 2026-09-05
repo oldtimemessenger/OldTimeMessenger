@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 import { Avatar, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
+import { appendTrackedPoint, clearPaceRecording, getStoredPaceRecording, savePaceRecording, type PaceRecording } from '@/lib/pace-recorder';
 import {
   createPaceComment,
   createPaceRoute,
@@ -36,6 +37,26 @@ const DIFFICULTY_LABELS: Record<PaceDifficulty, string> = { easy: 'Easy', steady
 
 type Coordinate = PacePoint;
 
+function recordingAsSuggestion(recording: PaceRecording): PaceSuggestion {
+  const firstPoint = recording.points[0];
+  return {
+    id: `recorded-${recording.id}`,
+    suggested: true,
+    title: 'My Pace route',
+    description: 'Recorded with Old Time.',
+    kind: 'route',
+    visibility: 'public',
+    activity: 'run',
+    difficulty: recording.distanceKm >= 8 ? 'hard' : recording.distanceKm >= 4 ? 'steady' : 'easy',
+    distanceKm: recording.distanceKm,
+    elevationM: 0,
+    durationMin: Math.max(1, Math.round(recording.elapsedSeconds / 60)),
+    locationLabel: 'Recorded locally',
+    distanceFromYouKm: 0,
+    routeCoordinates: recording.points.map(({ latitude, longitude }) => ({ latitude, longitude })),
+  };
+}
+
 export default function PaceScreen() {
   const colors = useColors();
   const { session } = useApp();
@@ -49,6 +70,9 @@ export default function PaceScreen() {
   const [composer, setComposer] = useState<PaceSuggestion | null>(null);
   const [commentsRoute, setCommentsRoute] = useState<PaceRoute | null>(null);
   const [giftRoute, setGiftRoute] = useState<PaceRoute | null>(null);
+  const [recording, setRecording] = useState<PaceRecording | null>(null);
+  const [recordingLoading, setRecordingLoading] = useState(true);
+  const watchRef = useRef<Location.LocationSubscription | null>(null);
 
   const load = useCallback(async (showRefresh = false) => {
     if (!session?.authToken) return;
@@ -78,6 +102,54 @@ export default function PaceScreen() {
       .catch(() => undefined);
   }, [permission?.granted]);
 
+  useEffect(() => {
+    void getStoredPaceRecording()
+      .then((stored) => setRecording(stored))
+      .finally(() => setRecordingLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (recording?.status !== 'recording') {
+      watchRef.current?.remove();
+      watchRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    void Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 10, timeInterval: 5_000 },
+      (position) => {
+        const point = { latitude: position.coords.latitude, longitude: position.coords.longitude, recordedAt: position.timestamp || Date.now() };
+        setRecording((current) => {
+          if (!current || current.status !== 'recording') return current;
+          const updated = appendTrackedPoint(current, point);
+          if (updated !== current) void savePaceRecording(updated);
+          return updated;
+        });
+      },
+    ).then((subscription) => {
+      if (cancelled) subscription.remove();
+      else watchRef.current = subscription;
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      watchRef.current?.remove();
+      watchRef.current = null;
+    };
+  }, [recording?.status]);
+
+  useEffect(() => {
+    if (recording?.status !== 'recording') return;
+    const interval = setInterval(() => {
+      setRecording((current) => {
+        if (!current || current.status !== 'recording') return current;
+        const updated = { ...current, elapsedSeconds: Math.max(current.elapsedSeconds, Math.floor((Date.now() - current.startedAt) / 1_000)) };
+        void savePaceRecording(updated);
+        return updated;
+      });
+    }, 1_000);
+    return () => clearInterval(interval);
+  }, [recording?.status, recording?.startedAt]);
+
   async function useLocation() {
     const result = permission?.granted ? permission : await requestPermission();
     if (!result.granted) {
@@ -90,6 +162,62 @@ export default function PaceScreen() {
     } catch {
       Alert.alert('Location unavailable', 'Pace could not read your location. Try again when location services are available.');
     }
+  }
+
+  async function startRecording() {
+    const result = permission?.granted ? permission : await requestPermission();
+    if (!result.granted) {
+      Alert.alert('Location is needed to record', 'Allow location access to record a route. Your route stays on this device until you choose to share it.');
+      return;
+    }
+    try {
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+      const now = Date.now();
+      const next: PaceRecording = {
+        id: `pace-${now}`,
+        status: 'recording',
+        startedAt: now,
+        elapsedSeconds: 0,
+        distanceKm: 0,
+        points: [{ latitude: current.coords.latitude, longitude: current.coords.longitude, recordedAt: current.timestamp || now }],
+      };
+      setLocation({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+      await savePaceRecording(next);
+      setRecording(next);
+    } catch {
+      Alert.alert('Could not start tracking', 'Old Time could not get a reliable GPS fix. Try again outside with location services enabled.');
+    }
+  }
+
+  async function pauseRecording() {
+    if (!recording || recording.status !== 'recording') return;
+    const paused = { ...recording, status: 'paused' as const, elapsedSeconds: Math.max(recording.elapsedSeconds, Math.floor((Date.now() - recording.startedAt) / 1_000)) };
+    await savePaceRecording(paused);
+    setRecording(paused);
+  }
+
+  async function resumeRecording() {
+    if (!recording || recording.status !== 'paused') return;
+    const resumed = { ...recording, status: 'recording' as const, startedAt: Date.now() - recording.elapsedSeconds * 1_000 };
+    await savePaceRecording(resumed);
+    setRecording(resumed);
+  }
+
+  async function finishRecording() {
+    if (!recording || recording.status === 'finished') return;
+    const finished = { ...recording, status: 'finished' as const, elapsedSeconds: recording.status === 'recording' ? Math.max(recording.elapsedSeconds, Math.floor((Date.now() - recording.startedAt) / 1_000)) : recording.elapsedSeconds };
+    await savePaceRecording(finished);
+    setRecording(finished);
+    if (finished.points.length < 2 || finished.distanceKm < 0.01) {
+      Alert.alert('Route is too short', 'Keep moving a little longer so Pace can create a useful route shape.');
+    } else {
+      setComposer(recordingAsSuggestion(finished));
+    }
+  }
+
+  async function discardRecording() {
+    await clearPaceRecording();
+    setRecording(null);
   }
 
   function updateRoute(updated: PaceRoute) {
@@ -138,6 +266,7 @@ export default function PaceScreen() {
               </View>
               <View style={styles.heroMark}><Ionicons name="footsteps-outline" size={30} color={colors.primaryForeground} /></View>
             </View>
+            {!recordingLoading ? <PaceRecorderCard recording={recording} colors={colors} onStart={() => void startRecording()} onPause={() => void pauseRecording()} onResume={() => void resumeRecording()} onFinish={() => void finishRecording()} onShare={() => recording && setComposer(recordingAsSuggestion(recording))} onDiscard={() => void discardRecording()} /> : null}
 
             <View style={styles.sectionHeading}>
               <View>
@@ -196,7 +325,7 @@ export default function PaceScreen() {
         location={location}
         token={session?.authToken ?? ''}
         onClose={() => setComposer(null)}
-        onCreated={(route) => { setRoutes((items) => [route, ...items]); setComposer(null); }}
+        onCreated={async (route) => { await clearPaceRecording(); setRecording(null); setRoutes((items) => [route, ...items]); setComposer(null); }}
       />
       <PaceCommentsSheet
         route={commentsRoute}
@@ -261,6 +390,38 @@ function SuggestedRouteCard({ suggestion, colors, onShare }: { suggestion: PaceS
   );
 }
 
+function PaceRecorderCard({ recording, colors, onStart, onPause, onResume, onFinish, onShare, onDiscard }: { recording: PaceRecording | null; colors: any; onStart: () => void; onPause: () => void; onResume: () => void; onFinish: () => void; onShare: () => void; onDiscard: () => void }) {
+  const isActive = recording?.status === 'recording';
+  const isPaused = recording?.status === 'paused';
+  const isFinished = recording?.status === 'finished';
+  const elapsed = recording?.elapsedSeconds ?? 0;
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+  return (
+    <View style={[styles.recorderCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+      <View style={styles.recorderHeader}>
+        <View style={[styles.recorderIcon, { backgroundColor: colors.primary }]}><Ionicons name={isActive ? 'radio-outline' : isFinished ? 'checkmark' : 'locate-outline'} size={19} color={colors.primaryForeground} /></View>
+        <View style={styles.flex}>
+          <Text style={[styles.recorderTitle, { color: colors.foreground }]}>{isFinished ? 'Route ready to share' : isPaused ? 'Route paused' : isActive ? 'Recording your route' : 'Record a route'}</Text>
+          <Text style={[styles.recorderText, { color: colors.mutedForeground }]}>{isFinished ? 'Review the route and choose who can see it.' : 'GPS stays on this device until you choose Share.'}</Text>
+        </View>
+        {isActive ? <View style={[styles.liveDot, { backgroundColor: colors.destructive }]} /> : null}
+      </View>
+      {recording ? <View style={[styles.recorderStats, { borderTopColor: colors.border }]}>
+        <View><Text style={[styles.recorderValue, { color: colors.foreground }]}>{recording.distanceKm.toFixed(2)} km</Text><Text style={[styles.recorderLabel, { color: colors.mutedForeground }]}>distance</Text></View>
+        <View><Text style={[styles.recorderValue, { color: colors.foreground }]}>{minutes}:{String(seconds).padStart(2, '0')}</Text><Text style={[styles.recorderLabel, { color: colors.mutedForeground }]}>time</Text></View>
+        <View><Text style={[styles.recorderValue, { color: colors.foreground }]}>{recording.points.length}</Text><Text style={[styles.recorderLabel, { color: colors.mutedForeground }]}>GPS points</Text></View>
+      </View> : null}
+      <View style={styles.recorderActions}>
+        {!recording ? <Pressable onPress={onStart} style={[styles.recorderPrimary, { backgroundColor: colors.foreground }]}><Ionicons name="play" size={15} color={colors.background} /><Text style={[styles.recorderPrimaryText, { color: colors.background }]}>Start tracking</Text></Pressable> : null}
+        {isActive ? <><Pressable onPress={onPause} style={[styles.recorderSecondary, { borderColor: colors.border }]}><Ionicons name="pause" size={15} color={colors.foreground} /><Text style={[styles.recorderSecondaryText, { color: colors.foreground }]}>Pause</Text></Pressable><Pressable onPress={onFinish} style={[styles.recorderPrimary, { backgroundColor: colors.foreground }]}><Ionicons name="stop" size={15} color={colors.background} /><Text style={[styles.recorderPrimaryText, { color: colors.background }]}>Finish</Text></Pressable></> : null}
+        {isPaused ? <><Pressable onPress={onResume} style={[styles.recorderPrimary, { backgroundColor: colors.foreground }]}><Ionicons name="play" size={15} color={colors.background} /><Text style={[styles.recorderPrimaryText, { color: colors.background }]}>Resume</Text></Pressable><Pressable onPress={onFinish} style={[styles.recorderSecondary, { borderColor: colors.border }]}><Ionicons name="stop" size={15} color={colors.foreground} /><Text style={[styles.recorderSecondaryText, { color: colors.foreground }]}>Finish</Text></Pressable></> : null}
+        {isFinished ? <><Pressable onPress={onShare} style={[styles.recorderPrimary, { backgroundColor: colors.primary }]}><Ionicons name="arrow-up-outline" size={15} color={colors.primaryForeground} /><Text style={[styles.recorderPrimaryText, { color: colors.primaryForeground }]}>Share route</Text></Pressable><Pressable onPress={onDiscard} style={[styles.recorderSecondary, { borderColor: colors.border }]}><Text style={[styles.recorderSecondaryText, { color: colors.foreground }]}>Discard</Text></Pressable></> : null}
+      </View>
+    </View>
+  );
+}
+
 function PaceRouteCard({ route, colors, onLike, onComments, onGift }: { route: PaceRoute; colors: any; onLike: () => void; onComments: () => void; onGift: () => void }) {
   return (
     <View style={[styles.routeCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -312,12 +473,14 @@ function RouteComposer({ visible, seed, colors, location, token, onClose, onCrea
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [kind, setKind] = useState<'route' | 'challenge'>('route');
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setTitle(seed?.title ?? '');
     setDescription(seed?.description ?? '');
     setKind(seed?.kind ?? 'route');
+    setVisibility(seed?.visibility ?? 'public');
   }, [seed]);
 
   async function submit() {
@@ -336,6 +499,7 @@ function RouteComposer({ visible, seed, colors, location, token, onClose, onCrea
         title: title.trim(),
         description: description.trim(),
         kind,
+        visibility,
         activity: seed?.activity ?? 'run',
         difficulty: seed?.difficulty ?? 'steady',
         distanceKm: seed?.distanceKm ?? 1,
@@ -366,6 +530,11 @@ function RouteComposer({ visible, seed, colors, location, token, onClose, onCrea
           <View style={styles.choiceRow}>
             {(['route', 'challenge'] as const).map((choice) => <Pressable key={choice} onPress={() => setKind(choice)} style={[styles.choice, { borderColor: kind === choice ? colors.primary : colors.border, backgroundColor: kind === choice ? colors.secondary : colors.card }]}><Ionicons name={choice === 'challenge' ? 'trophy-outline' : 'map-outline'} size={17} color={kind === choice ? colors.primary : colors.mutedForeground} /><Text style={[styles.choiceText, { color: kind === choice ? colors.primary : colors.mutedForeground }]}>{choice === 'challenge' ? 'Challenge' : 'Route'}</Text></Pressable>)}
           </View>
+          <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Who can see this route?</Text>
+          <View style={styles.choiceRow}>
+            {(['public', 'private'] as const).map((choice) => <Pressable key={choice} onPress={() => setVisibility(choice)} style={[styles.choice, { borderColor: visibility === choice ? colors.primary : colors.border, backgroundColor: visibility === choice ? colors.secondary : colors.card }]}><Ionicons name={choice === 'public' ? 'globe-outline' : 'lock-closed-outline'} size={16} color={visibility === choice ? colors.primary : colors.mutedForeground} /><Text style={[styles.choiceText, { color: visibility === choice ? colors.primary : colors.mutedForeground }]}>{choice === 'public' ? 'Community' : 'Only me'}</Text></Pressable>)}
+          </View>
+          <Text style={[styles.privacyNote, { color: colors.mutedForeground }]}>{visibility === 'public' ? 'The shared route shape and metrics will appear in the Pace community.' : 'The route will be saved to your Pace profile but hidden from the community.'}</Text>
           <View style={[styles.routePreviewLarge, { backgroundColor: colors.card, borderColor: colors.border }]}>{seed ? <><RouteThumbnail points={seed.routeCoordinates} colors={colors} large /><View style={styles.previewCopy}><Text style={[styles.previewTitle, { color: colors.foreground }]}>{seed.title}</Text><Text style={[styles.previewMeta, { color: colors.mutedForeground }]}>{seed.distanceKm.toFixed(1)} km · {seed.durationMin} min · {DIFFICULTY_LABELS[seed.difficulty]}</Text></View></> : <Text style={[styles.previewMeta, { color: colors.mutedForeground }]}>A simple local route will be shaped from your chosen area.</Text>}</View>
           <Pressable onPress={() => void submit()} disabled={saving} style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: saving ? 0.6 : 1 }]}><Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>{saving ? 'Sharing…' : 'Share with the community'}</Text></Pressable>
         </ScrollView>
@@ -449,6 +618,20 @@ const styles = StyleSheet.create({
   heroTitle: { color: '#FFFFFF', fontSize: 27, lineHeight: 31, fontWeight: '800', letterSpacing: -0.8, marginTop: 10 },
   heroText: { color: '#CBD5E1', fontSize: 13, lineHeight: 18, marginTop: 9, maxWidth: 260 },
   heroMark: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(87,124,255,0.24)' },
+  recorderCard: { borderRadius: 20, borderWidth: 1, padding: 14, marginTop: 14 },
+  recorderHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  recorderIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  recorderTitle: { fontSize: 14, fontWeight: '800' },
+  recorderText: { fontSize: 11, lineHeight: 15, marginTop: 3 },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  recorderStats: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 13, paddingTop: 12, flexDirection: 'row', justifyContent: 'space-between' },
+  recorderValue: { fontSize: 16, fontWeight: '800' },
+  recorderLabel: { fontSize: 10, marginTop: 2 },
+  recorderActions: { flexDirection: 'row', gap: 8, marginTop: 13 },
+  recorderPrimary: { minHeight: 38, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  recorderPrimaryText: { fontSize: 12, fontWeight: '800' },
+  recorderSecondary: { minHeight: 38, borderRadius: 13, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  recorderSecondaryText: { fontSize: 12, fontWeight: '800' },
   sectionHeading: { marginTop: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.35 },
   sectionSubtitle: { fontSize: 12, marginTop: 4 },
@@ -508,6 +691,8 @@ const styles = StyleSheet.create({
   choiceRow: { flexDirection: 'row', gap: 9 },
   choice: { flex: 1, minHeight: 44, borderRadius: 13, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
   choiceText: { fontSize: 12, fontWeight: '800' },
+  fieldLabel: { fontSize: 12, fontWeight: '800', marginTop: 2 },
+  privacyNote: { fontSize: 11, lineHeight: 15, marginTop: -4 },
   routePreviewLarge: { borderRadius: 17, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 12 },
   previewCopy: { flex: 1 },
   previewTitle: { fontSize: 14, fontWeight: '800' },

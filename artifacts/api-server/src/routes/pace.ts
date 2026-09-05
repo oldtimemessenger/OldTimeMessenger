@@ -23,6 +23,7 @@ const routeInput = z.object({
   title: z.string().trim().min(2).max(80),
   description: z.string().trim().max(800).default(""),
   kind: z.enum(["route", "challenge"]).default("route"),
+  visibility: z.enum(["public", "private"]).default("public"),
   activity: z.enum(["run", "walk", "bike", "hike"]).default("run"),
   difficulty: z.enum(["easy", "steady", "hard"]).default("steady"),
   distanceKm: z.number().finite().positive().max(250),
@@ -98,6 +99,7 @@ function buildSuggestions(center: Point | null) {
     id: `suggested-${baseSeed}-${index}`,
     suggested: true as const,
     kind: "route" as const,
+    visibility: "public" as const,
     ...template,
     locationLabel: "Near your current area",
     distanceFromYouKm: 0,
@@ -117,11 +119,15 @@ function orBlocks(viewerId: number) {
   return sql`${socialBlocksTable.blockerId} = ${viewerId} OR ${socialBlocksTable.blockedId} = ${viewerId}`;
 }
 
-async function activeRoute(routeId: number) {
+async function activeRoute(routeId: number, viewerId?: number) {
   const [route] = await db
     .select()
     .from(paceRoutesTable)
-    .where(and(eq(paceRoutesTable.id, routeId), eq(paceRoutesTable.deleted, false)))
+    .where(and(
+      eq(paceRoutesTable.id, routeId),
+      eq(paceRoutesTable.deleted, false),
+      viewerId === undefined ? eq(paceRoutesTable.visibility, "public") : sql`(${paceRoutesTable.visibility} = 'public' OR ${paceRoutesTable.authorId} = ${viewerId})`,
+    ))
     .limit(1);
   return route;
 }
@@ -151,6 +157,7 @@ async function serializeRoutes(routes: PaceRoute[], viewerId: number, origin: Po
       title: route.title,
       description: route.description,
       kind: route.kind,
+      visibility: route.visibility,
       activity: route.activity,
       difficulty: route.difficulty,
       distanceKm: route.distanceKm,
@@ -191,7 +198,10 @@ router.get("/pace/feed", async (req, res): Promise<void> => {
     ? { latitude: query.data.latitude, longitude: query.data.longitude }
     : null;
   const blocked = await blockedIds(viewerId);
-  const routes = await db.select().from(paceRoutesTable).where(eq(paceRoutesTable.deleted, false)).orderBy(desc(paceRoutesTable.createdAt)).limit(query.data.limit * 2);
+  const routes = await db.select().from(paceRoutesTable).where(and(
+    eq(paceRoutesTable.deleted, false),
+    sql`(${paceRoutesTable.visibility} = 'public' OR ${paceRoutesTable.authorId} = ${viewerId})`,
+  )).orderBy(desc(paceRoutesTable.createdAt)).limit(query.data.limit * 2);
   const visible = routes
     .filter((route) => !blocked.has(route.authorId))
     .filter((route) => !origin || distanceKm(origin, { latitude: route.startLatitude, longitude: route.startLongitude }) <= 80)
@@ -216,7 +226,7 @@ router.put("/pace/routes/:routeId/like", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   const routeId = parseId(req.params.routeId);
   if (viewerId === null || routeId === null) return;
-  const route = await activeRoute(routeId);
+  const route = await activeRoute(routeId, viewerId);
   if (!route) { res.status(404).json({ error: "Route not found." }); return; }
   await db.insert(paceRouteLikesTable).values({ routeId, userId: viewerId, createdAt: Date.now() }).onConflictDoNothing();
   res.json({ success: true, active: true });
@@ -234,7 +244,7 @@ router.get("/pace/routes/:routeId/comments", async (req, res): Promise<void> => 
   const viewerId = await requireChatAuth(req, res);
   const routeId = parseId(req.params.routeId);
   if (viewerId === null || routeId === null) return;
-  if (!await activeRoute(routeId)) { res.status(404).json({ error: "Route not found." }); return; }
+  if (!await activeRoute(routeId, viewerId)) { res.status(404).json({ error: "Route not found." }); return; }
   const rows = await db
     .select({
       id: paceRouteCommentsTable.id,
@@ -262,7 +272,7 @@ router.post("/pace/routes/:routeId/comments", async (req, res): Promise<void> =>
   const routeId = parseId(req.params.routeId);
   const parsed = commentInput.safeParse(req.body);
   if (viewerId === null || routeId === null || !parsed.success) return;
-  if (!await activeRoute(routeId)) { res.status(404).json({ error: "Route not found." }); return; }
+  if (!await activeRoute(routeId, viewerId)) { res.status(404).json({ error: "Route not found." }); return; }
   const [comment] = await db.insert(paceRouteCommentsTable).values({ routeId, authorId: viewerId, content: parsed.data.content, createdAt: Date.now() }).returning();
   const [author] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, viewerId)).limit(1);
   res.status(201).json({ id: comment.id, routeId, content: comment.content, createdAt: comment.createdAt, author: { id: author.id, name: author.name, username: usernameFor(author) }, likes: 0, liked: false });
@@ -289,7 +299,7 @@ router.post("/pace/routes/:routeId/gifts", async (req, res): Promise<void> => {
   const routeId = parseId(req.params.routeId);
   const parsed = giftInput.safeParse(req.body);
   if (viewerId === null || routeId === null || !parsed.success) return;
-  const route = await activeRoute(routeId);
+  const route = await activeRoute(routeId, viewerId);
   if (!route || route.authorId === viewerId) {
     res.status(400).json({ error: "Choose a route shared by another Pace member." });
     return;

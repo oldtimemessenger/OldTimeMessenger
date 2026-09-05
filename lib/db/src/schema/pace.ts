@@ -24,6 +24,7 @@ export const paceRoutesTable = pgTable(
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
     kind: text("kind").notNull().default("route"),
+    visibility: text("visibility").notNull().default("public"),
     activity: text("activity").notNull().default("run"),
     difficulty: text("difficulty").notNull().default("steady"),
     distanceKm: doublePrecision("distance_km").notNull(),
