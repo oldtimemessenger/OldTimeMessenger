@@ -4,4 +4,3 @@ paths-ignore:
   - artifacts/old-time-chat
   - attached_assets
   - screenshots
-  - docs
