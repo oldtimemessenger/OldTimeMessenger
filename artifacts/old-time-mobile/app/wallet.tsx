@@ -63,6 +63,12 @@ export default function WalletScreen() {
   }, [walletQuery.data, walletQuery.error]);
 
   async function refreshWallet() {
+    if (!session?.authToken) {
+      return {
+        ok: false as const,
+        message: 'Sign in again to refresh your wallet.',
+      };
+    }
     const result = await walletQuery.refetch();
     if (result.status === 'error' || !result.data) {
       return {
@@ -123,11 +129,11 @@ export default function WalletScreen() {
         </Pressable>
       )}
       right={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing} onPress={async () => {
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing || !session?.authToken} onPress={async () => {
           setFeedback(null);
           const refreshed = await refreshWallet();
           if (!refreshed.ok) Alert.alert('Wallet not updated', refreshed.message);
-        }} style={({ pressed }) => [{ opacity: loading || refreshing ? 0.45 : pressed ? 0.65 : 1 }]}>
+        }} style={({ pressed }) => [{ opacity: loading || refreshing || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
           <Text style={[styles.refreshText, { color: colors.primary }]}>{refreshing ? 'Refreshing…' : 'Refresh'}</Text>
         </Pressable>
       )}
@@ -151,7 +157,7 @@ export default function WalletScreen() {
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending gold</Text>
                 </View>
               </View>
-              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.purchasing || restoring} />
+              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.purchasing || restoring || !session?.authToken} />
             </>
           )}
         </View>
@@ -172,8 +178,8 @@ export default function WalletScreen() {
               key={item.identifier}
               accessibilityRole="button"
               accessibilityLabel={`Buy ${item.product.title}`}
-              accessibilityState={{ disabled: revenueCat.purchasing }}
-              disabled={revenueCat.purchasing}
+              accessibilityState={{ disabled: revenueCat.purchasing || !session?.authToken }}
+              disabled={revenueCat.purchasing || !session?.authToken}
               onPress={() => void handlePurchase(item)}
               style={({ pressed }) => [
                 styles.packageRow,
