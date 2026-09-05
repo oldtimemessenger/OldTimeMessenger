@@ -49,6 +49,21 @@ export const socialPostsTable = pgTable(
   }),
 );
 
+export const socialPostViewersTable = pgTable(
+  "social_post_viewers",
+  {
+    postId: integer("post_id").notNull(),
+    viewerId: integer("viewer_id").notNull(),
+    viewedAt: pgBigint("viewed_at", { mode: "number" }).notNull(),
+    expiresAt: pgBigint("expires_at", { mode: "number" }),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.postId, table.viewerId] }),
+    viewerIndex: index("social_post_viewers_viewer_idx").on(table.viewerId),
+    expiryIndex: index("social_post_viewers_expiry_idx").on(table.expiresAt),
+  }),
+);
+
 export const socialFollowsTable = pgTable(
   "social_follows",
   {

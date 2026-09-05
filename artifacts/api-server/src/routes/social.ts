@@ -28,6 +28,7 @@ import {
   socialPostLikesTable,
   socialPostRepostsTable,
   socialPostSavesTable,
+  socialPostViewersTable,
   socialPostsTable,
   socialReportsTable,
   socialSharingExclusionsTable,
@@ -311,6 +312,12 @@ async function canSeePost(
 ): Promise<boolean> {
   if (blocked.has(post.authorId)) return false;
   if (post.authorId === viewerId) return true;
+  const [view] = await db
+    .select({ expiresAt: socialPostViewersTable.expiresAt })
+    .from(socialPostViewersTable)
+    .where(and(eq(socialPostViewersTable.postId, post.id), eq(socialPostViewersTable.viewerId, viewerId)))
+    .limit(1);
+  if (view?.expiresAt !== null && view?.expiresAt !== undefined && view.expiresAt <= Date.now()) return false;
   if (await isExcludedFromSharing(post.authorId, viewerId)) return false;
   if (post.visibility === "public") return true;
   if (post.visibility === "private") return false;
@@ -347,7 +354,7 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
   if (!posts.length) return [];
   const authorIds = [...new Set(posts.map((post) => post.authorId))];
   const postIds = posts.map((post) => post.id);
-  const [authors, likes, reposts, saves, comments, viewerLikes, viewerReposts, viewerSaves, follows] =
+  const [authors, likes, reposts, saves, comments, viewerLikes, viewerReposts, viewerSaves, viewerViews, follows] =
     await Promise.all([
       db
         .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
@@ -406,6 +413,16 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
           ),
         ),
       db
+        .select({ postId: socialPostViewersTable.postId, expiresAt: socialPostViewersTable.expiresAt })
+        .from(socialPostViewersTable)
+        .where(
+          and(
+            eq(socialPostViewersTable.viewerId, viewerId),
+            inArray(socialPostViewersTable.postId, postIds),
+            gt(socialPostViewersTable.expiresAt, Date.now()),
+          ),
+        ),
+      db
         .select({ followingId: socialFollowsTable.followingId })
         .from(socialFollowsTable)
         .where(
@@ -425,6 +442,7 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
   const liked = new Set(viewerLikes.map((row) => row.postId));
   const reposted = new Set(viewerReposts.map((row) => row.postId));
   const saved = new Set(viewerSaves.map((row) => row.postId));
+  const viewExpiryById = new Map(viewerViews.map((row) => [row.postId, row.expiresAt]));
   const following = new Set(follows.map((row) => row.followingId));
 
   return posts.map((post) => {
@@ -470,6 +488,8 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
         liked: liked.has(post.id),
         reposted: reposted.has(post.id),
         saved: saved.has(post.id),
+        viewed: viewExpiryById.has(post.id),
+        viewExpiresAt: viewExpiryById.get(post.id) ?? null,
         followingAuthor: following.has(post.authorId),
       },
     };
@@ -652,6 +672,28 @@ router.post("/social/posts", async (req, res): Promise<void> => {
     return;
   }
   res.status(201).json((await serializePosts([created], viewerId))[0]);
+});
+
+router.put("/social/posts/:postId/view", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const postId = parseId(req.params.postId);
+  if (viewerId === null || postId === null) return;
+  const post = await visiblePostFor(viewerId, postId);
+  if (!post) {
+    res.status(404).json({ error: "Post not found." });
+    return;
+  }
+  if (post.authorId !== viewerId) {
+    const viewedAt = Date.now();
+    await db
+      .insert(socialPostViewersTable)
+      .values({ postId, viewerId, viewedAt, expiresAt: viewedAt + SOCIAL_VIEW_EXPIRY_MS })
+      .onConflictDoUpdate({
+        target: [socialPostViewersTable.postId, socialPostViewersTable.viewerId],
+        set: { viewedAt, expiresAt: viewedAt + SOCIAL_VIEW_EXPIRY_MS },
+      });
+  }
+  res.json({ success: true, expiresAt: post.authorId === viewerId ? null : Date.now() + SOCIAL_VIEW_EXPIRY_MS });
 });
 
 router.delete("/social/posts/:postId", async (req, res): Promise<void> => {

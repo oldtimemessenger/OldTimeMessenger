@@ -36,6 +36,8 @@ export type SocialPost = {
     liked: boolean;
     reposted: boolean;
     saved: boolean;
+    viewed: boolean;
+    viewExpiresAt: number | null;
     followingAuthor: boolean;
   };
 };
@@ -195,6 +197,12 @@ export function setPostRelation(
     `/api/social/posts/${postId}/${relation}`,
     { method: active ? 'PUT' : 'DELETE' },
   );
+}
+
+export function viewSocialPost(token: string, postId: number) {
+  return request<{ success: boolean; expiresAt: number | null }>(token, `/api/social/posts/${postId}/view`, {
+    method: 'PUT',
+  });
 }
 
 export function getPostComments(token: string, postId: number) {

@@ -58,6 +58,7 @@ import {
   setPostRelation,
   setSharingExcluded,
   socialMediaUrl,
+  viewSocialPost,
    socialAvatarUrl,
   viewStory,
   type SocialNotification,
@@ -2205,9 +2206,42 @@ function CommunityFeed({
 function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment, onChanged }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onComment?: () => void; onChanged: (post: SocialPost) => void }) {
   const [busy, setBusy] = useState(false);
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const [expired, setExpired] = useState(false);
   const saveInFlightRef = useRef(false);
   const media = post.media[0];
   const canRepost = post.visibility === 'public' && post.allowReposts;
+
+  useEffect(() => {
+    if (!post.viewer.viewed || post.viewer.viewExpiresAt === null) return;
+    const remaining = Math.max(0, post.viewer.viewExpiresAt - Date.now());
+    const timeout = setTimeout(() => setExpired(true), remaining);
+    return () => clearTimeout(timeout);
+  }, [post.author.id, post.viewer.viewExpiresAt, post.viewer.viewed]);
+
+  useEffect(() => {
+    if (post.viewer.viewed) return;
+    let active = true;
+    void viewSocialPost(token, post.id)
+      .then((result) => {
+        if (!active) return;
+        onChanged({
+          ...post,
+          viewer: {
+            ...post.viewer,
+            viewed: true,
+            viewExpiresAt: result.expiresAt,
+          },
+        });
+      })
+      .catch(() => {
+        // The card can remain visible if a transient view event fails.
+      });
+    return () => {
+      active = false;
+    };
+  }, [post.id, post.viewer.viewed, token]);
+
+  if (expired) return null;
 
   async function toggle(relation: 'like' | 'save' | 'repost') {
     if (relation === 'save' && saveInFlightRef.current) return;
