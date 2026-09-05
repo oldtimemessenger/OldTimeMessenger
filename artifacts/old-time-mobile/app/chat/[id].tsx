@@ -258,7 +258,7 @@ function buildMessageItems(messages: UiMessage[]): MessageListItem[] {
   return items;
 }
 
-function renderLinkedText(text: string, color: string, linkColor: string) {
+function renderLinkedText(text: string, color: string, linkColor: string, inlineMeta?: { text: string; color: string }) {
   const regex = /(https?:\/\/[^\s]+)/g;
   const parts = text.split(regex);
   return (
@@ -272,8 +272,18 @@ function renderLinkedText(text: string, color: string, linkColor: string) {
           </Text>
         );
       })}
+      {inlineMeta ? <Text style={{ color: inlineMeta.color, fontSize: 11.5, fontWeight: '700' }}>{`  ${inlineMeta.text}`}</Text> : null}
     </Text>
   );
+}
+
+function inlineMessageMeta(timestamp: number, status: ReturnType<typeof bubbleStatus>) {
+  const time = new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (status === 'sending') return `${time}  sending…`;
+  if (status === 'failed') return `${time}  failed`;
+  if (status === 'delivered' || status === 'read') return `${time}  ✓✓`;
+  if (status === 'sent') return `${time}  ✓`;
+  return time;
 }
 
 function compactWaveform(progress: number, active = false) {
@@ -1095,6 +1105,7 @@ export default function ChatDetailScreen() {
             : null;
           const status = bubbleStatus(message, mine);
           const domain = message.content ? linkPreviewLabel(message.content) : null;
+           const inlineTextMeta = Boolean(message.content && !message.attachment && !message.saved && seconds === null && !domain);
           const galleryIndex = mediaItems.findIndex((entry) => entry.id === message.id || (entry.clientId && entry.clientId === message.clientId));
           const attachmentPlayed = Boolean(message.playedAt || message.openedAt);
           const showUnreadAudioDot = message.attachment?.type === 'audio' && !mine && !attachmentPlayed;
@@ -1218,7 +1229,15 @@ export default function ChatDetailScreen() {
                     ) : null}
                     {message.content ? (
                       <View style={{ marginTop: message.attachment ? 10 : 0 }}>
-                        {renderLinkedText(message.content, mine ? colors.primaryForeground : colors.foreground, mine ? '#D7EEFF' : colors.primary)}
+                         {renderLinkedText(
+                           message.content,
+                           mine ? colors.primaryForeground : colors.foreground,
+                           mine ? '#D7EEFF' : colors.primary,
+                           inlineTextMeta ? {
+                             text: inlineMessageMeta(message.timestamp, status),
+                             color: mine ? 'rgba(255,255,255,0.72)' : colors.mutedForeground,
+                           } : undefined,
+                         )}
                       </View>
                     ) : null}
                     {domain ? (
@@ -1227,7 +1246,7 @@ export default function ChatDetailScreen() {
                         <Text style={{ color: mine ? colors.primaryForeground : colors.foreground, fontSize: 12, fontWeight: '600' }}>{domain}</Text>
                       </View>
                     ) : null}
-                    <View style={styles.messageMeta}>
+                     {!inlineTextMeta ? <View style={styles.messageMeta}>
                       {seconds !== null && !message.saved ? (
                         <View style={styles.expiryMeta}><Ionicons name="timer-outline" size={12} color={colors.destructive} /><Text style={[styles.retentionText, { color: colors.destructive }]}>{expiryLabel(seconds)}</Text></View>
                       ) : null}
@@ -1237,7 +1256,7 @@ export default function ChatDetailScreen() {
                         {message.editedAt ? ' · edited' : ''}
                         {status === 'sending' ? ' · sending…' : status === 'failed' ? ' · failed' : status === 'delivered' ? '  ✓✓' : status === 'read' ? '  ✓✓' : '  ✓'}
                       </Text>
-                    </View>
+                     </View> : null}
                   </View>
                   {message.reactions?.length ? (
                     <View style={[styles.reactionBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
