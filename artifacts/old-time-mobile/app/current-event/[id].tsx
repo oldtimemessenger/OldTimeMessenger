@@ -44,7 +44,7 @@ import { apiBaseUrl } from '@/lib/api-base-url';
 import { io } from 'socket.io-client';
 
 const gifts = currentEventGifts;
-const coinLogo = require('../../assets/coins/coin-logo.jpeg');
+const coinLogo = require('../../assets/coins/coin-logo.png');
 
 type GiftPayload = {
   id: number;

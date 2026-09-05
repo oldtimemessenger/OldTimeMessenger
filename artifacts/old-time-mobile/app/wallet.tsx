@@ -27,8 +27,8 @@ import { useRevenueCat } from '@/lib/revenuecat';
 const COINS_PER_DOLLAR = 90;
 const RECOMMENDED_AMOUNTS = [1_000, 5_000, 10_000, 25_000, 50_000, 100_000];
 const emptyWallet: CurrentEventWallet = { coins: 0, gold: 0, pendingGold: 0 };
-const balanceArt = require('../assets/coins/balance-bag.jpeg');
-const coinStackArt = require('../assets/coins/coin-stack.jpeg');
+const balanceArt = require('../assets/coins/balance-bag.png');
+const coinStackArt = require('../assets/coins/coin-stack.png');
 
 function coinAmountFromProduct(item: { product: { identifier: string; title: string; description: string; price: number } }) {
   const text = `${item.product.identifier} ${item.product.title} ${item.product.description}`;
