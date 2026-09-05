@@ -255,7 +255,9 @@ export default function PaceSheet({
         movingRef.current = now;
         if (working.autoPaused && working.autoPauseEnabled) {
           const resumed = resumeSession(working);
-          void resumePaceActivity(token, resumed.activityId!, resumed.syncStatus).catch(() => undefined);
+          if (resumed.activityId) {
+            void resumePaceActivity(token, resumed.activityId, resumed.syncStatus).catch(() => undefined);
+          }
           void saveActiveTrackingSession(resumed);
           working = resumed;
         }
@@ -263,7 +265,9 @@ export default function PaceSheet({
       let next = updateSessionWithPoint(working, point);
       if (next.autoPauseEnabled && !next.autoPaused && now - movingRef.current > 30000) {
         next = pauseSession(next, true);
-        void pausePaceActivity(token, next.activityId!, next.syncStatus).catch(() => undefined);
+        if (next.activityId) {
+          void pausePaceActivity(token, next.activityId, next.syncStatus).catch(() => undefined);
+        }
       }
       void saveActiveTrackingSession(next);
       void flushPending(next).then((updated) => {
@@ -289,6 +293,17 @@ export default function PaceSheet({
     if (!visible || screen !== "live") return;
     void ensureWatcher();
   }, [ensureWatcher, screen, visible]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (session.manualPaused || session.autoPaused) {
+      stopWatch();
+      return;
+    }
+    if (visible && screen === "live") {
+      void ensureWatcher();
+    }
+  }, [ensureWatcher, screen, session, stopWatch, visible]);
 
   useEffect(() => () => stopWatch(), [stopWatch]);
 

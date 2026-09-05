@@ -364,7 +364,13 @@ router.get("/pace/home", async (req, res): Promise<void> => {
         count: sql<number>`count(*)::int`,
       })
       .from(paceActivitiesTable)
-      .where(and(ne(paceActivitiesTable.userId, userId), eq(paceActivitiesTable.visibility, "public")))
+      .where(
+        and(
+          ne(paceActivitiesTable.userId, userId),
+          eq(paceActivitiesTable.visibility, "public"),
+          inArray(paceActivitiesTable.lifecycleStatus, ["active", "paused"]),
+        ),
+      )
       .groupBy(paceActivitiesTable.activityType),
   ]);
   const totalDistance = recent.reduce((sum, item) => sum + item.distanceMeters, 0);
@@ -738,7 +744,7 @@ router.get("/pace/history", async (req, res): Promise<void> => {
   res.json({ items: await Promise.all(items.map((item) => serializeActivity(userId, item))) });
 });
 
-router.get("/pace/profile/:userId?", async (req, res): Promise<void> => {
+async function profileHandler(req: Request, res: Response): Promise<void> {
   const viewerId = await requireChatAuth(req, res);
   if (viewerId === null) return;
   const targetId = req.params.userId ? parseId(req.params.userId) : viewerId;
@@ -795,7 +801,10 @@ router.get("/pace/profile/:userId?", async (req, res): Promise<void> => {
     },
     recent: await Promise.all(visible.slice(0, 10).map((item) => serializeActivity(viewerId, item))),
   });
-});
+}
+
+router.get("/pace/profile", profileHandler);
+router.get("/pace/profile/:userId", profileHandler);
 
 router.put("/pace/activities/:activityId/like", async (req, res): Promise<void> => {
   const userId = await requireChatAuth(req, res);
@@ -1140,33 +1149,22 @@ router.get("/pace/challenges/:challengeId/leaderboard", async (req, res): Promis
 async function liveNowAggregates(req: Request, res: Response): Promise<void> {
   const userId = await requireChatAuth(req, res);
   if (userId === null) return;
-  const latestSequence = db
-    .select({
-      activityId: paceActivityPointsTable.activityId,
-      maxSequence: sql<number>`max(${paceActivityPointsTable.sequence})::int`,
-    })
-    .from(paceActivityPointsTable)
-    .groupBy(paceActivityPointsTable.activityId)
-    .as("latest_sequence");
-  const points = await db
+  const rows = await db
     .select({
       activityType: paceActivitiesTable.activityType,
+      count: sql<number>`count(*)::int`,
     })
     .from(paceActivitiesTable)
-    .innerJoin(latestSequence, eq(latestSequence.activityId, paceActivitiesTable.id))
     .where(
       and(
         ne(paceActivitiesTable.userId, userId),
         eq(paceActivitiesTable.visibility, "public"),
-        eq(paceActivitiesTable.lifecycleStatus, "active"),
+        inArray(paceActivitiesTable.lifecycleStatus, ["active", "paused"]),
       ),
-    );
-  const counts = new Map<string, number>();
-  for (const point of points) {
-    counts.set(point.activityType, (counts.get(point.activityType) ?? 0) + 1);
-  }
+    )
+    .groupBy(paceActivitiesTable.activityType);
   res.json({
-    items: [...counts.entries()].map(([activityType, count]) => ({ activityType, count })),
+    items: rows.map((row) => ({ activityType: row.activityType, count: row.count })),
   });
 }
 
