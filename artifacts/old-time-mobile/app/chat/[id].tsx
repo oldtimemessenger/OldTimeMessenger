@@ -309,6 +309,8 @@ export default function ChatDetailScreen() {
   const recordGestureState = useRef<'idle' | 'cancel' | 'lock'>('idle');
   const recordStartedRef = useRef(false);
   const audioPlayedRef = useRef<number | null>(null);
+  const chatSocketRef = useRef<ReturnType<typeof io> | null>(null);
+  const shouldAutoScrollRef = useRef(true);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 120);
   const audioPlayer = useAudioPlayer(null, { updateInterval: 200 });
@@ -409,7 +411,11 @@ export default function ChatDetailScreen() {
 
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+      if (remoteTypingTimer.current) clearTimeout(remoteTypingTimer.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -431,6 +437,7 @@ export default function ChatDetailScreen() {
   useEffect(() => {
     if (!session?.authToken || !chatId) return;
     const socket = io(apiBaseUrl(), { auth: { token: session.authToken }, reconnection: true, transports: ['websocket'] });
+    chatSocketRef.current = socket;
     const handleTyping = (payload: { chatId?: number; state?: TypingState; userId?: number }) => {
       if (payload.chatId !== chatId || payload.userId === session.id) return;
       setTypingState(payload.state === 'recording' ? 'recording' : payload.state === 'typing' ? 'typing' : 'idle');
@@ -443,9 +450,13 @@ export default function ChatDetailScreen() {
       if (payload.chatId !== chatId) return;
       mergeIncomingMessage(payload);
     };
+    const handleMessageHidden = (payload: { chatId?: number; messageId?: number }) => {
+      if (payload.chatId === chatId) void refreshChat();
+    };
     socket.on('connect', () => socket.emit('join-chat', { chatId }));
     socket.on('new-message', handleMessage);
     socket.on('message-updated', handleMessage);
+    socket.on('message-hidden', handleMessageHidden);
     socket.on('message-expired', () => void refreshChat());
     socket.on('inbox-updated', () => void queryClient.invalidateQueries({ queryKey: inboxKey }));
     socket.on('user-typing', handleTyping);
@@ -454,7 +465,9 @@ export default function ChatDetailScreen() {
       socket.emit('leave-chat', { chatId });
       socket.off('new-message', handleMessage);
       socket.off('message-updated', handleMessage);
+      socket.off('message-hidden', handleMessageHidden);
       socket.off('user-typing', handleTyping);
+      chatSocketRef.current = null;
       socket.disconnect();
     };
   }, [chatId, inboxKey, mergeIncomingMessage, queryClient, refreshChat, session?.authToken, session?.id]);
@@ -520,12 +533,8 @@ export default function ChatDetailScreen() {
   }, [activeAudioMessageId, audioStatus.playing, mergeIncomingMessage, session, visibleMessages]);
 
   const emitTypingState = useCallback((state: TypingState) => {
-    if (!session?.authToken) return;
-    const socket = io(apiBaseUrl(), { auth: { token: session.authToken }, transports: ['websocket'], autoConnect: false });
-    socket.connect();
-    socket.emit('typing', { chatId, state });
-    setTimeout(() => socket.disconnect(), 250);
-  }, [chatId, session?.authToken]);
+    chatSocketRef.current?.emit('typing', { chatId, state });
+  }, [chatId]);
 
   function scheduleTypingState(nextText: string) {
     setText(nextText);
@@ -537,6 +546,7 @@ export default function ChatDetailScreen() {
 
   async function queueMessage(input: { content?: string; attachment?: ChatAttachment | null; reply?: UiMessage | null }) {
     if (!session?.authToken || !session.id) return;
+    shouldAutoScrollRef.current = true;
     const clientId = `${session.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timestamp = Date.now();
     const optimistic: LocalMessageState = {
@@ -931,7 +941,7 @@ export default function ChatDetailScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: colors.card, borderBottomColor: colors.border }]}> 
         <IconButton name="chevron-back" onPress={() => router.back()} label="Back" />
         <View style={styles.headerBody}>
-          <Pressable style={styles.headerContact} onPress={() => setStatusSheetOpen(true)}>
+          <View style={styles.headerContact}>
             <Avatar name={contact?.name ?? 'Conversation'} size={42} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>{contact?.name ?? 'Conversation'}</Text>
@@ -940,7 +950,7 @@ export default function ChatDetailScreen() {
                 <Text style={[styles.headerSub, { color: colors.mutedForeground }]} numberOfLines={1}>{headerPresence.text}</Text>
               </View>
             </View>
-          </Pressable>
+          </View>
         </View>
         <View style={styles.headerActions}>
           <IconButton name="call-outline" label="Voice call" onPress={() => void startCall('voice')} />
@@ -973,7 +983,17 @@ export default function ChatDetailScreen() {
         contentContainerStyle={[styles.messageList, { paddingBottom: 18 }]}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+        onContentSizeChange={() => {
+          if (shouldAutoScrollRef.current) {
+            listRef.current?.scrollToEnd({ animated: true });
+          }
+        }}
+        onScroll={({ nativeEvent }) => {
+          const distanceFromBottom =
+            nativeEvent.contentSize.height - (nativeEvent.contentOffset.y + nativeEvent.layoutMeasurement.height);
+          shouldAutoScrollRef.current = distanceFromBottom < 120;
+        }}
+        scrollEventThrottle={16}
         renderItem={({ item }) => {
           if (item.type === 'separator') {
             return (

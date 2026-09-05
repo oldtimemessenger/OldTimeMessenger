@@ -1658,12 +1658,17 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
       res.status(400).json({ error: "This message cannot be edited." });
       return;
     }
-    const [updated] = await db.update(messagesTable).set({ content, editedAt: now() })
+    const [sender] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    const editTime = now();
+    const [updated] = await db.update(messagesTable).set({ content, editedAt: editTime })
       .where(eq(messagesTable.id, message.id)).returning();
     if (!updated) {
       res.status(404).json({ error: "Message not found." });
       return;
     }
+    await db.update(messagesTable).set({
+      replyPreview: serializeReplyPreview(updated, sender?.name ?? "Unknown"),
+    }).where(and(eq(messagesTable.replyToMessageId, message.id), eq(messagesTable.deletedForEveryone, false)));
     const response = (await serializeMessages([updated], userId))[0];
     emitToChat(message.chatId, "message-updated", response);
     for (const participantId of participants) emitToUser(participantId, "inbox-updated", response);
@@ -1673,6 +1678,7 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
 
   if (mode === "delete_for_me") {
     await db.insert(messageHiddenTable).values({ messageId: message.id, userId, hiddenAt: now() }).onConflictDoNothing();
+    emitToUser(userId, "message-hidden", { chatId: message.chatId, messageId: message.id });
     emitToUser(userId, "inbox-updated", { chatId: message.chatId, messageId: message.id });
     res.json({ success: true });
     return;
@@ -1763,7 +1769,7 @@ router.post("/messages/:messageId/play", async (req, res): Promise<void> => {
     return;
   }
   const [updated] = await db.update(messagesTable)
-    .set({ playedAt: message.playedAt ?? now(), deliveredAt: message.deliveredAt ?? now(), read: true })
+    .set({ playedAt: message.playedAt ?? now(), deliveredAt: message.deliveredAt ?? now(), openedAt: message.openedAt ?? now(), read: true })
     .where(eq(messagesTable.id, messageId))
     .returning();
   if (!updated) {
