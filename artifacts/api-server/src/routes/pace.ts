@@ -1,1187 +1,317 @@
-import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { Router, type IRouter } from "express";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { z } from "@workspace/api-zod";
 import {
   db,
-  paceActivitiesTable,
-  paceActivityCommentsTable,
-  paceActivityLikesTable,
-  paceActivityPointsTable,
-  paceChallengeParticipantsTable,
-  paceChallengesTable,
-  paceSegmentsTable,
-  paceSegmentEffortsTable,
-  socialFollowsTable,
+  currentEventWalletsTable,
+  paceCommentLikesTable,
+  paceRouteCommentsTable,
+  paceRouteGiftsTable,
+  paceRouteLikesTable,
+  paceRoutesTable,
+  socialBlocksTable,
   usersTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
 
 const router: IRouter = Router();
-
-const activityTypes = z.enum(["running", "walking", "cycling", "hiking", "jogging", "other"]);
-const activityVisibility = z.enum(["public", "followers", "private"]);
-const syncStatusSchema = z.enum(["local", "pending", "uploading", "synced", "failed"]);
-
-const createActivityInput = z.object({
-  activityUuid: z.string().trim().min(8).max(120),
-  activityType: activityTypes.default("running"),
-  title: z.string().trim().max(120).optional(),
-  description: z.string().trim().max(2_000).optional(),
-  visibility: activityVisibility.default("followers"),
-  autoPauseEnabled: z.boolean().default(true),
-  voiceAnnouncementsEnabled: z.boolean().default(false),
-  equipment: z.string().trim().max(120).nullable().optional(),
-  challengeIds: z.array(z.number().int().positive()).max(20).default([]),
-  hideStartEnd: z.boolean().default(true),
-  privacyRadiusMeters: z.number().int().min(0).max(2_000).default(120),
-  startedAt: z.number().int().positive().optional(),
+const routePoint = z.object({
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
 });
-
-const pointsBatchInput = z.object({
-  points: z
-    .array(
-      z.object({
-        sequence: z.number().int().min(0),
-        latitude: z.number().finite().gte(-90).lte(90),
-        longitude: z.number().finite().gte(-180).lte(180),
-        timestamp: z.number().int().positive(),
-        accuracy: z.number().finite().nonnegative().optional(),
-        altitude: z.number().finite().optional(),
-        speed: z.number().finite().optional(),
-        heading: z.number().finite().optional(),
-      }),
-    )
-    .min(1)
-    .max(500),
-  syncStatus: syncStatusSchema.optional(),
+const routeInput = z.object({
+  title: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(800).default(""),
+  kind: z.enum(["route", "challenge"]).default("route"),
+  activity: z.enum(["run", "walk", "bike", "hike"]).default("run"),
+  difficulty: z.enum(["easy", "steady", "hard"]).default("steady"),
+  distanceKm: z.number().finite().positive().max(250),
+  elevationM: z.number().int().min(0).max(10_000).default(0),
+  durationMin: z.number().int().positive().max(1_440),
+  startLatitude: z.number().finite().min(-90).max(90),
+  startLongitude: z.number().finite().min(-180).max(180),
+  locationLabel: z.string().trim().min(2).max(120).default("Nearby"),
+  routeCoordinates: z.array(routePoint).min(2).max(120),
 });
+const commentInput = z.object({ content: z.string().trim().min(1).max(1_000) });
+const giftInput = z.object({ gift: z.enum(["coffee", "idea", "heart", "gem", "studio", "time_is_up"]) });
+const giftPrices = { coffee: 25, idea: 100, heart: 200, gem: 500, studio: 1_000, time_is_up: 10_000 } as const;
 
-const finishInput = z.object({
-  endedAt: z.number().int().positive().optional(),
-  elapsedTimeSec: z.number().int().nonnegative().optional(),
-  caption: z.string().trim().max(2_000).optional(),
-  photos: z
-    .array(
-      z.object({
-        objectPath: z.string().trim().min(1).max(500),
-        mimeType: z.string().trim().min(1).max(120),
-      }),
-    )
-    .max(8)
-    .optional(),
-  visibility: activityVisibility.optional(),
-  calories: z.number().int().nonnegative().nullable().optional(),
-  heartRateAverage: z.number().int().nonnegative().nullable().optional(),
-  heartRateMax: z.number().int().nonnegative().nullable().optional(),
-  heartRateMin: z.number().int().nonnegative().nullable().optional(),
-});
+type PaceRoute = typeof paceRoutesTable.$inferSelect;
+type Point = { latitude: number; longitude: number };
 
-const pauseResumeInput = z.object({
-  syncStatus: syncStatusSchema.optional(),
-});
-
-const commentInput = z.object({
-  content: z.string().trim().min(1).max(1_000),
-  parentId: z.number().int().positive().nullable().optional(),
-});
-
-function parseId(value: unknown): number | null {
-  const id = Number(value);
-  return Number.isInteger(id) && id > 0 ? id : null;
+function parseId(value: unknown) {
+  const parsed = z.coerce.number().int().positive().safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
-function parseLimit(value: unknown, fallback = 20, cap = 50): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed)) return fallback;
-  return Math.max(1, Math.min(cap, parsed));
+function usernameFor(user: { id: number; name: string; username?: string | null }) {
+  return user.username || user.name.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 18) || `user${user.id}`;
 }
 
-function toRadians(value: number): number {
-  return (value * Math.PI) / 180;
+function distanceKm(left: Point, right: Point) {
+  const radians = (value: number) => value * Math.PI / 180;
+  const deltaLatitude = radians(right.latitude - left.latitude);
+  const deltaLongitude = radians(right.longitude - left.longitude);
+  const a = Math.sin(deltaLatitude / 2) ** 2
+    + Math.cos(radians(left.latitude)) * Math.cos(radians(right.latitude)) * Math.sin(deltaLongitude / 2) ** 2;
+  return 6_371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function distanceMeters(
-  from: { latitude: number; longitude: number },
-  to: { latitude: number; longitude: number },
-): number {
-  const earthRadius = 6371000;
-  const dLat = toRadians(to.latitude - from.latitude);
-  const dLon = toRadians(to.longitude - from.longitude);
-  const lat1 = toRadians(from.latitude);
-  const lat2 = toRadians(to.latitude);
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+function seededNumber(seed: number) {
+  const value = Math.sin(seed * 12.9898) * 43_758.5453;
+  return value - Math.floor(value);
 }
 
-function activitySpeedLimit(activityType: string): number {
-  if (activityType === "cycling") return 35;
-  return 12;
-}
-
-function obfuscateRoute(
-  points: Array<{ latitude: number; longitude: number }>,
-  hideStartEnd: boolean,
-  privacyRadiusMeters: number,
-): Array<{ latitude: number; longitude: number }> {
-  if (!hideStartEnd || privacyRadiusMeters <= 0 || points.length < 3) return points;
-  const start = points[0];
-  const end = points[points.length - 1];
-  const filtered = points.filter((point, index) => {
-    if (index === 0 || index === points.length - 1) return false;
-    const fromStart = distanceMeters(start, point);
-    const fromEnd = distanceMeters(end, point);
-    return fromStart >= privacyRadiusMeters && fromEnd >= privacyRadiusMeters;
-  });
-  return filtered.length >= 2 ? filtered : points.slice(1, Math.max(2, points.length - 1));
-}
-
-async function canViewActivity(viewerId: number, activity: typeof paceActivitiesTable.$inferSelect): Promise<boolean> {
-  if (activity.userId === viewerId) return true;
-  if (activity.visibility === "public") return true;
-  if (activity.visibility === "private") return false;
-  const [follow] = await db
-    .select({ followerId: socialFollowsTable.followerId })
-    .from(socialFollowsTable)
-    .where(and(eq(socialFollowsTable.followerId, viewerId), eq(socialFollowsTable.followingId, activity.userId)))
-    .limit(1);
-  return Boolean(follow);
-}
-
-async function serializeActivity(viewerId: number, activity: typeof paceActivitiesTable.$inferSelect) {
-  const [author, pointRows, likeStats, commentStats, viewerLike] = await Promise.all([
-    db
-      .select({
-        id: usersTable.id,
-        name: usersTable.name,
-        username: usersTable.username,
-        avatarObjectPath: usersTable.avatarObjectPath,
-      })
-      .from(usersTable)
-      .where(eq(usersTable.id, activity.userId))
-      .limit(1),
-    db
-      .select({
-        latitude: paceActivityPointsTable.latitude,
-        longitude: paceActivityPointsTable.longitude,
-      })
-      .from(paceActivityPointsTable)
-      .where(eq(paceActivityPointsTable.activityId, activity.id))
-      .orderBy(asc(paceActivityPointsTable.sequence)),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(paceActivityLikesTable)
-      .where(eq(paceActivityLikesTable.activityId, activity.id)),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(paceActivityCommentsTable)
-      .where(and(eq(paceActivityCommentsTable.activityId, activity.id), eq(paceActivityCommentsTable.deleted, false))),
-    db
-      .select({ userId: paceActivityLikesTable.userId })
-      .from(paceActivityLikesTable)
-      .where(and(eq(paceActivityLikesTable.activityId, activity.id), eq(paceActivityLikesTable.userId, viewerId)))
-      .limit(1),
-  ]);
-  const routePoints = pointRows.map((point) => ({ latitude: point.latitude, longitude: point.longitude }));
-  const shownRoute = activity.userId === viewerId
-    ? routePoints
-    : obfuscateRoute(routePoints, activity.hideStartEnd, activity.privacyRadiusMeters);
-  return {
-    id: activity.id,
-    activityUuid: activity.activityUuid,
-    activityType: activity.activityType,
-    title: activity.title,
-    description: activity.description,
-    visibility: activity.visibility,
-    lifecycleStatus: activity.lifecycleStatus,
-    syncStatus: activity.syncStatus,
-    startedAt: activity.startedAt,
-    endedAt: activity.endedAt,
-    elapsedTimeSec: activity.elapsedTimeSec,
-    movingTimeSec: activity.movingTimeSec,
-    distanceMeters: activity.distanceMeters,
-    averageSpeedMps: activity.averageSpeedMps,
-    averagePaceSecPerKm: activity.averagePaceSecPerKm,
-    maxSpeedMps: activity.maxSpeedMps,
-    elevationGainMeters: activity.elevationGainMeters,
-    elevationLossMeters: activity.elevationLossMeters,
-    calories: activity.calories,
-    heartRateAverage: activity.heartRateAverage,
-    heartRateMax: activity.heartRateMax,
-    heartRateMin: activity.heartRateMin,
-    autoPauseEnabled: activity.autoPauseEnabled,
-    voiceAnnouncementsEnabled: activity.voiceAnnouncementsEnabled,
-    hideStartEnd: activity.hideStartEnd,
-    privacyRadiusMeters: activity.privacyRadiusMeters,
-    caption: activity.caption,
-    photos: activity.photos ?? [],
-    challengeIds: activity.challengeIds,
-    antiCheatSignals: activity.antiCheatSignals ?? null,
-    leaderboardEligible: activity.leaderboardEligible,
-    leaderboardIneligibleReason: activity.leaderboardIneligibleReason,
-    route: shownRoute,
-    author: author[0] ?? null,
-    counts: {
-      likes: likeStats[0]?.count ?? 0,
-      comments: commentStats[0]?.count ?? 0,
-    },
-    viewer: {
-      liked: viewerLike.length > 0,
-      own: activity.userId === viewerId,
-    },
-    createdAt: activity.createdAt,
-    updatedAt: activity.updatedAt,
-  };
-}
-
-async function computeMetrics(activityId: number, activityType: string) {
-  const points = await db
-    .select({
-      sequence: paceActivityPointsTable.sequence,
-      latitude: paceActivityPointsTable.latitude,
-      longitude: paceActivityPointsTable.longitude,
-      timestamp: paceActivityPointsTable.timestamp,
-      altitude: paceActivityPointsTable.altitude,
-      speed: paceActivityPointsTable.speed,
-    })
-    .from(paceActivityPointsTable)
-    .where(eq(paceActivityPointsTable.activityId, activityId))
-    .orderBy(asc(paceActivityPointsTable.sequence));
-  if (!points.length) {
-    return {
-      routeGeometry: { points: [] as Array<{ latitude: number; longitude: number }> },
-      distanceMetersTotal: 0,
-      movingTimeSec: 0,
-      averageSpeedMps: 0,
-      averagePaceSecPerKm: 0,
-      maxSpeedMps: 0,
-      elevationGainMeters: 0,
-      elevationLossMeters: 0,
-      antiCheatSignals: null as null | Record<string, boolean>,
-      leaderboardEligible: true,
-      leaderboardIneligibleReason: null as string | null,
-    };
-  }
-  let distanceMetersTotal = 0;
-  let movingTimeMs = 0;
-  let maxSpeedMps = 0;
-  let elevationGainMeters = 0;
-  let elevationLossMeters = 0;
-  let suspiciousSpeed = false;
-  let suspiciousAcceleration = false;
-  let suspiciousTeleport = false;
-  let timestampInconsistency = false;
-  const speedLimit = activitySpeedLimit(activityType);
-  for (let index = 1; index < points.length; index += 1) {
-    const prev = points[index - 1];
-    const current = points[index];
-    const dtMs = current.timestamp - prev.timestamp;
-    if (dtMs <= 0) {
-      timestampInconsistency = true;
-      continue;
-    }
-    const segmentDistance = distanceMeters(
-      { latitude: prev.latitude, longitude: prev.longitude },
-      { latitude: current.latitude, longitude: current.longitude },
-    );
-    distanceMetersTotal += segmentDistance;
-    const estimatedSpeed = segmentDistance / (dtMs / 1000);
-    const speedValue = Number.isFinite(current.speed ?? NaN) ? Math.max(0, current.speed ?? 0) : estimatedSpeed;
-    maxSpeedMps = Math.max(maxSpeedMps, speedValue);
-    if (speedValue > speedLimit) suspiciousSpeed = true;
-    if (estimatedSpeed > 80) suspiciousTeleport = true;
-    if (estimatedSpeed > 0.6) movingTimeMs += dtMs;
-    const prevSpeed = Number.isFinite(prev.speed ?? NaN) ? Math.max(0, prev.speed ?? 0) : estimatedSpeed;
-    const acceleration = Math.abs(speedValue - prevSpeed) / (dtMs / 1000);
-    if (acceleration > 10) suspiciousAcceleration = true;
-    if (typeof prev.altitude === "number" && typeof current.altitude === "number") {
-      const delta = current.altitude - prev.altitude;
-      if (delta > 0) elevationGainMeters += delta;
-      if (delta < 0) elevationLossMeters += Math.abs(delta);
-    }
-  }
-  const movingTimeSec = Math.round(movingTimeMs / 1000);
-  const averageSpeedMps = movingTimeSec > 0 ? distanceMetersTotal / movingTimeSec : 0;
-  const averagePaceSecPerKm = distanceMetersTotal > 0 && movingTimeSec > 0
-    ? movingTimeSec / (distanceMetersTotal / 1000)
-    : 0;
-  const antiCheatSignals = suspiciousSpeed || suspiciousAcceleration || suspiciousTeleport || timestampInconsistency
-    ? { suspiciousSpeed, suspiciousAcceleration, suspiciousTeleport, timestampInconsistency }
-    : null;
-  const leaderboardEligible = antiCheatSignals === null;
-  return {
-    routeGeometry: {
-      points: points.map((point) => ({ latitude: point.latitude, longitude: point.longitude })),
-    },
-    distanceMetersTotal,
-    movingTimeSec,
-    averageSpeedMps,
-    averagePaceSecPerKm,
-    maxSpeedMps,
-    elevationGainMeters,
-    elevationLossMeters,
-    antiCheatSignals,
-    leaderboardEligible,
-    leaderboardIneligibleReason: leaderboardEligible ? null : "suspicious_gps_data",
-  };
-}
-
-router.get("/pace/home", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const [recent, active, challengeRows, nearbyTypes] = await Promise.all([
-    db
-      .select()
-      .from(paceActivitiesTable)
-      .where(and(eq(paceActivitiesTable.userId, userId), ne(paceActivitiesTable.lifecycleStatus, "discarded")))
-      .orderBy(desc(paceActivitiesTable.createdAt))
-      .limit(5),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(paceActivitiesTable)
-      .where(and(eq(paceActivitiesTable.userId, userId), inArray(paceActivitiesTable.lifecycleStatus, ["active", "paused"]))),
-    db
-      .select({
-        id: paceChallengesTable.id,
-        name: paceChallengesTable.name,
-        description: paceChallengesTable.description,
-        targetDistanceMeters: paceChallengesTable.targetDistanceMeters,
-        progressDistanceMeters: paceChallengeParticipantsTable.progressDistanceMeters,
-      })
-      .from(paceChallengesTable)
-      .leftJoin(
-        paceChallengeParticipantsTable,
-        and(
-          eq(paceChallengeParticipantsTable.challengeId, paceChallengesTable.id),
-          eq(paceChallengeParticipantsTable.userId, userId),
-        ),
-      )
-      .orderBy(desc(paceChallengesTable.updatedAt))
-      .limit(6),
-    db
-      .select({
-        activityType: paceActivitiesTable.activityType,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(paceActivitiesTable)
-      .where(
-        and(
-          ne(paceActivitiesTable.userId, userId),
-          eq(paceActivitiesTable.visibility, "public"),
-          inArray(paceActivitiesTable.lifecycleStatus, ["active", "paused"]),
-        ),
-      )
-      .groupBy(paceActivitiesTable.activityType),
-  ]);
-  const totalDistance = recent.reduce((sum, item) => sum + item.distanceMeters, 0);
-  const totalTime = recent.reduce((sum, item) => sum + item.movingTimeSec, 0);
-  res.json({
-    activeCount: active[0]?.count ?? 0,
-    recentDistanceMeters: totalDistance,
-    recentMovingTimeSec: totalTime,
-    recentActivities: await Promise.all(recent.map((item) => serializeActivity(userId, item))),
-    nearbyActivity: nearbyTypes.map((item) => ({ activityType: item.activityType, count: item.count })),
-    challenges: challengeRows.map((item) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      targetDistanceMeters: item.targetDistanceMeters,
-      progressDistanceMeters: item.progressDistanceMeters ?? 0,
-    })),
-  });
-});
-
-router.post("/pace/activities", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const parsed = createActivityInput.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid activity payload." });
-    return;
-  }
-  const input = parsed.data;
-  const [existing] = await db
-    .select()
-    .from(paceActivitiesTable)
-    .where(and(eq(paceActivitiesTable.userId, userId), eq(paceActivitiesTable.activityUuid, input.activityUuid)))
-    .limit(1);
-  if (existing) {
-    res.json(await serializeActivity(userId, existing));
-    return;
-  }
-  const now = Date.now();
-  const [created] = await db
-    .insert(paceActivitiesTable)
-    .values({
-      activityUuid: input.activityUuid,
-      userId,
-      activityType: input.activityType,
-      title: input.title?.trim() || `${input.activityType[0]?.toUpperCase() ?? "A"}${input.activityType.slice(1)} Activity`,
-      description: input.description?.trim() ?? "",
-      visibility: input.visibility,
-      lifecycleStatus: "active",
-      syncStatus: "pending",
-      autoPauseEnabled: input.autoPauseEnabled,
-      voiceAnnouncementsEnabled: input.voiceAnnouncementsEnabled,
-      equipment: input.equipment ?? null,
-      challengeIds: input.challengeIds,
-      hideStartEnd: input.hideStartEnd,
-      privacyRadiusMeters: input.privacyRadiusMeters,
-      startedAt: input.startedAt ?? now,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  res.status(201).json(await serializeActivity(userId, created));
-});
-
-router.put("/pace/activities/:activityId/start", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || activity.userId !== userId) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  const now = Date.now();
-  const [updated] = await db
-    .update(paceActivitiesTable)
-    .set({
-      lifecycleStatus: "active",
-      startedAt: activity.startedAt || now,
-      updatedAt: now,
-    })
-    .where(eq(paceActivitiesTable.id, activityId))
-    .returning();
-  res.json(await serializeActivity(userId, updated));
-});
-
-router.post("/pace/activities/:activityId/points", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const parsed = pointsBatchInput.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid points payload." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || activity.userId !== userId) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  if (activity.lifecycleStatus === "discarded" || activity.lifecycleStatus === "finished") {
-    res.status(409).json({ error: "This activity cannot accept more points." });
-    return;
-  }
-  const now = Date.now();
-  const pointRows = parsed.data.points.map((point) => ({
-    activityId,
-    sequence: point.sequence,
-    latitude: point.latitude,
-    longitude: point.longitude,
-    timestamp: point.timestamp,
-    accuracy: point.accuracy,
-    altitude: point.altitude,
-    speed: point.speed,
-    heading: point.heading,
-    createdAt: now,
+function suggestedCoordinates(center: Point, distance: number, seed: number): Point[] {
+  const radius = Math.max(0.008, distance / 111 / 2);
+  const longitudeRadius = radius / Math.max(0.25, Math.cos(center.latitude * Math.PI / 180));
+  const phase = seededNumber(seed) * Math.PI * 2;
+  const shape = [
+    [0, 0],
+    [0.85, 0.15],
+    [0.7, 0.8],
+    [-0.25, 1],
+    [-0.95, 0.45],
+    [-0.72, -0.35],
+    [0, 0],
+  ];
+  return shape.map(([x, y]) => ({
+    latitude: center.latitude + Math.sin(phase) * radius * 0.16 + y * radius - radius * 0.45,
+    longitude: center.longitude + Math.cos(phase) * longitudeRadius * 0.16 + x * longitudeRadius,
   }));
-  const inserted = await db
-    .insert(paceActivityPointsTable)
-    .values(pointRows)
-    .onConflictDoNothing({ target: [paceActivityPointsTable.activityId, paceActivityPointsTable.sequence] })
-    .returning({ sequence: paceActivityPointsTable.sequence });
-  const [updated] = await db
-    .update(paceActivitiesTable)
-    .set({
-      syncStatus: parsed.data.syncStatus ?? "uploading",
-      updatedAt: now,
-    })
-    .where(eq(paceActivitiesTable.id, activityId))
-    .returning();
-  res.json({
-    success: true,
-    accepted: inserted.length,
-    acceptedSequences: inserted.map((row) => row.sequence),
-    activity: await serializeActivity(userId, updated),
+}
+
+function buildSuggestions(center: Point | null) {
+  if (!center) return [];
+  const templates = [
+    { title: "The Reset Loop", activity: "run", distanceKm: 4.8, elevationM: 42, durationMin: 31, difficulty: "steady", description: "A balanced loop for clearing your head and finding a steady rhythm." },
+    { title: "Golden Hour Out-and-Back", activity: "walk", distanceKm: 3.2, elevationM: 18, durationMin: 42, difficulty: "easy", description: "An easy route with room to slow down, notice the neighborhood, and keep moving." },
+    { title: "The Long Way Home", activity: "bike", distanceKm: 12.6, elevationM: 118, durationMin: 45, difficulty: "hard", description: "A longer local push with enough elevation to make the finish feel earned." },
+    { title: "Parkline Climb", activity: "hike", distanceKm: 6.1, elevationM: 164, durationMin: 78, difficulty: "hard", description: "A scenic climb for a more deliberate day outside." },
+    { title: "Neighborhood Tempo", activity: "run", distanceKm: 7.4, elevationM: 63, durationMin: 44, difficulty: "steady", description: "A repeatable route that fits between real life and your next goal." },
+  ] as const;
+  const hourBucket = Math.floor(Date.now() / 3_600_000);
+  const baseSeed = Math.abs(Math.round(center.latitude * 97 + center.longitude * 193 + hourBucket));
+  const ordered = [...templates].sort((left, right) => seededNumber(baseSeed + left.distanceKm) - seededNumber(baseSeed + right.distanceKm));
+  return ordered.slice(0, 3).map((template, index) => ({
+    id: `suggested-${baseSeed}-${index}`,
+    suggested: true as const,
+    kind: "route" as const,
+    ...template,
+    locationLabel: "Near your current area",
+    distanceFromYouKm: 0,
+    routeCoordinates: suggestedCoordinates(center, template.distanceKm, baseSeed + index),
+  }));
+}
+
+async function blockedIds(viewerId: number) {
+  const rows = await db
+    .select()
+    .from(socialBlocksTable)
+    .where(orBlocks(viewerId));
+  return new Set(rows.map((row) => row.blockerId === viewerId ? row.blockedId : row.blockerId));
+}
+
+function orBlocks(viewerId: number) {
+  return sql`${socialBlocksTable.blockerId} = ${viewerId} OR ${socialBlocksTable.blockedId} = ${viewerId}`;
+}
+
+async function activeRoute(routeId: number) {
+  const [route] = await db
+    .select()
+    .from(paceRoutesTable)
+    .where(and(eq(paceRoutesTable.id, routeId), eq(paceRoutesTable.deleted, false)))
+    .limit(1);
+  return route;
+}
+
+async function serializeRoutes(routes: PaceRoute[], viewerId: number, origin: Point | null) {
+  if (!routes.length) return [];
+  const ids = routes.map((route) => route.id);
+  const authorIds = [...new Set(routes.map((route) => route.authorId))];
+  const [authors, likes, comments, gifts, viewerLikes] = await Promise.all([
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(inArray(usersTable.id, authorIds)),
+    db.select({ routeId: paceRouteLikesTable.routeId, count: sql<number>`count(*)` }).from(paceRouteLikesTable).where(inArray(paceRouteLikesTable.routeId, ids)).groupBy(paceRouteLikesTable.routeId),
+    db.select({ routeId: paceRouteCommentsTable.routeId, count: sql<number>`count(*)` }).from(paceRouteCommentsTable).where(and(inArray(paceRouteCommentsTable.routeId, ids), eq(paceRouteCommentsTable.deleted, false))).groupBy(paceRouteCommentsTable.routeId),
+    db.select({ routeId: paceRouteGiftsTable.routeId, count: sql<number>`count(*)` }).from(paceRouteGiftsTable).where(inArray(paceRouteGiftsTable.routeId, ids)).groupBy(paceRouteGiftsTable.routeId),
+    db.select({ routeId: paceRouteLikesTable.routeId }).from(paceRouteLikesTable).where(and(eq(paceRouteLikesTable.userId, viewerId), inArray(paceRouteLikesTable.routeId, ids))),
+  ]);
+  const authorById = new Map(authors.map((author) => [author.id, author]));
+  const countBy = (rows: Array<{ routeId: number; count: number }>) => new Map(rows.map((row) => [row.routeId, Number(row.count)]));
+  const liked = new Set(viewerLikes.map((row) => row.routeId));
+  const likeCounts = countBy(likes);
+  const commentCounts = countBy(comments);
+  const giftCounts = countBy(gifts);
+  return routes.map((route) => {
+    const author = authorById.get(route.authorId);
+    return {
+      id: route.id,
+      suggested: false,
+      title: route.title,
+      description: route.description,
+      kind: route.kind,
+      activity: route.activity,
+      difficulty: route.difficulty,
+      distanceKm: route.distanceKm,
+      elevationM: route.elevationM,
+      durationMin: route.durationMin,
+      startLatitude: route.startLatitude,
+      startLongitude: route.startLongitude,
+      locationLabel: route.locationLabel,
+      routeCoordinates: route.routeCoordinates,
+      createdAt: route.createdAt,
+      author: author
+        ? { id: author.id, name: author.name, username: usernameFor(author), avatarObjectPath: author.avatarObjectPath }
+        : { id: route.authorId, name: "Old Time member", username: `user${route.authorId}`, avatarObjectPath: null },
+      distanceFromYouKm: origin ? distanceKm(origin, { latitude: route.startLatitude, longitude: route.startLongitude }) : null,
+      counts: {
+        likes: likeCounts.get(route.id) ?? 0,
+        comments: commentCounts.get(route.id) ?? 0,
+        gifts: giftCounts.get(route.id) ?? 0,
+      },
+      viewer: { liked: liked.has(route.id), isOwner: route.authorId === viewerId },
+    };
   });
-});
-
-router.put("/pace/activities/:activityId/pause", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const parsed = pauseResumeInput.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid pause payload." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || activity.userId !== userId) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  const now = Date.now();
-  const [updated] = await db
-    .update(paceActivitiesTable)
-    .set({
-      lifecycleStatus: "paused",
-      syncStatus: parsed.data.syncStatus ?? activity.syncStatus,
-      updatedAt: now,
-    })
-    .where(eq(paceActivitiesTable.id, activityId))
-    .returning();
-  res.json(await serializeActivity(userId, updated));
-});
-
-router.put("/pace/activities/:activityId/resume", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const parsed = pauseResumeInput.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid resume payload." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || activity.userId !== userId) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  const now = Date.now();
-  const [updated] = await db
-    .update(paceActivitiesTable)
-    .set({
-      lifecycleStatus: "active",
-      syncStatus: parsed.data.syncStatus ?? activity.syncStatus,
-      updatedAt: now,
-    })
-    .where(eq(paceActivitiesTable.id, activityId))
-    .returning();
-  res.json(await serializeActivity(userId, updated));
-});
-
-router.put("/pace/activities/:activityId/finish", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const parsed = finishInput.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid finish payload." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || activity.userId !== userId) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  const endedAt = parsed.data.endedAt ?? Date.now();
-  const elapsedTimeSec = parsed.data.elapsedTimeSec ?? Math.max(0, Math.round((endedAt - activity.startedAt) / 1000));
-  const metrics = await computeMetrics(activityId, activity.activityType);
-  const [updated] = await db
-    .update(paceActivitiesTable)
-    .set({
-      visibility: parsed.data.visibility ?? activity.visibility,
-      lifecycleStatus: "finished",
-      syncStatus: "synced",
-      endedAt,
-      elapsedTimeSec,
-      movingTimeSec: metrics.movingTimeSec,
-      distanceMeters: metrics.distanceMetersTotal,
-      averageSpeedMps: metrics.averageSpeedMps,
-      averagePaceSecPerKm: metrics.averagePaceSecPerKm,
-      maxSpeedMps: metrics.maxSpeedMps,
-      elevationGainMeters: metrics.elevationGainMeters,
-      elevationLossMeters: metrics.elevationLossMeters,
-      routeGeometry: metrics.routeGeometry,
-      antiCheatSignals: metrics.antiCheatSignals,
-      leaderboardEligible: metrics.leaderboardEligible,
-      leaderboardIneligibleReason: metrics.leaderboardIneligibleReason,
-      caption: parsed.data.caption ?? activity.caption,
-      photos: parsed.data.photos ?? activity.photos,
-      calories: parsed.data.calories === undefined ? activity.calories : parsed.data.calories,
-      heartRateAverage: parsed.data.heartRateAverage === undefined ? activity.heartRateAverage : parsed.data.heartRateAverage,
-      heartRateMax: parsed.data.heartRateMax === undefined ? activity.heartRateMax : parsed.data.heartRateMax,
-      heartRateMin: parsed.data.heartRateMin === undefined ? activity.heartRateMin : parsed.data.heartRateMin,
-      updatedAt: Date.now(),
-    })
-    .where(eq(paceActivitiesTable.id, activityId))
-    .returning();
-  res.json(await serializeActivity(userId, updated));
-});
-
-router.delete("/pace/activities/:activityId", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || activity.userId !== userId) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  await db
-    .update(paceActivitiesTable)
-    .set({
-      lifecycleStatus: "discarded",
-      syncStatus: "failed",
-      updatedAt: Date.now(),
-    })
-    .where(eq(paceActivitiesTable.id, activityId));
-  res.json({ success: true });
-});
-
-router.post("/pace/activities/:activityId/sync-retry", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || activity.userId !== userId) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  const [updated] = await db
-    .update(paceActivitiesTable)
-    .set({ syncStatus: "pending", updatedAt: Date.now() })
-    .where(eq(paceActivitiesTable.id, activityId))
-    .returning();
-  res.json(await serializeActivity(userId, updated));
-});
-
-router.get("/pace/activities/:activityId", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  if (!(await canViewActivity(userId, activity))) {
-    res.status(403).json({ error: "You do not have access to this activity." });
-    return;
-  }
-  res.json(await serializeActivity(userId, activity));
-});
+}
 
 router.get("/pace/feed", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const limit = parseLimit(req.query.limit, 20, 50);
-  const queryLimit = Math.min(300, limit * 4);
-  const items = await db
-    .select()
-    .from(paceActivitiesTable)
-    .where(
-      and(
-        eq(paceActivitiesTable.lifecycleStatus, "finished"),
-        or(eq(paceActivitiesTable.visibility, "public"), eq(paceActivitiesTable.userId, userId)),
-      ),
-    )
-    .orderBy(desc(paceActivitiesTable.createdAt))
-    .limit(queryLimit);
-  const visible = [] as typeof items;
-  // eslint-disable-next-line no-restricted-syntax
-  for (const item of items) {
-    // eslint-disable-next-line no-await-in-loop
-    if (await canViewActivity(userId, item)) visible.push(item);
-    if (visible.length >= limit) break;
-  }
-  res.json({ items: await Promise.all(visible.map((item) => serializeActivity(userId, item))) });
-});
-
-router.get("/pace/history", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const limit = parseLimit(req.query.limit, 30, 100);
-  let activityType: string | null = null;
-  if (typeof req.query.activityType === "string") {
-    const parsedType = activityTypes.safeParse(req.query.activityType);
-    if (!parsedType.success) {
-      res.status(400).json({ error: "Invalid activity type." });
-      return;
-    }
-    activityType = parsedType.data;
-  }
-  const query = db
-    .select()
-    .from(paceActivitiesTable)
-    .where(
-      and(
-        eq(paceActivitiesTable.userId, userId),
-        ne(paceActivitiesTable.lifecycleStatus, "discarded"),
-        activityType ? eq(paceActivitiesTable.activityType, activityType) : sql`true`,
-      ),
-    )
-    .orderBy(desc(paceActivitiesTable.createdAt))
-    .limit(limit);
-  const items = await query;
-  res.json({ items: await Promise.all(items.map((item) => serializeActivity(userId, item))) });
-});
-
-async function profileHandler(req: Request, res: Response): Promise<void> {
   const viewerId = await requireChatAuth(req, res);
   if (viewerId === null) return;
-  const targetId = req.params.userId ? parseId(req.params.userId) : viewerId;
-  if (!targetId) {
-    res.status(400).json({ error: "Invalid user id." });
+  const query = z.object({
+    latitude: z.coerce.number().finite().min(-90).max(90).optional(),
+    longitude: z.coerce.number().finite().min(-180).max(180).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(30),
+  }).safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Valid location coordinates are required." });
     return;
   }
-  const [user] = await db
-    .select({
-      id: usersTable.id,
-      name: usersTable.name,
-      username: usersTable.username,
-      bio: usersTable.bio,
-      avatarObjectPath: usersTable.avatarObjectPath,
-    })
-    .from(usersTable)
-    .where(eq(usersTable.id, targetId))
-    .limit(1);
-  if (!user) {
-    res.status(404).json({ error: "User not found." });
-    return;
-  }
-  const activities = await db
-    .select()
-    .from(paceActivitiesTable)
-    .where(and(eq(paceActivitiesTable.userId, targetId), eq(paceActivitiesTable.lifecycleStatus, "finished")))
-    .orderBy(desc(paceActivitiesTable.createdAt))
-    .limit(40);
-  const visible = [] as typeof activities;
-  // eslint-disable-next-line no-restricted-syntax
-  for (const item of activities) {
-    // eslint-disable-next-line no-await-in-loop
-    if (await canViewActivity(viewerId, item)) visible.push(item);
-  }
-  const totalDistanceMeters = visible.reduce((sum, item) => sum + item.distanceMeters, 0);
-  const totalMovingTimeSec = visible.reduce((sum, item) => sum + item.movingTimeSec, 0);
-  const personalBest = visible.reduce((best, item) => {
-    if (!best) return item;
-    if (item.distanceMeters > best.distanceMeters) return item;
-    return best;
-  }, visible[0]);
-  res.json({
-    user,
-    stats: {
-      totalActivities: visible.length,
-      totalDistanceMeters,
-      totalMovingTimeSec,
-      longestActivityMeters: personalBest?.distanceMeters ?? 0,
-      bestPaceSecPerKm: visible.reduce((best, item) => {
-        if (!item.averagePaceSecPerKm) return best;
-        if (best === 0) return item.averagePaceSecPerKm;
-        return Math.min(best, item.averagePaceSecPerKm);
-      }, 0),
-    },
-    recent: await Promise.all(visible.slice(0, 10).map((item) => serializeActivity(viewerId, item))),
-  });
-}
+  const origin = query.data.latitude !== undefined && query.data.longitude !== undefined
+    ? { latitude: query.data.latitude, longitude: query.data.longitude }
+    : null;
+  const blocked = await blockedIds(viewerId);
+  const routes = await db.select().from(paceRoutesTable).where(eq(paceRoutesTable.deleted, false)).orderBy(desc(paceRoutesTable.createdAt)).limit(query.data.limit * 2);
+  const visible = routes
+    .filter((route) => !blocked.has(route.authorId))
+    .filter((route) => !origin || distanceKm(origin, { latitude: route.startLatitude, longitude: route.startLongitude }) <= 80)
+    .slice(0, query.data.limit);
+  res.json({ items: await serializeRoutes(visible, viewerId, origin), suggestions: buildSuggestions(origin) });
+});
 
-router.get("/pace/profile", profileHandler);
-router.get("/pace/profile/:userId", profileHandler);
+router.post("/pace/routes", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const parsed = routeInput.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Add a title, activity, distance, location, and route before sharing." });
+    return;
+  }
+  const now = Date.now();
+  const [route] = await db.insert(paceRoutesTable).values({ ...parsed.data, authorId: viewerId, createdAt: now, updatedAt: now }).returning();
+  res.status(201).json((await serializeRoutes([route], viewerId, { latitude: route.startLatitude, longitude: route.startLongitude }))[0]);
+});
 
-router.put("/pace/activities/:activityId/like", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || !(await canViewActivity(userId, activity))) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  await db
-    .insert(paceActivityLikesTable)
-    .values({ activityId, userId, createdAt: Date.now() })
-    .onConflictDoNothing({ target: [paceActivityLikesTable.activityId, paceActivityLikesTable.userId] });
+router.put("/pace/routes/:routeId/like", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const routeId = parseId(req.params.routeId);
+  if (viewerId === null || routeId === null) return;
+  const route = await activeRoute(routeId);
+  if (!route) { res.status(404).json({ error: "Route not found." }); return; }
+  await db.insert(paceRouteLikesTable).values({ routeId, userId: viewerId, createdAt: Date.now() }).onConflictDoNothing();
   res.json({ success: true, active: true });
 });
 
-router.delete("/pace/activities/:activityId/like", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || !(await canViewActivity(userId, activity))) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  await db
-    .delete(paceActivityLikesTable)
-    .where(and(eq(paceActivityLikesTable.activityId, activityId), eq(paceActivityLikesTable.userId, userId)));
+router.delete("/pace/routes/:routeId/like", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const routeId = parseId(req.params.routeId);
+  if (viewerId === null || routeId === null) return;
+  await db.delete(paceRouteLikesTable).where(and(eq(paceRouteLikesTable.routeId, routeId), eq(paceRouteLikesTable.userId, viewerId)));
   res.json({ success: true, active: false });
 });
 
-router.get("/pace/activities/:activityId/comments", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || !(await canViewActivity(userId, activity))) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
+router.get("/pace/routes/:routeId/comments", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const routeId = parseId(req.params.routeId);
+  if (viewerId === null || routeId === null) return;
+  if (!await activeRoute(routeId)) { res.status(404).json({ error: "Route not found." }); return; }
   const rows = await db
     .select({
-      id: paceActivityCommentsTable.id,
-      parentId: paceActivityCommentsTable.parentId,
-      content: paceActivityCommentsTable.content,
-      createdAt: paceActivityCommentsTable.createdAt,
-      authorId: usersTable.id,
+      id: paceRouteCommentsTable.id,
+      routeId: paceRouteCommentsTable.routeId,
+      authorId: paceRouteCommentsTable.authorId,
+      content: paceRouteCommentsTable.content,
+      createdAt: paceRouteCommentsTable.createdAt,
       authorName: usersTable.name,
-      authorUsername: usersTable.username,
-      authorAvatarObjectPath: usersTable.avatarObjectPath,
-    })
-    .from(paceActivityCommentsTable)
-    .innerJoin(usersTable, eq(usersTable.id, paceActivityCommentsTable.authorId))
-    .where(and(eq(paceActivityCommentsTable.activityId, activityId), eq(paceActivityCommentsTable.deleted, false)))
-    .orderBy(asc(paceActivityCommentsTable.createdAt));
-  res.json(
-    rows.map((item) => ({
-      id: item.id,
-      activityId,
-      parentId: item.parentId,
-      content: item.content,
-      createdAt: item.createdAt,
-      author: {
-        id: item.authorId,
-        name: item.authorName,
-        username: item.authorUsername,
-        avatarObjectPath: item.authorAvatarObjectPath,
-      },
-    })),
-  );
-});
-
-router.post("/pace/activities/:activityId/comments", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const activityId = parseId(req.params.activityId);
-  if (!activityId) {
-    res.status(400).json({ error: "Invalid activity id." });
-    return;
-  }
-  const parsed = commentInput.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid comment payload." });
-    return;
-  }
-  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
-  if (!activity || !(await canViewActivity(userId, activity))) {
-    res.status(404).json({ error: "Activity not found." });
-    return;
-  }
-  if (parsed.data.parentId) {
-    const [parent] = await db
-      .select({ id: paceActivityCommentsTable.id })
-      .from(paceActivityCommentsTable)
-      .where(
-        and(
-          eq(paceActivityCommentsTable.id, parsed.data.parentId),
-          eq(paceActivityCommentsTable.activityId, activityId),
-          eq(paceActivityCommentsTable.deleted, false),
-        ),
-      )
-      .limit(1);
-    if (!parent) {
-      res.status(404).json({ error: "Parent comment not found." });
-      return;
-    }
-  }
-  const [created] = await db
-    .insert(paceActivityCommentsTable)
-    .values({
-      activityId,
-      authorId: userId,
-      parentId: parsed.data.parentId ?? null,
-      content: parsed.data.content,
-      createdAt: Date.now(),
-      deleted: false,
-    })
-    .returning();
-  const [author] = await db
-    .select({
-      id: usersTable.id,
-      name: usersTable.name,
       username: usersTable.username,
-      avatarObjectPath: usersTable.avatarObjectPath,
+      likeCount: sql<number>`count(${paceCommentLikesTable.commentId})`,
     })
-    .from(usersTable)
-    .where(eq(usersTable.id, userId))
-    .limit(1);
-  res.status(201).json({
-    id: created.id,
-    activityId,
-    parentId: created.parentId,
-    content: created.content,
-    createdAt: created.createdAt,
-    author,
-  });
+    .from(paceRouteCommentsTable)
+    .innerJoin(usersTable, eq(usersTable.id, paceRouteCommentsTable.authorId))
+    .leftJoin(paceCommentLikesTable, eq(paceCommentLikesTable.commentId, paceRouteCommentsTable.id))
+    .where(and(eq(paceRouteCommentsTable.routeId, routeId), eq(paceRouteCommentsTable.deleted, false)))
+    .groupBy(paceRouteCommentsTable.id, usersTable.id)
+    .orderBy(asc(paceRouteCommentsTable.createdAt));
+  const viewerLikes = await db.select({ commentId: paceCommentLikesTable.commentId }).from(paceCommentLikesTable).where(and(eq(paceCommentLikesTable.userId, viewerId), inArray(paceCommentLikesTable.commentId, rows.map((row) => row.id))));
+  const liked = new Set(viewerLikes.map((row) => row.commentId));
+  res.json({ items: rows.map((row) => ({ id: row.id, routeId: row.routeId, content: row.content, createdAt: row.createdAt, author: { id: row.authorId, name: row.authorName, username: usernameFor({ id: row.authorId, name: row.authorName, username: row.username }) }, likes: Number(row.likeCount), liked: liked.has(row.id) })) });
 });
 
-router.get("/pace/segments", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const limit = parseLimit(req.query.limit, 20, 100);
-  const items = await db
-    .select()
-    .from(paceSegmentsTable)
-    .where(eq(paceSegmentsTable.visibility, "public"))
-    .orderBy(desc(paceSegmentsTable.updatedAt))
-    .limit(limit);
-  res.json({ items });
+router.post("/pace/routes/:routeId/comments", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const routeId = parseId(req.params.routeId);
+  const parsed = commentInput.safeParse(req.body);
+  if (viewerId === null || routeId === null || !parsed.success) return;
+  if (!await activeRoute(routeId)) { res.status(404).json({ error: "Route not found." }); return; }
+  const [comment] = await db.insert(paceRouteCommentsTable).values({ routeId, authorId: viewerId, content: parsed.data.content, createdAt: Date.now() }).returning();
+  const [author] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, viewerId)).limit(1);
+  res.status(201).json({ id: comment.id, routeId, content: comment.content, createdAt: comment.createdAt, author: { id: author.id, name: author.name, username: usernameFor(author) }, likes: 0, liked: false });
 });
 
-router.get("/pace/segments/:segmentId/leaderboard", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const segmentId = parseId(req.params.segmentId);
-  if (!segmentId) {
-    res.status(400).json({ error: "Invalid segment id." });
+router.put("/pace/comments/:commentId/like", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const commentId = parseId(req.params.commentId);
+  if (viewerId === null || commentId === null) return;
+  await db.insert(paceCommentLikesTable).values({ commentId, userId: viewerId, createdAt: Date.now() }).onConflictDoNothing();
+  res.json({ success: true, active: true });
+});
+
+router.delete("/pace/comments/:commentId/like", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const commentId = parseId(req.params.commentId);
+  if (viewerId === null || commentId === null) return;
+  await db.delete(paceCommentLikesTable).where(and(eq(paceCommentLikesTable.commentId, commentId), eq(paceCommentLikesTable.userId, viewerId)));
+  res.json({ success: true, active: false });
+});
+
+router.post("/pace/routes/:routeId/gifts", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const routeId = parseId(req.params.routeId);
+  const parsed = giftInput.safeParse(req.body);
+  if (viewerId === null || routeId === null || !parsed.success) return;
+  const route = await activeRoute(routeId);
+  if (!route || route.authorId === viewerId) {
+    res.status(400).json({ error: "Choose a route shared by another Pace member." });
     return;
   }
-  if (req.query.scope === "local") {
-    res.status(400).json({ error: "Local scope is not available yet." });
-    return;
-  }
-  const scope = req.query.scope === "friends" ? "friends" : "all";
-  const rows = await db
-    .select({
-      userId: paceSegmentEffortsTable.userId,
-      elapsedMs: sql<number>`min(${paceSegmentEffortsTable.elapsedMs})::int`,
-      username: usersTable.username,
-      name: usersTable.name,
-      avatarObjectPath: usersTable.avatarObjectPath,
-    })
-    .from(paceSegmentEffortsTable)
-    .innerJoin(usersTable, eq(usersTable.id, paceSegmentEffortsTable.userId))
-    .where(and(eq(paceSegmentEffortsTable.segmentId, segmentId), eq(paceSegmentEffortsTable.suspicious, false)))
-    .groupBy(paceSegmentEffortsTable.userId, usersTable.username, usersTable.name, usersTable.avatarObjectPath)
-    .orderBy(sql`min(${paceSegmentEffortsTable.elapsedMs})`)
-    .limit(100);
-  const entries = scope === "friends"
-    ? (await (async () => {
-      const following = await db
-        .select({ followingId: socialFollowsTable.followingId })
-        .from(socialFollowsTable)
-        .where(eq(socialFollowsTable.followerId, userId));
-      const ids = new Set(following.map((item) => item.followingId));
-      return rows.filter((item) => ids.has(item.userId) || item.userId === userId);
-    })())
-    : rows;
-  res.json({
-    scope,
-    entries: entries.map((item, index) => ({
-      rank: index + 1,
-      user: {
-        id: item.userId,
-        username: item.username,
-        name: item.name,
-        avatarObjectPath: item.avatarObjectPath,
-      },
-      elapsedMs: item.elapsedMs,
-    })),
+  const coins = giftPrices[parsed.data.gift];
+  const gold = Math.floor(coins * 0.8);
+  const result = await db.transaction(async (tx) => {
+    await tx.insert(currentEventWalletsTable).values({ userId: viewerId, updatedAt: Date.now() }).onConflictDoNothing();
+    await tx.insert(currentEventWalletsTable).values({ userId: route.authorId, updatedAt: Date.now() }).onConflictDoNothing();
+    const [debited] = await tx.update(currentEventWalletsTable)
+      .set({ coins: sql`${currentEventWalletsTable.coins} - ${coins}`, updatedAt: Date.now() })
+      .where(and(eq(currentEventWalletsTable.userId, viewerId), gte(currentEventWalletsTable.coins, coins)))
+      .returning({ coins: currentEventWalletsTable.coins });
+    if (!debited) return null;
+    await tx.update(currentEventWalletsTable)
+      .set({ gold: sql`${currentEventWalletsTable.gold} + ${gold}`, updatedAt: Date.now() })
+      .where(eq(currentEventWalletsTable.userId, route.authorId));
+    const [gift] = await tx.insert(paceRouteGiftsTable).values({ routeId, senderId: viewerId, recipientId: route.authorId, gift: parsed.data.gift, coins, gold, createdAt: Date.now() }).returning();
+    return { gift, coinsRemaining: debited.coins };
   });
+  if (!result) { res.status(402).json({ error: "You need more Coins to send this gift." }); return; }
+  res.json({ success: true, gift: parsed.data.gift, coinsSpent: coins, goldEarned: gold, coinsRemaining: result.coinsRemaining });
 });
-
-router.get("/pace/challenges", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const items = await db
-    .select({
-      id: paceChallengesTable.id,
-      slug: paceChallengesTable.slug,
-      name: paceChallengesTable.name,
-      description: paceChallengesTable.description,
-      activityType: paceChallengesTable.activityType,
-      targetDistanceMeters: paceChallengesTable.targetDistanceMeters,
-      targetCount: paceChallengesTable.targetCount,
-      visibility: paceChallengesTable.visibility,
-      startAt: paceChallengesTable.startAt,
-      endAt: paceChallengesTable.endAt,
-      participantProgress: paceChallengeParticipantsTable.progressDistanceMeters,
-      participantCountProgress: paceChallengeParticipantsTable.progressCount,
-      participantCompletedAt: paceChallengeParticipantsTable.completedAt,
-    })
-    .from(paceChallengesTable)
-    .where(eq(paceChallengesTable.visibility, "public"))
-    .leftJoin(
-      paceChallengeParticipantsTable,
-      and(
-        eq(paceChallengeParticipantsTable.challengeId, paceChallengesTable.id),
-        eq(paceChallengeParticipantsTable.userId, userId),
-      ),
-    )
-    .orderBy(desc(paceChallengesTable.updatedAt))
-    .limit(100);
-  res.json({
-    items: items.map((item) => ({
-      id: item.id,
-      slug: item.slug,
-      name: item.name,
-      description: item.description,
-      activityType: item.activityType,
-      targetDistanceMeters: item.targetDistanceMeters,
-      targetCount: item.targetCount,
-      visibility: item.visibility,
-      startAt: item.startAt,
-      endAt: item.endAt,
-      progressDistanceMeters: item.participantProgress ?? 0,
-      progressCount: item.participantCountProgress ?? 0,
-      completedAt: item.participantCompletedAt,
-    })),
-  });
-});
-
-router.post("/pace/challenges/:challengeId/join", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const challengeId = parseId(req.params.challengeId);
-  if (!challengeId) {
-    res.status(400).json({ error: "Invalid challenge id." });
-    return;
-  }
-  const [challenge] = await db
-    .select({ id: paceChallengesTable.id })
-    .from(paceChallengesTable)
-    .where(eq(paceChallengesTable.id, challengeId))
-    .limit(1);
-  if (!challenge) {
-    res.status(404).json({ error: "Challenge not found." });
-    return;
-  }
-  await db
-    .insert(paceChallengeParticipantsTable)
-    .values({
-      challengeId,
-      userId,
-      progressDistanceMeters: 0,
-      progressCount: 0,
-      updatedAt: Date.now(),
-    })
-    .onConflictDoNothing({ target: [paceChallengeParticipantsTable.challengeId, paceChallengeParticipantsTable.userId] });
-  res.json({ success: true });
-});
-
-router.get("/pace/challenges/:challengeId/leaderboard", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const challengeId = parseId(req.params.challengeId);
-  if (!challengeId) {
-    res.status(400).json({ error: "Invalid challenge id." });
-    return;
-  }
-  const scope = req.query.scope === "friends" ? "friends" : "all";
-  const rows = await db
-    .select({
-      userId: paceChallengeParticipantsTable.userId,
-      progressDistanceMeters: paceChallengeParticipantsTable.progressDistanceMeters,
-      progressCount: paceChallengeParticipantsTable.progressCount,
-      completedAt: paceChallengeParticipantsTable.completedAt,
-      username: usersTable.username,
-      name: usersTable.name,
-      avatarObjectPath: usersTable.avatarObjectPath,
-    })
-    .from(paceChallengeParticipantsTable)
-    .innerJoin(usersTable, eq(usersTable.id, paceChallengeParticipantsTable.userId))
-    .where(eq(paceChallengeParticipantsTable.challengeId, challengeId))
-    .orderBy(desc(paceChallengeParticipantsTable.progressDistanceMeters), asc(paceChallengeParticipantsTable.updatedAt))
-    .limit(200);
-  const entries = scope === "friends"
-    ? (await (async () => {
-      const following = await db
-        .select({ followingId: socialFollowsTable.followingId })
-        .from(socialFollowsTable)
-        .where(eq(socialFollowsTable.followerId, userId));
-      const ids = new Set(following.map((item) => item.followingId));
-      return rows.filter((item) => ids.has(item.userId) || item.userId === userId);
-    })())
-    : rows;
-  res.json({
-    scope,
-    entries: entries.map((item, index) => ({
-      rank: index + 1,
-      user: {
-        id: item.userId,
-        username: item.username,
-        name: item.name,
-        avatarObjectPath: item.avatarObjectPath,
-      },
-      progressDistanceMeters: item.progressDistanceMeters,
-      progressCount: item.progressCount,
-      completedAt: item.completedAt,
-    })),
-  });
-});
-
-async function liveNowAggregates(req: Request, res: Response): Promise<void> {
-  const userId = await requireChatAuth(req, res);
-  if (userId === null) return;
-  const rows = await db
-    .select({
-      activityType: paceActivitiesTable.activityType,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(paceActivitiesTable)
-    .where(
-      and(
-        ne(paceActivitiesTable.userId, userId),
-        eq(paceActivitiesTable.visibility, "public"),
-        inArray(paceActivitiesTable.lifecycleStatus, ["active", "paused"]),
-      ),
-    )
-    .groupBy(paceActivitiesTable.activityType);
-  res.json({
-    items: rows.map((row) => ({ activityType: row.activityType, count: row.count })),
-  });
-}
-
-router.get("/pace/live-now", liveNowAggregates);
-router.get("/pace/nearby", liveNowAggregates);
 
 export default router;

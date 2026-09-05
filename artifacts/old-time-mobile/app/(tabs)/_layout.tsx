@@ -12,6 +12,7 @@ import { t } from '@/lib/i18n';
 
 const tabDefinitions = {
   updates: { label: 'Updates', icon: 'play-circle-outline', activeIcon: 'play-circle' },
+  pace: { label: 'Pace', icon: 'footsteps-outline', activeIcon: 'footsteps' },
   map: { label: 'Map', icon: 'location-outline', activeIcon: 'location' },
   index: { label: 'Chat', icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
   calls: { label: 'Calls', icon: 'call-outline', activeIcon: 'call' },
@@ -47,7 +48,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               key={route.key}
               accessibilityRole="tab"
               accessibilityState={focused ? { selected: true } : {}}
-               accessibilityLabel={descriptors[route.key]?.options.tabBarAccessibilityLabel ?? t(settings.language, labelKey as 'updates' | 'map' | 'chat' | 'calls' | 'settings')}
+                accessibilityLabel={descriptors[route.key]?.options.tabBarAccessibilityLabel ?? t(settings.language, labelKey as 'updates' | 'pace' | 'map' | 'chat' | 'calls' | 'settings')}
               onPress={onPress}
               onLongPress={onLongPress}
               style={({ pressed }) => [styles.tabPressable, { opacity: pressed ? 0.66 : 1 }]}
@@ -58,7 +59,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                   size={focused ? 22 : 21}
                   color={focused ? colors.primary : colors.mutedForeground}
                 />
-                 <Text style={[styles.tabLabel, { color: focused ? colors.primary : colors.mutedForeground }]}>{t(settings.language, labelKey as 'updates' | 'map' | 'chat' | 'calls' | 'settings')}</Text>
+                  <Text style={[styles.tabLabel, { color: focused ? colors.primary : colors.mutedForeground }]}>{t(settings.language, labelKey as 'updates' | 'pace' | 'map' | 'chat' | 'calls' | 'settings')}</Text>
               </View>
             </Pressable>
           );
@@ -83,6 +84,7 @@ export default function TabLayout() {
   if (!session) return <Redirect href="/" />;
   return <Tabs tabBar={(props) => <FloatingTabBar {...props} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.background } }}>
     <Tabs.Screen name="updates" options={{ title: 'Updates', tabBarIcon: ({ color, size }) => <Ionicons name="play-circle-outline" color={color} size={size} /> }} />
+    <Tabs.Screen name="pace" options={{ title: 'Pace', tabBarIcon: ({ color, size }) => <Ionicons name="footsteps-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="map" options={{ title: 'Map', tabBarIcon: ({ color, size }) => <Ionicons name="location-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="index" options={{ title: 'Chat', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="calls" options={{ title: 'Calls', tabBarIcon: ({ color, size }) => <Ionicons name="call-outline" color={color} size={size} /> }} />

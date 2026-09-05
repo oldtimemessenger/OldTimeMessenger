@@ -1,5 +1,6 @@
 export type TranslationKey =
   | 'updates'
+  | 'pace'
   | 'map'
   | 'chat'
   | 'calls'
@@ -30,6 +31,7 @@ export type TranslationKey =
 const translations: Record<string, Partial<Record<TranslationKey, string>>> = {
   English: {
     updates: 'Updates',
+    pace: 'Pace',
     map: 'Map',
     chat: 'Chat',
     calls: 'Calls',
@@ -59,6 +61,7 @@ const translations: Record<string, Partial<Record<TranslationKey, string>>> = {
   },
   'Haitian Creole': {
     updates: 'Mizajou',
+    pace: 'Pase',
     map: 'Kat',
     chat: 'Chat',
     calls: 'Apèl',
@@ -88,6 +91,7 @@ const translations: Record<string, Partial<Record<TranslationKey, string>>> = {
   },
   French: {
     updates: 'Actualités',
+    pace: 'Pace',
     map: 'Carte',
     chat: 'Discussions',
     calls: 'Appels',
