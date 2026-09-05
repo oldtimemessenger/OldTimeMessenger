@@ -146,7 +146,7 @@ export default function WalletScreen() {
         </Pressable>
       )}
       right={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing || !session?.authToken} onPress={() => { void handleRefresh(); }} style={({ pressed }) => [{ opacity: loading || refreshing || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing || revenueCat.purchasing || restoring || !session?.authToken} onPress={() => { void handleRefresh(); }} style={({ pressed }) => [{ opacity: loading || refreshing || revenueCat.purchasing || restoring || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
           <Text style={[styles.refreshText, { color: colors.primary }]}>{refreshing ? 'Refreshing…' : 'Refresh'}</Text>
         </Pressable>
       )}
@@ -170,7 +170,9 @@ export default function WalletScreen() {
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending gold</Text>
                 </View>
               </View>
-              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.loading || revenueCat.purchasing || restoring || !session?.authToken} />
+              <View style={styles.restoreButtonWrap}>
+                <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.loading || revenueCat.purchasing || restoring || !session?.authToken} />
+              </View>
               {!session?.authToken ? <Text style={[styles.authHint, { color: colors.mutedForeground }]}>Sign in again to restore purchases and refresh this wallet.</Text> : null}
             </>
           )}
@@ -295,6 +297,10 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 12,
+    marginTop: 4,
+  },
+  restoreButtonWrap: {
+    width: '100%',
     marginTop: 4,
   },
   authHint: {
