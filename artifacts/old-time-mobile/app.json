@@ -18,9 +18,17 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.oldtime.messenger",
+      "appleTeamId": "FC6ZRKNS2N",
       "usesAppleSignIn": true,
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.oldtime.messenger"
+        ]
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "RTCAppGroupIdentifier": "group.com.oldtime.messenger",
+        "RTCScreenSharingExtension": "com.oldtime.messenger.broadcast",
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
@@ -37,6 +45,9 @@
     },
     "android": {
       "package": "com.oldtime.messenger",
+      "permissions": [
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/old-time-icon.png",
         "backgroundColor": "#F2F2F7"
@@ -75,6 +86,7 @@
           }
         ],
        "@config-plugins/react-native-webrtc",
+       "@bacons/apple-targets",
       "expo-video",
       [
         "react-native-google-mobile-ads",
