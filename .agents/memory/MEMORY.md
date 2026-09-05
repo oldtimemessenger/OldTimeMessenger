@@ -24,3 +24,5 @@
 - [Photo-to-chat handoff](photo-chat-handoff.md) — preserve captured media through both existing/new chat branches and never block its draft on message history.
 - [LiveKit mobile screen sharing](livekit-mobile-screen-sharing.md) — Android uses Media Projection; iPhone needs a signed ReplayKit broadcast extension before exposing Share.
 - [Pace domain boundary](pace-domain-boundary.md) — Pace owns route activity and community interactions while reusing the existing Coins/Gold wallet ledger.
+- [Atmosphere honesty boundary](atmosphere-honesty-boundary.md) — generated discovery may fill quiet surfaces but must never impersonate people, engagement, or LIVE activity.
+- [Pace discovery history](pace-discovery-history.md) — generated Pace route ideas need per-user impression history and deterministic exclusions to avoid repeating combinations.

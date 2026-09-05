@@ -1,0 +1,1653 @@
+PACE
+
+Activity Tracking + Social Fitness + Challenges + Location Competition
+
+1. PRODUCT CONCEPT
+
+PACE is a social activity-tracking feature where users can record physical activities, automatically capture their route and performance data, share activities with friends/followers, discover activity happening around them, compete on routes and segments, participate in challenges, earn rewards, and build a personal activity history.
+
+PACE should feel like:
+
+Fitness tracker + social network + GPS map + competition + achievements.
+
+The core loop is:
+
+START → MOVE → TRACK → FINISH → SHARE → DISCOVER → COMPETE → IMPROVE → RETURN
+
+PACE should not feel like a separate generic fitness app. It should integrate naturally with the existing map/social experience of the application.
+
+⸻
+
+2. PACE HOME
+
+Create a dedicated PACE section.
+
+The main screen should contain:
+
+Header
+
+* PACE logo/name
+* Profile/avatar
+* Settings
+* Activity history shortcut
+* Notifications
+
+Main actions
+
+Large primary button:
+
+START ACTIVITY
+
+Below it:
+
+* Recent activities
+* Friends/followers’ activities
+* Nearby activity
+* Challenges
+* Personal records
+* Suggested routes
+* Leaderboards
+
+⸻
+
+3. START ACTIVITY
+
+When the user taps START ACTIVITY, display an activity-selection screen.
+
+Activity types should include:
+
+* Running
+* Walking
+* Cycling
+* Hiking
+* Jogging
+* Other
+
+The architecture should allow additional activity types to be added later without rebuilding the entire system.
+
+Each activity type can have different metrics.
+
+Example:
+
+Running
+
+* Distance
+* Duration
+* Pace
+* Speed
+* Elevation
+* Calories
+* Heart rate if available
+* GPS route
+
+Cycling
+
+* Distance
+* Duration
+* Speed
+* Elevation
+* Calories
+* Heart rate
+* Cadence if supported
+* Power if supported
+* GPS route
+
+Walking
+
+* Distance
+* Duration
+* Pace
+* Steps if available
+* Elevation
+* Calories
+* GPS route
+
+⸻
+
+4. PRE-ACTIVITY SCREEN
+
+Before starting:
+
+Display:
+
+Activity: Running
+
+GPS: Searching…
+
+Location permission: Required
+
+Current location: Map preview
+
+Optional controls:
+
+* Auto pause
+* Voice announcements
+* Activity visibility
+* Equipment
+* Shoes/bike/etc.
+* Challenge selection
+
+Primary button:
+
+START
+
+The app should not begin recording until GPS/location permissions and required tracking conditions are satisfied.
+
+If GPS is weak:
+
+GPS signal is weak. Move somewhere with a clearer view of the sky.
+
+Allow the user to start anyway if technically possible.
+
+⸻
+
+5. LIVE ACTIVITY SCREEN
+
+Once START is pressed, the app enters active tracking mode.
+
+The screen should show:
+
+Top
+
+Activity type
+
+Center
+
+Large primary metric:
+
+PACE
+
+Example:
+
+8:42 /mi
+
+Secondary metrics:
+
+2.43 MI
+
+21:08
+
+6.9 MPH
+
+Map
+
+Display the user’s live GPS route.
+
+The current location should continuously update.
+
+Draw the traveled route as a line.
+
+Show the user’s current position.
+
+Automatically keep the user’s position visible unless the user manually explores the map.
+
+⸻
+
+6. LIVE GPS TRACKING
+
+PACE should continuously collect location points while an activity is active.
+
+Each point should contain, where available:
+
+* Latitude
+* Longitude
+* Timestamp
+* Accuracy
+* Altitude
+* Speed
+* Heading
+
+Do not unnecessarily upload every GPS point to the backend.
+
+Use efficient batching.
+
+The application should prioritize:
+
+Battery efficiency + tracking accuracy + offline resilience.
+
+If the network disappears:
+
+DO NOT STOP THE ACTIVITY.
+
+Continue tracking locally.
+
+When connectivity returns, synchronize the activity.
+
+⸻
+
+7. AUTO PAUSE
+
+If Auto Pause is enabled:
+
+When the user stops moving for a configured period:
+
+PAUSED
+
+When movement resumes:
+
+RESUMING…
+
+Then automatically continue tracking.
+
+The user should also be able to manually pause.
+
+⸻
+
+8. PAUSE SCREEN
+
+Display:
+
+PAUSED
+
+Metrics remain visible.
+
+Buttons:
+
+RESUME
+
+FINISH
+
+DISCARD
+
+Do not accidentally finish an activity from a single accidental tap.
+
+Important actions should require deliberate interaction.
+
+⸻
+
+9. ACCIDENTAL PAUSE/FINISH PROTECTION
+
+If the phone is locked, screen changes, notifications appear, or the user leaves the app:
+
+The activity must continue.
+
+PACE should use appropriate background location capabilities.
+
+If the operating system interrupts tracking:
+
+Attempt to recover tracking.
+
+Never silently delete the activity.
+
+If tracking becomes unavailable:
+
+Display a warning after the activity rather than pretending the data is complete.
+
+⸻
+
+10. FINISH ACTIVITY
+
+When the user taps FINISH:
+
+Show confirmation:
+
+Finish activity?
+
+Buttons:
+
+Finish
+
+Continue
+
+After confirmation, stop tracking.
+
+Calculate:
+
+* Total distance
+* Moving time
+* Elapsed time
+* Average pace
+* Average speed
+* Elevation gain
+* Elevation loss
+* Calories where supported
+* Heart-rate statistics where available
+* Route
+* Segments completed
+* Personal records
+* Challenge progress
+
+⸻
+
+11. ACTIVITY SUMMARY
+
+After finishing, show a beautiful summary.
+
+Example:
+
+Morning Run
+
+5.21 MI
+
+47:32
+
+9:07 /MI
+
+Then:
+
+Performance
+
+Distance
+5.21 mi
+
+Moving Time
+46:51
+
+Elapsed Time
+47:32
+
+Average Pace
+9:07/mi
+
+Average Speed
+6.58 mph
+
+Elevation
++214 ft
+
+Calories
+523
+
+⸻
+
+12. ROUTE MAP
+
+Show the entire completed route.
+
+The user can zoom and pan.
+
+Display:
+
+* Start point
+* Finish point
+* Route
+* Important segments
+* Personal-record locations
+
+Do not expose the user’s exact home address by default.
+
+Implement privacy controls such as:
+
+Hide start/end location
+
+Allow users to define a privacy radius around sensitive locations.
+
+⸻
+
+13. ACTIVITY PHOTOS
+
+After finishing, allow the user to attach photos.
+
+Options:
+
+Add Photos
+
+The user can select multiple photos.
+
+Photos should appear on the activity post.
+
+The activity itself remains the primary content.
+
+⸻
+
+14. ACTIVITY CAPTION
+
+Allow the user to write:
+
+Morning run finally done 🔥
+
+The activity can be posted with or without a caption.
+
+Do not force users to write anything.
+
+⸻
+
+15. ACTIVITY VISIBILITY
+
+Every activity must have visibility settings.
+
+Options:
+
+Everyone
+
+Anyone allowed to view the user’s activities can see it.
+
+Followers
+
+Only approved followers can see it.
+
+Only Me
+
+Private activity.
+
+The user should be able to change the default visibility from settings.
+
+⸻
+
+16. ACTIVITY FEED
+
+PACE should have a social feed.
+
+Feed cards should display:
+
+User avatar
+
+Username
+
+Activity type
+
+Activity name
+
+Time posted
+
+Map preview
+
+Distance
+
+Duration
+
+Pace/speed
+
+Caption
+
+Photos if attached
+
+Kudos/likes
+
+Comments
+
+Share option
+
+Example:
+
+James
+
+🏃 Morning Run
+
+5.21 mi · 47:32 · 9:07/mi
+
+[MAP]
+
+“Finally got my morning run in 🔥”
+
+❤️ 42
+
+💬 7 comments
+
+⸻
+
+17. SOCIAL INTERACTIONS
+
+Users can:
+
+* Like/Kudos
+* Comment
+* Reply to comments
+* Share
+* Follow
+* Unfollow
+* Mute
+* Report
+* Block
+
+Prevent duplicate likes.
+
+Tapping the reaction again removes it.
+
+⸻
+
+18. PACE PROFILE
+
+Every user gets a PACE profile.
+
+Display:
+
+Profile photo
+
+Username
+
+Bio
+
+Followers
+
+Following
+
+Total activities
+
+Total distance
+
+Total time
+
+Activity types
+
+Personal records
+
+Achievements
+
+Recent activities
+
+Statistics
+
+Example:
+
+PACE
+
+🏃 284 activities
+
+📍 1,243 miles
+
+⏱️ 214 hours
+
+🏆 18 personal records
+
+⸻
+
+19. ACTIVITY HISTORY
+
+Users can browse all previous activities.
+
+Filters:
+
+* Activity type
+* Date
+* Distance
+* Duration
+* Personal records
+* Challenges
+
+Sort:
+
+* Newest
+* Oldest
+* Longest
+* Fastest
+
+⸻
+
+20. PERSONAL RECORDS
+
+PACE should automatically detect personal records.
+
+Examples:
+
+* Fastest mile
+* Fastest 5K
+* Fastest 10K
+* Longest run
+* Longest ride
+* Most elevation
+* Most distance in one day
+* Most distance in one week
+
+When a record occurs:
+
+🔥
+
+NEW PERSONAL RECORD
+
+You just ran your fastest mile.
+
+Allow users to share the achievement.
+
+⸻
+
+21. SEGMENTS
+
+PACE should support location-based segments.
+
+A segment is a predefined geographic section of a route.
+
+Example:
+
+Downtown Sprint
+
+Distance:
+
+0.82 mi
+
+When users travel through the segment during an eligible activity, PACE records their time.
+
+After completion:
+
+Segment completed
+
+Your time:
+
+4:21
+
+Previous best:
+
+4:34
+
+Improvement:
+
+13 seconds
+
+⸻
+
+22. SEGMENT LEADERBOARDS
+
+Each segment has a leaderboard.
+
+Example:
+
+Downtown Sprint
+
+🥇 Alex — 3:41
+
+🥈 Marcus — 3:55
+
+🥉 Sarah — 4:02
+
+4. James — 4:21
+
+The user should be able to switch between:
+
+Friends
+
+Local
+
+All
+
+Depending on privacy and available data.
+
+⸻
+
+23. PERSONAL SEGMENT COMPETITION
+
+Users should not only compete against others.
+
+They compete against themselves.
+
+Show:
+
+Current:
+
+4:21
+
+Previous:
+
+4:34
+
+Best:
+
+4:08
+
+Goal:
+
+Under 4:00
+
+This creates a repeatable improvement loop.
+
+⸻
+
+24. CHALLENGES
+
+Create challenges.
+
+Examples:
+
+Run 25 Miles
+
+Progress:
+
+17.4 / 25 mi
+
+100-Mile Month
+
+Progress:
+
+63 / 100 mi
+
+Weekend Warrior
+
+Complete 3 activities.
+
+Elevation Challenge
+
+Climb 5,000 feet.
+
+Challenges can be:
+
+* Personal
+* Friends-only
+* Public
+* Sponsored
+* App-wide
+
+⸻
+
+25. CHALLENGE LEADERBOARDS
+
+Example:
+
+September 100-Mile Challenge
+
+1. Alex — 147 mi
+2. James — 129 mi
+3. Sarah — 118 mi
+4. Marcus — 101 mi
+
+Allow users to see their ranking.
+
+⸻
+
+26. CHALLENGE COMPLETION
+
+When completed:
+
+🎉
+
+CHALLENGE COMPLETE
+
+100 miles completed.
+
+Reward:
+
+🏆 Badge
+
+Optional:
+
+🪙 Coins
+
+Optional:
+
+XP
+
+Allow sharing.
+
+⸻
+
+27. BADGES / ACHIEVEMENTS
+
+PACE should have achievements.
+
+Examples:
+
+🏃 First Run
+
+🔥 10 Activities
+
+💯 100 Miles
+
+🏔️ 10,000 ft Elevation
+
+⚡ Fastest Mile
+
+🌙 Night Runner
+
+🌅 Early Bird
+
+🔥 7-Day Streak
+
+🏆 Challenge Champion
+
+Achievements should appear on profiles.
+
+⸻
+
+28. STREAKS
+
+Track activity consistency.
+
+Example:
+
+🔥
+
+7 DAY STREAK
+
+The streak should be based on configurable activity rules.
+
+If a user misses a day, show:
+
+Streak ended
+
+Do not use manipulative notifications.
+
+Allow users to disable streak notifications.
+
+⸻
+
+29. DISCOVER
+
+PACE should have a discovery section.
+
+Users can discover:
+
+* Popular routes
+* Popular segments
+* Nearby activities
+* Challenges
+* Active users
+* Clubs/groups
+* Events
+
+The discovery system should respect privacy.
+
+Private activities must never appear publicly.
+
+⸻
+
+30. NEARBY ACTIVITY
+
+Because PACE integrates with the map, users can see activity around them.
+
+Examples:
+
+🏃 14 people running nearby
+
+🚴 8 cyclists nearby
+
+🥾 5 hikers nearby
+
+Do not expose exact real-time individual locations unless the user explicitly chooses to share them.
+
+Use aggregation where appropriate.
+
+⸻
+
+31. ROUTE DISCOVERY
+
+Users can discover routes based on:
+
+* Distance
+* Activity type
+* Elevation
+* Difficulty
+* Popularity
+* Location
+
+Example:
+
+Popular 5K
+
+5.02 miles
+
+Easy
+
++82 ft elevation
+
+★★★★☆
+
+⸻
+
+32. CLUBS / GROUPS
+
+Users can create PACE groups.
+
+Examples:
+
+Miami Runners
+
+Broward Cycling
+
+Weekend Walkers
+
+Groups can have:
+
+* Feed
+* Members
+* Challenges
+* Leaderboards
+* Events
+* Shared routes
+
+Group administrators can moderate content.
+
+⸻
+
+33. EVENTS
+
+PACE can support organized activities.
+
+Example:
+
+Miami 5K Meetup
+
+Saturday
+
+8:00 AM
+
+25 people attending
+
+Users can:
+
+* RSVP
+* View route
+* Join group activity
+* Post afterward
+* Compare results
+
+⸻
+
+34. NOTIFICATIONS
+
+PACE notifications can include:
+
+* Someone gave you Kudos
+* Someone commented
+* Someone followed you
+* Challenge progress
+* Challenge completed
+* Personal record
+* Achievement unlocked
+* Group activity
+* Event reminder
+* Segment result
+
+Notifications should be configurable.
+
+⸻
+
+35. OFFLINE MODE
+
+This is extremely important.
+
+If the user loses internet:
+
+PACE must continue working.
+
+The app should locally retain:
+
+* GPS points
+* Activity timer
+* Activity metrics
+* Route
+* Pending activity data
+
+When connectivity returns:
+
+Syncing activity…
+
+Then:
+
+Activity synced
+
+Do not create duplicates during synchronization.
+
+⸻
+
+36. DATA SYNCHRONIZATION
+
+Use unique activity IDs.
+
+The same activity must never upload twice.
+
+Synchronization states:
+
+Local
+
+→ Pending
+
+→ Uploading
+
+→ Synced
+
+→ Failed
+
+If failed:
+
+Retry
+
+Do not lose the activity.
+
+⸻
+
+37. BATTERY MANAGEMENT
+
+GPS tracking can consume significant battery.
+
+PACE should:
+
+* Avoid unnecessary high-frequency GPS updates when stationary
+* Batch noncritical network requests
+* Avoid continuously downloading data
+* Stop GPS immediately when the activity ends
+* Respect operating-system background location requirements
+* Clearly explain why background location is required
+
+⸻
+
+38. PRIVACY
+
+Privacy must be a first-class feature.
+
+Users control:
+
+* Who sees activities
+* Who sees their profile
+* Who can follow them
+* Whether activity appears on public maps
+* Start/end location protection
+* Real-time location sharing
+* Challenge visibility
+* Segment leaderboard visibility
+
+Never expose private activity data.
+
+Never expose a user’s home location by default.
+
+⸻
+
+39. SAFETY
+
+Do not encourage users to interact with the app while running, cycling, or driving.
+
+While an activity is active:
+
+Keep the UI simple.
+
+Avoid unnecessary popups.
+
+Do not require typing.
+
+Provide large controls.
+
+Voice/audio announcements can communicate:
+
+* Distance
+* Pace
+* Time
+* Milestones
+
+⸻
+
+40. EQUIPMENT
+
+Allow users to associate equipment with activities.
+
+Examples:
+
+Nike Running Shoes
+
+Road Bike
+
+Trail Shoes
+
+Track mileage/use.
+
+Example:
+
+Nike Running Shoes
+
+Used:
+
+412 miles
+
+Recommended replacement:
+
+500 miles
+
+This should be configurable rather than presenting medical/safety claims as definitive.
+
+⸻
+
+41. ANALYTICS
+
+PACE should provide useful historical analytics.
+
+Examples:
+
+Weekly distance
+
+Monthly distance
+
+Average pace
+
+Activity frequency
+
+Elevation
+
+Personal records
+
+Activity distribution
+
+Training consistency
+
+Allow charts to display trends.
+
+Users should be able to select:
+
+7 days
+
+30 days
+
+3 months
+
+6 months
+
+1 year
+
+All time
+
+⸻
+
+42. SOCIAL SHARING
+
+Users can share an activity externally.
+
+Generate a shareable activity card containing:
+
+* Activity
+* Distance
+* Time
+* Pace
+* Route visualization
+* User name/avatar
+* PACE branding
+
+Do not expose private information.
+
+⸻
+
+43. PROFILE PRIVACY
+
+Users can choose:
+
+Public profile
+
+Followers-only profile
+
+Private profile
+
+Public profile does NOT automatically mean every activity must be public.
+
+Activity privacy remains independently configurable.
+
+⸻
+
+44. BLOCK / REPORT
+
+Users must be able to report:
+
+* Harassment
+* Spam
+* Fake activities
+* Inappropriate content
+* Dangerous behavior
+* Privacy violations
+
+Blocked users should not be able to interact with the blocker.
+
+⸻
+
+45. ANTI-CHEAT
+
+PACE must recognize that GPS data can be manipulated.
+
+Implement detection signals such as:
+
+* Impossible speeds
+* Unrealistic acceleration
+* Teleporting GPS points
+* Suspicious route jumps
+* Inconsistent timestamps
+* Impossible segment performance
+
+Do not automatically accuse users.
+
+Instead:
+
+Mark suspicious activities internally.
+
+Prevent suspicious activities from entering competitive leaderboards when confidence is sufficiently high.
+
+Provide an appeal mechanism.
+
+⸻
+
+46. MAP INTEGRATION
+
+PACE activities should integrate with the application’s existing map.
+
+Possible map layers:
+
+PACE
+
+Posts
+
+Places
+
+Events
+
+Challenges
+
+Users should be able to toggle layers.
+
+PACE should enhance the existing map rather than take it over.
+
+⸻
+
+47. FEED + MAP CONNECTION
+
+When someone posts a PACE activity:
+
+The activity can appear:
+
+1. In the PACE feed
+2. On their profile
+3. On the map when privacy allows
+4. In relevant challenges
+5. In relevant segment rankings
+
+This creates a connection between:
+
+social content + physical activity + location.
+
+⸻
+
+48. USER EXPERIENCE RULE
+
+PACE should always answer three questions:
+
+What am I doing?
+
+Current activity.
+
+How am I doing?
+
+Current performance.
+
+How am I doing compared with others or myself?
+
+Records, rankings, challenges and history.
+
+⸻
+
+49. HOME SCREEN QUICK ACTION
+
+Add a quick PACE action to the main app.
+
+Example:
+
+＋ PACE
+
+Tap it → Start Activity.
+
+The user should never have to navigate through multiple screens to begin recording.
+
+⸻
+
+50. POST-ACTIVITY SOCIAL MOMENT
+
+After every completed activity:
+
+Show the accomplishment first.
+
+Example:
+
+🔥
+
+YOU DID IT
+
+5.21 miles
+
+47:32
+
+9:07/mi
+
+Then:
+
+NEW PERSONAL RECORD
+
+Then:
+
+Share Activity
+
+This should feel rewarding without becoming annoying.
+
+⸻
+
+51. PACE COINS / REWARDS INTEGRATION
+
+PACE can eventually connect to the app’s existing coin economy.
+
+Potential rewards:
+
+Complete first activity → coins
+
+Complete challenge → coins
+
+Weekly consistency → coins
+
+Community events → coins
+
+Sponsored challenges → rewards
+
+However, rewards should never encourage dangerous exercise or excessive activity.
+
+Do not reward users purely for GPS distance in a way that encourages unsafe behavior.
+
+⸻
+
+52. FUTURE MONETIZATION
+
+PACE can eventually support:
+
+Premium
+
+Advanced analytics
+
+Advanced route planning
+
+Advanced statistics
+
+Historical comparisons
+
+Custom challenges
+
+Premium badges
+
+Training insights
+
+Offline route tools
+
+Sponsored Challenges
+
+Businesses can sponsor:
+
+“Run 20 Miles This Month”
+
+Prize:
+
+Coins / discount / promotion
+
+Local Business Integration
+
+A running store, gym, restaurant, etc. could sponsor a challenge.
+
+Example:
+
+Complete the Miami 5K Challenge
+
+Sponsored by a local business.
+
+This connects:
+
+PACE → users → locations → businesses → monetization.
+
+⸻
+
+53. DATA ARCHITECTURE
+
+Each activity should conceptually contain:
+
+activity_id
+user_id
+activity_type
+title
+description
+start_time
+end_time
+elapsed_time
+moving_time
+distance
+average_speed
+average_pace
+max_speed
+elevation_gain
+elevation_loss
+calories
+route_geometry
+gps_points
+privacy
+photos
+likes
+comments
+segments
+personal_records
+challenge_progress
+equipment
+sync_status
+created_at
+updated_at
+
+GPS points should be handled efficiently and should not unnecessarily be stored forever at excessive precision.
+
+⸻
+
+54. IMPORTANT ARCHITECTURE PRINCIPLE
+
+Separate:
+
+Activity recording
+
+from
+
+Social activity
+
+from
+
+Competition
+
+from
+
+Analytics
+
+from
+
+Rewards.
+
+Do not build everything into one giant component.
+
+Use modular services/components so that:
+
+GPS tracking can be improved without breaking the feed.
+
+The feed can change without breaking GPS.
+
+Challenges can change without breaking activities.
+
+Rewards can change without rewriting the activity engine.
+
+⸻
+
+55. ERROR HANDLING
+
+Every failure must have a recovery path.
+
+Examples:
+
+GPS unavailable:
+
+Location unavailable. Check your permissions.
+
+Network unavailable:
+
+You’re offline. Your activity is being saved on this device.
+
+Upload failed:
+
+We couldn’t sync your activity. Retry.
+
+App restarted:
+
+Resume your previous activity?
+
+Storage issue:
+
+Your device doesn’t have enough storage to continue recording reliably.
+
+Permission revoked:
+
+Location access is required to continue tracking.
+
+Never silently discard activity data.
+
+⸻
+
+56. ACCESSIBILITY
+
+Support:
+
+* Dynamic text sizing
+* Screen readers
+* Large touch targets
+* High contrast
+* Voice feedback
+* Reduced motion
+* Clear status indicators
+
+The core tracking experience should remain usable while moving.
+
+⸻
+
+57. PERFORMANCE REQUIREMENTS
+
+PACE must be designed for long activities.
+
+Test:
+
+30 minutes
+
+1 hour
+
+2 hours
+
+4 hours
+
+Long-distance activities
+
+Poor cellular service
+
+No cellular service
+
+Low battery
+
+Background operation
+
+Locked phone
+
+Incoming calls
+
+Notifications
+
+App switching
+
+Temporary GPS loss
+
+Temporary network loss
+
+Device restart scenarios where the operating system permits recovery.
+
+⸻
+
+58. QA REQUIREMENT
+
+Do not consider PACE complete because the screens render.
+
+Test the ENTIRE USER JOURNEY.
+
+Test:
+
+Create activity
+
+Start activity
+
+Pause
+
+Resume
+
+Finish
+
+Discard
+
+Save
+
+Upload
+
+Offline recording
+
+Reconnect
+
+Synchronization
+
+Feed posting
+
+Likes
+
+Comments
+
+Sharing
+
+Privacy
+
+Profile
+
+History
+
+Segments
+
+Leaderboards
+
+Challenges
+
+Achievements
+
+Notifications
+
+GPS failures
+
+Permission failures
+
+Background tracking
+
+Battery behavior
+
+Duplicate synchronization
+
+App restart
+
+Poor network
+
+Long activity
+
+Every button
+
+Every menu
+
+Every navigation path
+
+Every empty state
+
+Every loading state
+
+Every error state
+
+Every permission state
+
+Every edge case.
+
+⸻
+
+59. FINAL PACE EXPERIENCE
+
+The finished feature should feel like:
+
+“I went outside and did something, and PACE turned that experience into a story, a record, a social post, a competition, and a reason to come back.”
+
+The system should be:
+
+Fast.
+
+Social.
+
+Location-aware.
+
+Competitive.
+
+Rewarding.
+
+Private by default where appropriate.
+
+Reliable offline.
+
+Battery-conscious.
+
+And most importantly:
+
+PACE should integrate into the existing application instead of feeling like a completely separate app.
+
+The ultimate loop is:
+
+DISCOVER → START → MOVE → TRACK → FINISH → SHARE → COMPARE → COMPETE → EARN → RETURN.

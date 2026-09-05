@@ -2,12 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
-import type { PacePoint } from './pace-api';
+import type { PaceActivity, PacePoint } from './pace-api';
 
 export type PaceTrackedPoint = PacePoint & { recordedAt: number };
 export type PaceRecordingStatus = 'recording' | 'paused' | 'finished';
 export type PaceRecording = {
   id: string;
+  activity?: PaceActivity;
   status: PaceRecordingStatus;
   startedAt: number;
   elapsedSeconds: number;

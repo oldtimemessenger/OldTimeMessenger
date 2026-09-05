@@ -1,6 +1,114 @@
-ckingEnabled, setBackgroundTrackingEnabled] = useState(false);
-  const [encouragement, setEncouragement] = useState<PaceEncouragement | null>(null);
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, AppState, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Svg, { Circle, Polyline } from 'react-native-svg';
+import { Avatar, Screen } from '@/components/ui';
+import { useApp } from '@/context/app-state';
+import { useColors } from '@/hooks/useColors';
+import { appendTrackedPoint, clearPaceRecording, getStoredPaceRecording, savePaceRecording, startPaceLocationUpdates, stopPaceLocationUpdates, type PaceRecording } from '@/lib/pace-recorder';
+import {
+  createPaceComment,
+  createPaceRoute,
+  getPaceComments,
+  getPaceFeed,
+  sendPaceGift,
+  setPaceCommentLike,
+  setPaceRouteLike,
+  trackPaceSuggestionImpression,
+  type PaceActivity,
+  type PaceComment,
+  type PaceDifficulty,
+  type PacePoint,
+  type PaceRoute,
+  type PaceSuggestion,
+} from '@/lib/pace-api';
+
+const GIFT_OPTIONS = [
+  { key: 'coffee' as const, label: 'Coffee', price: 25, icon: 'cafe-outline' as const },
+  { key: 'idea' as const, label: 'Idea', price: 100, icon: 'bulb-outline' as const },
+  { key: 'heart' as const, label: 'Heart', price: 200, icon: 'heart-outline' as const },
+  { key: 'gem' as const, label: 'Gem', price: 500, icon: 'diamond-outline' as const },
+  { key: 'studio' as const, label: 'Studio', price: 1000, icon: 'albums-outline' as const },
+  { key: 'time_is_up' as const, label: 'Time is up', price: 10000, icon: 'trophy-outline' as const },
+];
+
+const ACTIVITY_LABELS: Record<PaceActivity, string> = {
+  run: 'Run',
+  walk: 'Walk',
+  bike: 'Ride',
+  hike: 'Hike',
+  jog: 'Jog',
+  swim: 'Swim',
+  strength: 'Strength',
+  yoga: 'Yoga',
+  dance: 'Dance',
+  skate: 'Skate',
+};
+const ACTIVITY_ICONS: Record<PaceActivity, keyof typeof Ionicons.glyphMap> = {
+  run: 'footsteps-outline',
+  walk: 'walk-outline',
+  bike: 'bicycle-outline',
+  hike: 'trail-sign-outline',
+  jog: 'speedometer-outline',
+  swim: 'water-outline',
+  strength: 'barbell-outline',
+  yoga: 'body-outline',
+  dance: 'musical-notes-outline',
+  skate: 'fitness-outline',
+};
+const ACTIVITY_OPTIONS: PaceActivity[] = ['run', 'walk', 'bike', 'hike', 'jog', 'swim', 'strength', 'yoga', 'dance', 'skate'];
+const NON_ROUTE_ACTIVITIES: PaceActivity[] = ['strength', 'yoga', 'dance'];
+const DIFFICULTY_LABELS: Record<PaceDifficulty, string> = { easy: 'Easy', steady: 'Steady', hard: 'Hard' };
+
+type Coordinate = PacePoint;
+
+function recordingAsSuggestion(recording: PaceRecording): PaceSuggestion {
+  const firstPoint = recording.points[0];
+  const routeCoordinates = recording.points.length > 1
+    ? recording.points.map(({ latitude, longitude }) => ({ latitude, longitude }))
+    : firstPoint
+      ? [{ latitude: firstPoint.latitude, longitude: firstPoint.longitude }, { latitude: firstPoint.latitude, longitude: firstPoint.longitude }]
+      : [];
+  return {
+    id: `recorded-${recording.id}`,
+    suggested: true,
+    title: 'My Pace route',
+    description: 'Recorded with Old Time.',
+    kind: 'route',
+    visibility: 'public',
+    activity: recording.activity ?? 'run',
+    difficulty: recording.distanceKm >= 8 ? 'hard' : recording.distanceKm >= 4 ? 'steady' : 'easy',
+    distanceKm: recording.distanceKm,
+    elevationM: 0,
+    durationMin: Math.max(1, Math.round(recording.elapsedSeconds / 60)),
+    locationLabel: 'Recorded locally',
+    distanceFromYouKm: 0,
+    routeCoordinates,
+  };
+}
+
+export default function PaceScreen() {
+  const colors = useColors();
+  const { session } = useApp();
+  const [permission, requestPermission] = Location.useForegroundPermissions();
+  const [location, setLocation] = useState<Coordinate | null>(null);
+  const [routes, setRoutes] = useState<PaceRoute[]>([]);
+  const [suggestions, setSuggestions] = useState<PaceSuggestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [composer, setComposer] = useState<PaceSuggestion | null>(null);
+  const [commentsRoute, setCommentsRoute] = useState<PaceRoute | null>(null);
+  const [giftRoute, setGiftRoute] = useState<PaceRoute | null>(null);
+  const [recording, setRecording] = useState<PaceRecording | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<PaceActivity>('run');
+  const [activityPickerVisible, setActivityPickerVisible] = useState(false);
+  const [recordingLoading, setRecordingLoading] = useState(true);
+  const [backgroundTrackingEnabled, setBackgroundTrackingEnabled] = useState(false);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const impressedSuggestionIdsRef = useRef(new Set<string>());
 
   const syncRecordingState = useCallback(async () => {
     const stored = await getStoredPaceRecording();
@@ -18,34 +126,33 @@ ckingEnabled, setBackgroundTrackingEnabled] = useState(false);
     await stopPaceLocationUpdates().catch(() => undefined);
   }, []);
 
-  const loadEncouragement = useCallback(async () => {
-    setEncouragement(await getNextPaceEncouragement());
-  }, []);
-
   const load = useCallback(async (showRefresh = false) => {
     if (!session?.authToken) return;
     if (showRefresh) setRefreshing(true);
     else setLoading(true);
     setError(null);
     try {
-      const result = await getPaceFeed(session.authToken, location ?? undefined);
+      const result = await getPaceFeed(session.authToken, location ?? undefined, selectedActivity, [...impressedSuggestionIdsRef.current]);
       setRoutes(result.items);
       setSuggestions(result.suggestions);
+      result.suggestions.forEach((suggestion) => {
+        if (impressedSuggestionIdsRef.current.has(suggestion.id)) return;
+        impressedSuggestionIdsRef.current.add(suggestion.id);
+        void trackPaceSuggestionImpression(session.authToken, suggestion.id, suggestion.activity, location ? `${Math.round(location.latitude * 100)}:${Math.round(location.longitude * 100)}` : 'global').catch(() => {
+          impressedSuggestionIdsRef.current.delete(suggestion.id);
+        });
+      });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Pace could not load right now.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [location, session?.authToken]);
+  }, [location, selectedActivity, session?.authToken]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    void loadEncouragement();
-  }, [loadEncouragement]);
 
   useEffect(() => {
     if (!permission?.granted) return;
@@ -135,7 +242,8 @@ ckingEnabled, setBackgroundTrackingEnabled] = useState(false);
     }
   }
 
-  async function startRecording() {
+  async function startRecording(activityOverride?: PaceActivity) {
+    const activity = activityOverride ?? selectedActivity;
     const result = permission?.granted ? permission : await requestPermission();
     if (!result.granted) {
       Alert.alert('Location is needed to record', 'Allow location access to record a route. Your route stays on this device until you choose to share it.');
@@ -152,6 +260,7 @@ ckingEnabled, setBackgroundTrackingEnabled] = useState(false);
       const now = Date.now();
       const next: PaceRecording = {
         id: `pace-${now}`,
+        activity,
         status: 'recording',
         startedAt: now,
         elapsedSeconds: 0,
@@ -201,8 +310,10 @@ ckingEnabled, setBackgroundTrackingEnabled] = useState(false);
     await stopPaceLocationUpdates().catch(() => undefined);
     setBackgroundTrackingEnabled(false);
     setRecording(finished);
-    if (finished.points.length < 2 || finished.distanceKm < 0.01) {
-      Alert.alert('Route is too short', 'Keep moving a little longer so Pace can create a useful route shape.');
+    const activity = finished.activity ?? selectedActivity;
+    const isStationary = NON_ROUTE_ACTIVITIES.includes(activity);
+    if ((isStationary && finished.elapsedSeconds < 60) || (!isStationary && (finished.points.length < 2 || finished.distanceKm < 0.01))) {
+      Alert.alert(isStationary ? 'Session is too short' : 'Route is too short', isStationary ? 'Keep the session going for at least one minute so Pace can create a useful summary.' : 'Keep moving a little longer so Pace can create a useful route shape.');
     } else {
       setComposer(recordingAsSuggestion(finished));
     }
@@ -260,18 +371,11 @@ ckingEnabled, setBackgroundTrackingEnabled] = useState(false);
               colors={colors}
               recording={recording}
               suggestion={suggestions[0]}
-              onStart={() => void startRecording()}
+               selectedActivity={selectedActivity}
+               onStart={() => setActivityPickerVisible(true)}
             />
-            {!recordingLoading ? <PaceRecorderCard recording={recording} backgroundTrackingEnabled={backgroundTrackingEnabled} colors={colors} onStart={() => void startRecording()} onPause={() => void pauseRecording()} onResume={() => void resumeRecording()} onFinish={() => void finishRecording()} onShare={() => recording && setComposer(recordingAsSuggestion(recording))} onDiscard={() => void discardRecording()} /> : null}
-
-            {encouragement ? (
-              <PacePulseCard
-                colors={colors}
-                pulse={encouragement}
-                onStart={() => void startRecording()}
-                onRefresh={() => void loadEncouragement()}
-              />
-            ) : null}
+            <ActivityChooser activity={selectedActivity} colors={colors} onPress={() => setActivityPickerVisible(true)} />
+            {!recordingLoading ? <PaceRecorderCard recording={recording} backgroundTrackingEnabled={backgroundTrackingEnabled} colors={colors} onStart={() => setActivityPickerVisible(true)} onPause={() => void pauseRecording()} onResume={() => void resumeRecording()} onFinish={() => void finishRecording()} onShare={() => recording && setComposer(recordingAsSuggestion(recording))} onDiscard={() => void discardRecording()} /> : null}
 
             <View style={styles.sectionHeading}>
               <View>
@@ -350,6 +454,17 @@ ckingEnabled, setBackgroundTrackingEnabled] = useState(false);
           setGiftRoute(null);
         }}
       />
+      <ActivityPicker
+        visible={activityPickerVisible}
+        selectedActivity={selectedActivity}
+        colors={colors}
+        onClose={() => setActivityPickerVisible(false)}
+        onSelect={(activity) => {
+          setSelectedActivity(activity);
+          setActivityPickerVisible(false);
+          void startRecording(activity);
+        }}
+      />
     </Screen>
   );
 }
@@ -398,11 +513,18 @@ function RouteArtwork({ points, colors }: { points?: PacePoint[]; colors: any })
   );
 }
 
-function PaceActivityOverview({ colors, recording, suggestion, onStart }: { colors: any; recording: PaceRecording | null; suggestion?: PaceSuggestion; onStart: () => void }) {
+function PaceActivityOverview({ colors, recording, suggestion, selectedActivity, onStart }: { colors: any; recording: PaceRecording | null; suggestion?: PaceSuggestion; selectedActivity: PaceActivity; onStart: () => void }) {
   const distanceKm = recording?.distanceKm ?? suggestion?.distanceKm ?? 0;
   const durationMin = recording ? recording.elapsedSeconds / 60 : suggestion?.durationMin ?? 0;
   const routePoints = recording?.points ?? suggestion?.routeCoordinates;
-  const activityLabel = recording ? 'LIVE ACTIVITY' : suggestion ? ACTIVITY_LABELS[suggestion.activity].toUpperCase() : 'READY TO MOVE';
+  const activity = recording?.activity ?? suggestion?.activity ?? selectedActivity;
+  const activityLabel = recording ? `${ACTIVITY_LABELS[activity].toUpperCase()} / LIVE` : ACTIVITY_LABELS[activity].toUpperCase();
+  const stationary = NON_ROUTE_ACTIVITIES.includes(activity);
+  const ride = activity === 'bike' || activity === 'skate';
+  const rateValue = ride && distanceKm && durationMin ? `${(distanceKm / (durationMin / 60)).toFixed(1)}` : formatRoutePace(distanceKm, durationMin);
+  const rateUnit = ride ? ' km/h' : ' /km';
+  const metricLabels = stationary ? ['DURATION', 'MODE', 'TRACK'] : ['DISTANCE', 'TIME', ride ? 'SPEED' : 'PACE'];
+  const metricValues = stationary ? [formatRouteTime(durationMin), suggestion ? DIFFICULTY_LABELS[suggestion.difficulty] : 'LIVE', recording ? 'GPS' : 'PLAN'] : [distanceKm ? distanceKm.toFixed(2) : '--', formatRouteTime(durationMin), rateValue];
   return (
     <LinearGradient colors={[colors.paceInk, `${colors.brandPurple}E8`]} style={styles.activityOverview}>
       <View style={styles.activityOverviewTop}>
@@ -419,33 +541,56 @@ function PaceActivityOverview({ colors, recording, suggestion, onStart }: { colo
       </View>
       <RouteArtwork points={routePoints} colors={colors} />
       <View style={styles.activityMetrics}>
-        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>DISTANCE</Text><Text style={styles.activityMetricValue}>{distanceKm ? distanceKm.toFixed(2) : '--'}<Text style={styles.activityMetricUnit}> km</Text></Text></View>
+        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>{metricLabels[0]}</Text><Text style={styles.activityMetricValue}>{metricValues[0]}{!stationary ? <Text style={styles.activityMetricUnit}> km</Text> : null}</Text></View>
         <View style={styles.activityMetricDivider} />
-        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>TIME</Text><Text style={styles.activityMetricValue}>{formatRouteTime(durationMin)}</Text></View>
+        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>{metricLabels[1]}</Text><Text style={styles.activityMetricValue}>{metricValues[1]}</Text></View>
         <View style={styles.activityMetricDivider} />
-        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>PACE</Text><Text style={styles.activityMetricValue}>{formatRoutePace(distanceKm, durationMin)}<Text style={styles.activityMetricUnit}> /km</Text></Text></View>
+        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>{metricLabels[2]}</Text><Text style={styles.activityMetricValue}>{metricValues[2]}{!stationary ? <Text style={styles.activityMetricUnit}>{rateUnit}</Text> : null}</Text></View>
       </View>
       <View style={styles.activityStatRow}>
         <View style={styles.activityStat}><Ionicons name="trending-up-outline" size={17} color={colors.paceCyan} /><Text style={styles.activityStatLabel}>ELEVATION</Text><Text style={styles.activityStatValue}>{suggestion?.elevationM ?? 0} m</Text></View>
         <View style={styles.activityStat}><Ionicons name="flash-outline" size={17} color={colors.brandOrange} /><Text style={styles.activityStatLabel}>EFFORT</Text><Text style={styles.activityStatValue}>{suggestion ? DIFFICULTY_LABELS[suggestion.difficulty] : 'Open'}</Text></View>
-        <View style={styles.activityStat}><Ionicons name="footsteps-outline" size={17} color={colors.paceCyan} /><Text style={styles.activityStatLabel}>JOURNEY</Text><Text style={styles.activityStatValue}>{suggestion?.activity ? ACTIVITY_LABELS[suggestion.activity] : 'Yours'}</Text></View>
+        <View style={styles.activityStat}><Ionicons name={ACTIVITY_ICONS[activity]} size={17} color={colors.paceCyan} /><Text style={styles.activityStatLabel}>ACTIVITY</Text><Text style={styles.activityStatValue}>{ACTIVITY_LABELS[activity]}</Text></View>
       </View>
     </LinearGradient>
   );
 }
 
-function PacePulseCard({ colors, pulse, onStart, onRefresh }: { colors: any; pulse: PaceEncouragement; onStart: () => void; onRefresh: () => void }) {
+function ActivityChooser({ activity, colors, onPress }: { activity: PaceActivity; colors: any; onPress: () => void }) {
   return (
-    <View style={[styles.pulseCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={styles.pulseIcon}><Ionicons name="radio-outline" size={18} color={colors.paceCyan} /></View>
-      <View style={styles.pulseCopy}>
-        <View style={styles.pulseMeta}><Text style={[styles.pulseEyebrow, { color: colors.paceCyan }]}>{pulse.eyebrow}</Text><Text style={[styles.pulseLocation, { color: colors.mutedForeground }]}>{pulse.location}</Text></View>
-        <Text style={[styles.pulseHeadline, { color: colors.foreground }]}>{pulse.headline}</Text>
-        <Text style={[styles.pulseBody, { color: colors.mutedForeground }]}>{pulse.body}</Text>
-        <Pressable onPress={onStart} style={[styles.pulseAction, { backgroundColor: colors.brandOrange }]}><Text style={[styles.pulseActionText, { color: colors.primaryForeground }]}>{pulse.action}</Text><Ionicons name="arrow-forward" size={14} color={colors.primaryForeground} /></Pressable>
+    <Pressable onPress={onPress} style={[styles.activityChooser, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={`Choose activity. Current activity is ${ACTIVITY_LABELS[activity]}`}>
+      <View style={[styles.activityChooserIcon, { backgroundColor: `${colors.brandOrange}18` }]}><Ionicons name={ACTIVITY_ICONS[activity]} size={18} color={colors.brandOrange} /></View>
+      <View style={styles.flex}><Text style={[styles.activityChooserEyebrow, { color: colors.mutedForeground }]}>RECORDING AS</Text><Text style={[styles.activityChooserTitle, { color: colors.foreground }]}>{ACTIVITY_LABELS[activity]}</Text></View>
+      <Text style={[styles.activityChooserAction, { color: colors.brandOrange }]}>CHANGE</Text>
+      <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+    </Pressable>
+  );
+}
+
+function ActivityPicker({ visible, selectedActivity, colors, onClose, onSelect }: { visible: boolean; selectedActivity: PaceActivity; colors: any; onClose: () => void; onSelect: (activity: PaceActivity) => void }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, { backgroundColor: colors.background }]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <View><Text style={[styles.modalEyebrow, { color: colors.primary }]}>SET YOUR PACE</Text><Text style={[styles.modalTitle, { color: colors.foreground }]}>What are you doing?</Text></View>
+            <Pressable onPress={onClose} accessibilityLabel="Close activity picker"><Ionicons name="close" size={24} color={colors.mutedForeground} /></Pressable>
+          </View>
+          <Text style={[styles.activityPickerIntro, { color: colors.mutedForeground }]}>Choose the activity before GPS starts. Pace will keep the activity with the recording and its shared summary.</Text>
+          <View style={styles.activityGrid}>
+            {ACTIVITY_OPTIONS.map((activity) => {
+              const selected = activity === selectedActivity;
+              return <Pressable key={activity} onPress={() => onSelect(activity)} style={[styles.activityTile, { backgroundColor: selected ? `${colors.brandOrange}18` : colors.card, borderColor: selected ? colors.brandOrange : colors.border }]} accessibilityRole="button" accessibilityState={{ selected }}>
+                <View style={[styles.activityTileIcon, { backgroundColor: selected ? colors.brandOrange : `${colors.paceCyan}12` }]}><Ionicons name={ACTIVITY_ICONS[activity]} size={20} color={selected ? colors.primaryForeground : colors.paceCyan} /></View>
+                <Text style={[styles.activityTileText, { color: colors.foreground }]}>{ACTIVITY_LABELS[activity]}</Text>
+                {selected ? <Ionicons name="checkmark-circle" size={16} color={colors.brandOrange} /> : null}
+              </Pressable>;
+            })}
+          </View>
+        </View>
       </View>
-      <Pressable onPress={onRefresh} style={styles.pulseRefresh} accessibilityLabel="Show another Pace pulse"><Ionicons name="refresh-outline" size={17} color={colors.mutedForeground} /></Pressable>
-    </View>
+    </Modal>
   );
 }
 
@@ -759,17 +904,16 @@ const styles = StyleSheet.create({
   activityStat: { flex: 1, minHeight: 75, borderRadius: 14, padding: 9, backgroundColor: 'rgba(7,19,29,0.68)', borderWidth: 1, borderColor: 'rgba(200,214,230,0.12)' },
   activityStatLabel: { color: '#AFC1D2', fontSize: 7, fontWeight: '900', letterSpacing: 0.8, marginTop: 7 },
   activityStatValue: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', marginTop: 4 },
-  pulseCard: { borderRadius: 20, borderWidth: 1, padding: 14, marginTop: 14, flexDirection: 'row', gap: 10 },
-  pulseIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(54,215,242,0.11)' },
-  pulseCopy: { flex: 1 },
-  pulseMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  pulseEyebrow: { fontSize: 8, fontWeight: '900', letterSpacing: 1 },
-  pulseLocation: { fontSize: 10, fontWeight: '600' },
-  pulseHeadline: { fontSize: 17, fontWeight: '800', letterSpacing: -0.25, marginTop: 7 },
-  pulseBody: { fontSize: 12, lineHeight: 17, marginTop: 4 },
-  pulseAction: { alignSelf: 'flex-start', minHeight: 34, borderRadius: 12, paddingHorizontal: 11, marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  pulseActionText: { fontSize: 11, fontWeight: '900' },
-  pulseRefresh: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  activityChooser: { minHeight: 64, borderRadius: 18, borderWidth: 1, padding: 10, marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  activityChooserIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  activityChooserEyebrow: { fontSize: 8, fontWeight: '900', letterSpacing: 1.2 },
+  activityChooserTitle: { fontSize: 14, fontWeight: '800', marginTop: 3 },
+  activityChooserAction: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  activityPickerIntro: { fontSize: 13, lineHeight: 19, marginTop: 13 },
+  activityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 18 },
+  activityTile: { width: '31.7%', minHeight: 90, borderRadius: 16, borderWidth: 1, padding: 9, justifyContent: 'space-between' },
+  activityTileIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  activityTileText: { fontSize: 11, fontWeight: '800', marginTop: 8 },
   hero: { minHeight: 172, borderRadius: 25, padding: 21, flexDirection: 'row', justifyContent: 'space-between', overflow: 'hidden' },
   heroCopy: { flex: 1, paddingRight: 18 },
   heroKicker: { color: '#9FB9FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.8 },

@@ -1,7 +1,7 @@
 import { mobileApiRequest } from '@/lib/mobile-api';
 
 export type PacePoint = { latitude: number; longitude: number };
-export type PaceActivity = 'run' | 'walk' | 'bike' | 'hike';
+export type PaceActivity = 'run' | 'walk' | 'bike' | 'hike' | 'jog' | 'swim' | 'strength' | 'yoga' | 'dance' | 'skate';
 export type PaceDifficulty = 'easy' | 'steady' | 'hard';
 export type PaceKind = 'route' | 'challenge';
 
@@ -64,13 +64,22 @@ export type PaceComment = {
 
 const request = mobileApiRequest;
 
-export function getPaceFeed(token: string, location?: PacePoint) {
+export function getPaceFeed(token: string, location?: PacePoint, activity: PaceActivity = 'run', exclude: string[] = []) {
   const query = new URLSearchParams();
   if (location) {
     query.set('latitude', String(location.latitude));
     query.set('longitude', String(location.longitude));
   }
+  query.set('activity', activity);
+  if (exclude.length) query.set('exclude', exclude.slice(0, 500).join(','));
   return request<{ items: PaceRoute[]; suggestions: PaceSuggestion[] }>(token, `/api/pace/feed?${query.toString()}`);
+}
+
+export function trackPaceSuggestionImpression(token: string, suggestionId: string, activity: PaceActivity, locationCell?: string) {
+  return request<void>(token, `/api/pace/suggestions/${encodeURIComponent(suggestionId)}/impression`, {
+    method: 'POST',
+    body: JSON.stringify({ activity, locationCell }),
+  });
 }
 
 export function createPaceRoute(token: string, input: Omit<PaceRoute, 'id' | 'suggested' | 'createdAt' | 'author' | 'distanceFromYouKm' | 'counts' | 'viewer'>) {

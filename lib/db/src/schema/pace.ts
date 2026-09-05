@@ -102,3 +102,19 @@ export const paceRouteGiftsTable = pgTable(
     recipientIndex: index("pace_route_gifts_recipient_idx").on(table.recipientId, table.createdAt),
   }),
 );
+
+export const paceDiscoveryHistoryTable = pgTable(
+  "pace_discovery_history",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    suggestionId: text("suggestion_id").notNull(),
+    activity: text("activity").notNull(),
+    locationCell: text("location_cell"),
+    seenAt: pgBigint("seen_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    userSuggestionIndex: index("pace_discovery_history_user_suggestion_idx").on(table.userId, table.suggestionId),
+    userSeenIndex: index("pace_discovery_history_user_seen_idx").on(table.userId, table.seenAt),
+  }),
+);

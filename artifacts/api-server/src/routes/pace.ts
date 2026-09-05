@@ -9,6 +9,7 @@ import {
   paceRouteGiftsTable,
   paceRouteLikesTable,
   paceRoutesTable,
+  paceDiscoveryHistoryTable,
   socialBlocksTable,
   usersTable,
 } from "@workspace/db";
@@ -24,7 +25,7 @@ const routeInput = z.object({
   description: z.string().trim().max(800).default(""),
   kind: z.enum(["route", "challenge"]).default("route"),
   visibility: z.enum(["public", "private"]).default("public"),
-  activity: z.enum(["run", "walk", "bike", "hike"]).default("run"),
+  activity: z.enum(["run", "walk", "bike", "hike", "jog", "swim", "strength", "yoga", "dance", "skate"]).default("run"),
   difficulty: z.enum(["easy", "steady", "hard"]).default("steady"),
   distanceKm: z.number().finite().positive().max(250),
   elevationM: z.number().int().min(0).max(10_000).default(0),
@@ -59,6 +60,16 @@ function distanceKm(left: Point, right: Point) {
   return 6_371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+type PaceActivity = "run" | "walk" | "bike" | "hike" | "jog" | "swim" | "strength" | "yoga" | "dance" | "skate";
+
+const PACE_ACTIVITIES: PaceActivity[] = ["run", "walk", "bike", "hike", "jog", "swim", "strength", "yoga", "dance", "skate"];
+const DISCOVERY_ADJECTIVES = ["Quiet", "Golden", "Riverside", "Northside", "Open", "First Light", "Long Way", "Easy", "Tempo", "Parkline", "Cedar", "Harbor", "Sunset", "Neighborhood", "Bright", "Steady", "Meadow", "Old Town", "West Loop", "Morning", "Low-Key", "Fresh Air", "Highline", "Sunday"];
+const DISCOVERY_NOUNS = ["Loop", "Out-and-Back", "Circuit", "Cruise", "Climb", "Wander", "Reset", "Connector", "Explorer", "Figure Eight", "Greenway", "Tour", "Arc", "Path", "Link", "Drift", "Runway", "Passage", "Ladder", "Circuit"];
+const DISTANCE_OPTIONS = [1.8, 2.4, 3.1, 3.8, 4.6, 5.2, 6.1, 7.4, 8.6, 9.8, 11.2, 12.6, 14.5, 16.8, 19.4, 22.1, 25.7, 31.5, 38.4, 46.2];
+const ACTIVITY_SPEEDS: Record<PaceActivity, number> = { run: 8.6, walk: 4.9, bike: 19.5, hike: 4.2, jog: 7.1, swim: 2.6, strength: 1, yoga: 1, dance: 3.8, skate: 12.5 };
+const ACTIVITY_ELEVATION: Record<PaceActivity, number> = { run: 9, walk: 6, bike: 12, hike: 28, jog: 8, swim: 0, strength: 0, yoga: 0, dance: 0, skate: 4 };
+// The catalog has more than 200 million deterministic combinations before per-user history is applied.
+
 function seededNumber(seed: number) {
   const value = Math.sin(seed * 12.9898) * 43_758.5453;
   return value - Math.floor(value);
@@ -83,14 +94,7 @@ function suggestedCoordinates(center: Point, distance: number, seed: number): Po
   }));
 }
 
-function buildSuggestions(center: Point | null) {
-  const templates = [
-    { title: "The Reset Loop", activity: "run", distanceKm: 4.8, elevationM: 42, durationMin: 31, difficulty: "steady", description: "A balanced loop for clearing your head and finding a steady rhythm." },
-    { title: "Golden Hour Out-and-Back", activity: "walk", distanceKm: 3.2, elevationM: 18, durationMin: 42, difficulty: "easy", description: "An easy route with room to slow down, notice the neighborhood, and keep moving." },
-    { title: "The Long Way Home", activity: "bike", distanceKm: 12.6, elevationM: 118, durationMin: 45, difficulty: "hard", description: "A longer local push with enough elevation to make the finish feel earned." },
-    { title: "Parkline Climb", activity: "hike", distanceKm: 6.1, elevationM: 164, durationMin: 78, difficulty: "hard", description: "A scenic climb for a more deliberate day outside." },
-    { title: "Neighborhood Tempo", activity: "run", distanceKm: 7.4, elevationM: 63, durationMin: 44, difficulty: "steady", description: "A repeatable route that fits between real life and your next goal." },
-  ] as const;
+async function buildSuggestions(center: Point | null, viewerId: number, requestedActivity: PaceActivity, requestedExclusions: string[] = []) {
   const globalCenters = [
     { label: "Sydney, Australia", latitude: -33.8688, longitude: 151.2093 },
     { label: "Manchester, UK", latitude: 53.4808, longitude: -2.2426 },
@@ -101,25 +105,49 @@ function buildSuggestions(center: Point | null) {
     { label: "Paris, France", latitude: 48.8566, longitude: 2.3522 },
   ] as const;
   const hourBucket = Math.floor(Date.now() / 3_600_000);
-  const baseSeed = center
-    ? Math.abs(Math.round(center.latitude * 97 + center.longitude * 193 + hourBucket))
-    : Math.abs(hourBucket * 37 + 11);
-  const ordered = [...templates].sort((left, right) => seededNumber(baseSeed + left.distanceKm) - seededNumber(baseSeed + right.distanceKm));
-  return ordered.slice(0, 3).map((template, index) => ({
-    id: `suggested-${baseSeed}-${index}`,
-    suggested: true as const,
-    kind: "route" as const,
-    visibility: "public" as const,
-    ...template,
-    locationLabel: center ? "Near your current area" : globalCenters[(baseSeed + index) % globalCenters.length].label,
-    distanceFromYouKm: center ? 0 : null,
-    routeCoordinates: suggestedCoordinates(
-      center ?? globalCenters[(baseSeed + index) % globalCenters.length],
-      template.distanceKm,
-      baseSeed + index,
-    ),
-  }));
+  const locationCell = center ? `${Math.round(center.latitude * 100)}:${Math.round(center.longitude * 100)}` : "global";
+  const activityIndex = Math.max(0, PACE_ACTIVITIES.indexOf(requestedActivity));
+  const baseSeed = Math.abs(Math.round(viewerId * 7919 + activityIndex * 104729 + hourBucket * 37 + [...locationCell].reduce((sum, char) => sum + char.charCodeAt(0), 0)));
+  const historical = await db.select({ suggestionId: paceDiscoveryHistoryTable.suggestionId })
+    .from(paceDiscoveryHistoryTable)
+    .where(eq(paceDiscoveryHistoryTable.userId, viewerId))
+    .orderBy(desc(paceDiscoveryHistoryTable.seenAt))
+    .limit(2_000);
+  const excluded = new Set([...historical.map((row) => row.suggestionId), ...requestedExclusions]);
+  const activity = requestedActivity;
+  const centerPoint = center ?? globalCenters[baseSeed % globalCenters.length];
+  const results: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < 96 && results.length < 6; index += 1) {
+    const variant = Math.abs(baseSeed + index * 104729);
+    const distanceKmValue = DISTANCE_OPTIONS[variant % DISTANCE_OPTIONS.length];
+    const elevationM = Math.round(distanceKmValue * ACTIVITY_ELEVATION[activity] * (0.55 + seededNumber(variant + 7) * 1.2));
+    const durationMin = Math.max(5, Math.round(distanceKmValue / ACTIVITY_SPEEDS[activity] * 60 * (0.92 + seededNumber(variant + 13) * 0.18)));
+    const difficulty = elevationM / Math.max(distanceKmValue, 1) > 18 ? "hard" : distanceKmValue > 8 ? "steady" : "easy";
+    const id = `suggested-${viewerId}-${locationCell}-${activity}-${variant}`;
+    if (excluded.has(id)) continue;
+    const adjective = DISCOVERY_ADJECTIVES[variant % DISCOVERY_ADJECTIVES.length];
+    const noun = DISCOVERY_NOUNS[Math.floor(variant / DISCOVERY_ADJECTIVES.length) % DISCOVERY_NOUNS.length];
+    results.push({
+      id,
+      suggested: true as const,
+      kind: "route" as const,
+      visibility: "public" as const,
+      title: `${adjective} ${noun}`,
+      activity,
+      distanceKm: distanceKmValue,
+      elevationM,
+      durationMin,
+      difficulty,
+      description: `${ACTIVITY_LABELS[activity]} route idea with a different shape for this area and this moment. Save it only if it feels right.`,
+      locationLabel: center ? "Near your current area" : globalCenters[variant % globalCenters.length].label,
+      distanceFromYouKm: center ? 0 : null,
+      routeCoordinates: suggestedCoordinates(centerPoint, distanceKmValue, variant),
+    });
+  }
+  return results;
 }
+
+const ACTIVITY_LABELS: Record<PaceActivity, string> = { run: "Run", walk: "Walk", bike: "Ride", hike: "Hike", jog: "Jog", swim: "Swim", strength: "Strength", yoga: "Yoga", dance: "Dance", skate: "Skate" };
 
 async function blockedIds(viewerId: number) {
   const rows = await db
@@ -203,6 +231,8 @@ router.get("/pace/feed", async (req, res): Promise<void> => {
     latitude: z.coerce.number().finite().min(-90).max(90).optional(),
     longitude: z.coerce.number().finite().min(-180).max(180).optional(),
     limit: z.coerce.number().int().min(1).max(50).default(30),
+    activity: z.enum(["run", "walk", "bike", "hike", "jog", "swim", "strength", "yoga", "dance", "skate"]).default("run"),
+    exclude: z.string().trim().max(20_000).optional(),
   }).safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: "Valid location coordinates are required." });
@@ -220,7 +250,30 @@ router.get("/pace/feed", async (req, res): Promise<void> => {
     .filter((route) => !blocked.has(route.authorId))
     .filter((route) => !origin || distanceKm(origin, { latitude: route.startLatitude, longitude: route.startLongitude }) <= 80)
     .slice(0, query.data.limit);
-  res.json({ items: await serializeRoutes(visible, viewerId, origin), suggestions: buildSuggestions(origin) });
+  const exclusions = query.data.exclude?.split(",").filter(Boolean).slice(0, 500) ?? [];
+  res.json({ items: await serializeRoutes(visible, viewerId, origin), suggestions: await buildSuggestions(origin, viewerId, query.data.activity, exclusions) });
+});
+
+router.post("/pace/suggestions/:suggestionId/impression", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const suggestionId = String(req.params.suggestionId || "").trim();
+  const parsed = z.object({
+    activity: z.enum(["run", "walk", "bike", "hike", "jog", "swim", "strength", "yoga", "dance", "skate"]),
+    locationCell: z.string().trim().max(80).optional(),
+  }).safeParse(req.body);
+  if (!suggestionId.startsWith(`suggested-${viewerId}-`) || !parsed.success) {
+    res.status(400).json({ error: "Invalid Pace suggestion." });
+    return;
+  }
+  await db.insert(paceDiscoveryHistoryTable).values({
+    userId: viewerId,
+    suggestionId,
+    activity: parsed.data.activity,
+    locationCell: parsed.data.locationCell ?? null,
+    seenAt: Date.now(),
+  }).onConflictDoNothing();
+  res.status(204).send();
 });
 
 router.post("/pace/routes", async (req, res): Promise<void> => {

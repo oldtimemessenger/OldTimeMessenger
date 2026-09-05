@@ -11,7 +11,8 @@ import { discoveryTarget, rankAtmosphere, type AtmosphereCard } from "../lib/atm
 
 const router: IRouter = Router();
 const enabled = () => process.env.ATMOSPHERE_ENABLED !== "false";
-const testMode = () => process.env.ATMOSPHERE_TEST_MODE === "true";
+const testMode = () => process.env.NODE_ENV !== "production" && process.env.ATMOSPHERE_TEST_MODE === "true";
+const debugMode = () => process.env.NODE_ENV !== "production" && process.env.ATMOSPHERE_DEBUG_MODE === "true";
 const numberEnv = (key: string, fallback: number, min: number, max: number) => {
   const n = Number(process.env[key]); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
 };
@@ -86,7 +87,7 @@ router.get("/atmosphere/feed", async (req, res): Promise<void> => {
     : [];
   const seed = testMode() ? (process.env.ATMOSPHERE_TEST_SEED || "atmosphere-test") : `${viewerId}:${parsed.data.sessionId ?? "default"}:${parsed.data.language ?? preference?.language ?? "default"}:${Math.floor(now / 3_600_000)}`;
   const ranked = rankAtmosphere({ userId: viewerId, sessionId: parsed.data.sessionId, seed, now, limit: target, realContentCount, cooldownHours: cooldown, globalFrequency: numberEnv("ATMOSPHERE_GLOBAL_FREQUENCY", 0.35, 0, 1), mutedCategories: preference?.mutedCategories, interests: parsed.data.interests?.split(",").map((x) => x.trim()).filter(Boolean), candidates, interactions: history, origin: parsed.data.latitude === undefined ? undefined : { latitude: parsed.data.latitude, longitude: parsed.data.longitude! } });
-  const debug = process.env.ATMOSPHERE_DEBUG_MODE === "true" && parsed.data.debug;
+  const debug = debugMode() && parsed.data.debug;
   const items = ranked.map(({ score, reasons, cooldownStatus, ...item }) => debug ? { ...item, debug: { score, reasons, cooldownStatus } } : item);
   const discoveryCount = items.length;
   res.json({ enabled: true, testMode: testMode(), mix: { realContentCount, discoveryCount, discoveryRatio: discoveryCount / Math.max(1, realContentCount + discoveryCount) }, items });

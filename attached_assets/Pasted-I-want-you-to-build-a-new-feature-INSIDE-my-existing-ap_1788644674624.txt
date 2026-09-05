@@ -1,0 +1,580 @@
+I want you to build a new feature INSIDE my existing app called the Atmosphere Engine.
+
+IMPORTANT:
+
+* This is NOT a new app.
+* Do NOT rebuild, replace, or restructure my existing application unnecessarily.
+* First inspect the entire existing codebase, navigation, database schema, authentication, feed, map, Hubs, Pace, profiles, notifications, and existing content systems.
+* Reuse my existing architecture, components, styling, database patterns, authentication, APIs, and services wherever possible.
+* Do not break any existing feature.
+* Before making major changes, understand how the current app works.
+
+PRODUCT PURPOSE
+
+The Atmosphere Engine prevents the app from feeling empty when there is little real user activity.
+
+It should create a constantly changing discovery atmosphere using legitimate discovery/generated content while prioritizing real user-generated content whenever it exists.
+
+The goal is for every user to have something interesting to discover even when the community is still small.
+
+DO NOT create fake users that can interact with people.
+
+DO NOT create fake followers, fake likes, fake comments, fake messages, fake transactions, fake live viewers, fake room participants, or fake engagement metrics.
+
+DO NOT represent generated content as being posted by a real human.
+
+Generated/discovery content should have an appropriate discovery/suggested context so users are not misled about its origin.
+
+CORE ENGINE
+
+Create an Atmosphere Engine service that dynamically determines what content should appear to each user.
+
+The engine should consider:
+
+* user location when permission is available
+* user’s selected interests
+* profession/interests from onboarding
+* Hubs they follow or explore
+* Pace activity/interests
+* previously viewed content
+* previously dismissed content
+* content category
+* time of day
+* day of week
+* season
+* geographic relevance
+* popularity of legitimate data
+* freshness
+* diversity
+* repetition
+* distance
+* language
+* user engagement history
+
+The engine must generate a different content mix for different users.
+
+Two users opening the app should NOT necessarily see the same discovery cards.
+
+CONTENT PRIORITY
+
+The ranking hierarchy should generally be:
+
+1. Real user-generated content
+2. Legitimate external/public discovery data already supported by the app
+3. Generated discovery/atmosphere content
+
+Real user activity should gradually replace discovery content as the community grows.
+
+Example:
+
+No real activity:
+
+* 80-100% discovery/atmosphere
+* 0-20% real content
+
+Some real activity:
+
+* approximately 50-70% real
+* remainder discovery
+
+Strong activity:
+
+* approximately 80-95% real
+* small amount of discovery
+
+Mature area:
+
+* overwhelmingly real content
+
+Make these percentages configurable rather than hard-coded.
+
+IMPORTANT: LIVE
+
+Do NOT generate synthetic live rooms.
+
+Do NOT generate fake live participants.
+
+Do NOT generate fake viewers.
+
+Do NOT generate fake comments inside live rooms.
+
+LIVE must remain 100% real.
+
+If there are no live rooms, show the existing empty-state experience and encourage the user to start a real room if the current product supports that.
+
+DISCOVERY CONTENT TYPES
+
+Build support for multiple discovery card types.
+
+1. ROUTE DISCOVERY
+
+Examples:
+
+Miami → Atlanta
+Tokyo → Kyoto
+Barcelona → Madrid
+Los Angeles → San Diego
+
+The system should generate/discover routes from legitimate geographic information.
+
+Each route can contain:
+
+* origin
+* destination
+* approximate distance
+* estimated travel time when appropriate
+* route category
+* geographic region
+* discovery reason
+* optional map preview
+* CTA
+
+Possible CTA:
+
+“Explore Route”
+
+Do NOT claim a nonexistent person just completed the route.
+
+Do not say:
+
+“Sarah just drove this route”
+
+unless Sarah is an actual user and the event actually happened.
+
+Instead use language such as:
+
+“Route Discovery”
+“Popular Route”
+“Explore This Route”
+“Suggested Route”
+“World Discovery”
+
+2. FLOATING MOTIVATION
+
+Create short motivational content that can appear naturally throughout the experience.
+
+Examples:
+
+“Keep moving. Your next step matters.”
+
+“Small progress is still progress.”
+
+“Your destination doesn’t have to be clear for you to keep going.”
+
+Generate a large variety so users do not repeatedly see the same messages.
+
+The system should avoid repetitive motivational content.
+
+Store generated messages or cache them when appropriate instead of generating unnecessarily expensive content on every screen load.
+
+3. WORLD DISCOVERY
+
+Show interesting locations, routes, activities, and discovery cards from different parts of the world.
+
+Do not make everything local.
+
+The experience should occasionally surprise the user with something from another country or region.
+
+For example:
+
+“🌎 Discover something happening in Tokyo”
+
+“🌍 Explore a route in Spain”
+
+“📍 Discover somewhere new in Kenya”
+
+Use legitimate geographic/location information where possible.
+
+4. HUB DISCOVERY
+
+Integrate the Atmosphere Engine with Hubs.
+
+For example:
+
+Nursing
+Student Nurse
+Doctors
+Fitness
+Truck Drivers
+Travel
+Technology
+Business
+Photography
+Cooking
+Music
+Gaming
+etc.
+
+The engine must support a very large number of professions/interests rather than hard-code only a few.
+
+Users should be able to search/type their profession or interest.
+
+If the user has no Hub activity yet, discovery cards can introduce relevant Hubs.
+
+5. PACE DISCOVERY
+
+Integrate with the existing Pace feature.
+
+Possible discovery cards:
+
+“Popular running route”
+
+“Explore a 4.8 mile route”
+
+“Discover a new cycling route”
+
+“Route inspiration”
+
+Only use actual user activity when claiming actual performance/activity.
+
+Do not fabricate someone’s pace, run, workout, distance, or achievement.
+
+6. MAP ATMOSPHERE
+
+If my app’s map supports discovery cards, the Atmosphere Engine should be able to supply appropriate discovery content to the map without overwhelming it.
+
+The map should remain focused on the app’s core user-generated activity.
+
+Create a clear distinction between:
+
+REAL USER ACTIVITY
+
+and
+
+DISCOVERY/ATMOSPHERE CONTENT.
+
+PERSONALIZATION
+
+Create a scoring system.
+
+Example conceptual score:
+
+contentScore =
+realUserPriority
+
+* geographicRelevance
+* interestMatch
+* freshness
+* popularity
+* diversity
+* discoveryValue
+
+* repetitionPenalty
+* dismissalPenalty
+* alreadySeenPenalty
+
+Do not blindly use this exact formula if my current architecture has a better approach.
+
+Make the ranking system modular so it can evolve later.
+
+MILLIONS OF POSSIBILITIES
+
+The system should support large content variation without requiring millions of database rows.
+
+Use combinations of:
+
+* locations
+* countries
+* cities
+* routes
+* categories
+* interests
+* professions
+* motivations
+* time
+* distance
+* discovery themes
+* ranking
+* user preferences
+
+Generate permutations dynamically where appropriate.
+
+Do NOT prepopulate millions of records unnecessarily.
+
+Use deterministic/randomized selection where appropriate.
+
+VARIETY ENGINE
+
+Prevent the same discovery card from repeatedly appearing.
+
+Track:
+
+* content ID
+* content type
+* user ID
+* timestamp
+* impressions
+* clicks
+* dismissals
+* completion/interaction where applicable
+
+Create cooldown periods.
+
+Example:
+
+A card seen recently should receive a strong penalty.
+
+A card dismissed should receive an even stronger penalty.
+
+After enough time, previously seen discovery content may become eligible again.
+
+SESSION VARIETY
+
+Each session should have controlled randomness.
+
+Do NOT make the feed completely random.
+
+Use:
+
+personalization
++
+ranking
++
+controlled randomness.
+
+This creates discovery without destroying relevance.
+
+GENERATED VISUALS
+
+If generated avatars/illustrations are used for discovery content:
+
+* clearly treat them as generated/discovery imagery
+* do not create fake social identities
+* do not give generated characters fake histories
+* do not create fake followers or engagement
+* do not allow generated profiles to become interactive users
+
+They are visual assets for discovery cards, not fake accounts.
+
+DATABASE
+
+Inspect my existing Supabase/database schema first.
+
+Create only the tables/columns/indexes that are actually necessary.
+
+Potential entities may include:
+
+atmosphere_content
+atmosphere_impressions
+atmosphere_interactions
+atmosphere_preferences
+atmosphere_generation_cache
+
+But adapt this to my existing schema instead of blindly creating duplicate systems.
+
+Use proper indexes.
+
+Do not store unnecessary generated content.
+
+CACHING
+
+Optimize costs.
+
+Do not repeatedly generate identical content.
+
+Use caching where appropriate.
+
+Use expiration times for temporary discovery content.
+
+If generated content can safely be reused across users, cache it.
+
+If personalization makes it user-specific, cache the ranked result rather than regenerating the underlying content unnecessarily.
+
+AI / GENERATION LAYER
+
+If the existing application already has an AI/provider integration, reuse it where appropriate.
+
+If not, design the generation layer behind a clean service interface so a provider can be connected later.
+
+Do not expose technical implementation details to the user interface.
+
+The user experience should simply feel like the app naturally has discovery content.
+
+SAFETY / TRUST
+
+Never fabricate real-world events and present them as confirmed events.
+
+Never impersonate real people.
+
+Never create fake social proof.
+
+Never create fake engagement numbers.
+
+Never create fake live activity.
+
+Never create fake financial activity.
+
+Never create fake user accounts.
+
+Discovery content must remain distinguishable from genuine user activity.
+
+UI
+
+Match the existing app’s visual design.
+
+Do NOT introduce a completely different design language.
+
+Use existing:
+
+* cards
+* typography
+* spacing
+* colors
+* buttons
+* animations
+* navigation
+* icons
+
+where possible.
+
+Discovery cards should feel native to the app.
+
+Use subtle animations for floating motivation and discovery transitions, but prioritize performance.
+
+PERFORMANCE
+
+The Atmosphere Engine must NOT:
+
+* block app startup
+* make excessive API requests
+* generate expensive content repeatedly
+* cause scrolling lag
+* repeatedly query the database for the same information
+* negatively affect battery usage
+
+Use pagination, caching, batching, indexes, lazy loading, and background preparation where appropriate.
+
+ANALYTICS
+
+Track useful anonymous/product analytics such as:
+
+* discovery impression
+* discovery click
+* route opened
+* Hub opened
+* motivation viewed
+* card dismissed
+* content type engagement
+* real vs discovery content performance
+* conversion from discovery → real-user interaction where applicable
+
+Do not fabricate analytics.
+
+FEATURE FLAGS
+
+Add a feature flag so the Atmosphere Engine can be enabled/disabled without deleting the implementation.
+
+Create configurable settings for:
+
+* discovery percentage
+* real-content percentage
+* cooldown
+* maximum discovery cards per session
+* geographic discovery radius
+* global discovery frequency
+* motivation frequency
+* route frequency
+* Hub discovery frequency
+* Pace discovery frequency
+
+ADMIN/DEBUG MODE
+
+Create a development/debug mode that lets me inspect:
+
+* why a card was selected
+* content source
+* real vs discovery
+* ranking score
+* personalization factors
+* cooldown status
+* impression history
+* why a card was rejected
+
+This should be developer/admin-only and never visible to normal users.
+
+EMPTY STATES
+
+The app should never feel broken simply because there is no activity.
+
+Instead of:
+
+“No posts yet.”
+
+where appropriate, use discovery-oriented experiences such as:
+
+“Discover something new.”
+
+“Explore what’s happening around the world.”
+
+“Find your next route.”
+
+“Explore a Hub.”
+
+But preserve honest messaging about what is real user activity versus discovery content.
+
+TESTING
+
+After implementation, test:
+
+* brand-new account
+* returning account
+* user with no interests
+* user with many interests
+* user with location permission
+* user without location permission
+* no real content
+* little real content
+* lots of real content
+* repeated sessions
+* repeated impressions
+* dismissed cards
+* different users
+* different locations
+* different Hubs
+* Pace integration
+* map integration
+* offline/poor network conditions
+* slow network
+* database failures
+* generation failures
+* empty API responses
+* duplicate content
+* LIVE with zero rooms
+
+Verify that:
+
+1. Real user content is prioritized.
+2. Discovery content fills legitimate gaps.
+3. Discovery content varies between users.
+4. The same card does not endlessly repeat.
+5. No fake user accounts are created.
+6. No fake engagement is created.
+7. No fake live activity is created.
+8. The app remains fast.
+9. Existing features continue working.
+10. The system gracefully degrades if generation/API services fail.
+
+FINAL REQUIREMENT
+
+Before finishing:
+
+1. Inspect the existing architecture.
+2. Explain what files/components/services you plan to modify.
+3. Implement the feature.
+4. Run the project’s existing lint/type checks/tests.
+5. Fix errors.
+6. Test all new functionality.
+7. Check for regressions in existing functionality.
+8. Do not leave placeholder functions or TODOs for core functionality.
+9. Do not claim something works unless you actually tested it.
+10. Give me a concise final report containing:
+
+* files changed
+* database changes
+* APIs/services used
+* tests performed
+* issues found
+* issues fixed
+* anything I need to configure manually
+
+Build this as a production-quality feature integrated into my CURRENT application, not as a prototype or separate demo.
