@@ -186,9 +186,6 @@ export function getPaceProfile(token: string, userId?: number) {
   }>(token, userId ? `/api/pace/profile/${userId}` : "/api/pace/profile");
 }
 
-export function getPaceNearby(token: string, latitude: number, longitude: number, radiusKm = 5) {
-  return request<{ items: Array<{ activityType: string; count: number }> }>(
-    token,
-    `/api/pace/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=${encodeURIComponent(radiusKm)}`,
-  );
+export function getPaceNearby(token: string) {
+  return request<{ items: Array<{ activityType: string; count: number }> }>(token, "/api/pace/nearby");
 }

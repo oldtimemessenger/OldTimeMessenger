@@ -25,6 +25,7 @@ import {
   pausePaceActivity,
   type PaceActivity,
   type PaceActivityType,
+  type PacePoint,
   type PaceVisibility,
   resumePaceActivity,
 } from "@/lib/pace-api";
@@ -171,7 +172,7 @@ export default function PaceSheet({
     let nextSession = sessionState;
     for (const batch of takePendingPointBatches(nextSession, 80)) {
       try {
-        const result = await appendPacePoints(token, sessionState.activityId, batch, "uploading");
+        const result = await appendPacePoints(token, nextSession.activityId!, batch, "uploading");
         nextSession = consumeUploadBatch(
           nextSession,
           result.acceptedSequences.length ? result.acceptedSequences : batch.map((point) => point.sequence),
@@ -222,6 +223,52 @@ export default function PaceSheet({
       }
     });
   }, [visible, loadHome]);
+
+  const handleIncomingPoint = useCallback((point: Omit<PacePoint, "sequence">) => {
+    setSession((current) => {
+      if (!current) return current;
+      if (current.manualPaused) return current;
+      const speed = typeof point.speed === "number" ? point.speed : 0;
+      const now = Date.now();
+      let working = current;
+      if (speed > 0.75) {
+        movingRef.current = now;
+        if (working.autoPaused && working.autoPauseEnabled) {
+          const resumed = resumeSession(working);
+          void resumePaceActivity(token, resumed.activityId!, resumed.syncStatus).catch(() => undefined);
+          void saveActiveTrackingSession(resumed);
+          working = resumed;
+        }
+      }
+      let next = updateSessionWithPoint(working, point);
+      if (next.autoPauseEnabled && !next.autoPaused && now - movingRef.current > 30000) {
+        next = pauseSession(next, true);
+        void pausePaceActivity(token, next.activityId!, next.syncStatus).catch(() => undefined);
+      }
+      void saveActiveTrackingSession(next);
+      void flushPending(next).then((updated) => {
+        if (updated.activityUuid !== next.activityUuid) return;
+        setSession((latest) => (latest?.activityUuid === updated.activityUuid ? updated : latest));
+        void saveActiveTrackingSession(updated);
+      });
+      return next;
+    });
+  }, [flushPending, token]);
+
+  const ensureWatcher = useCallback(async () => {
+    if (watchRef.current || !session || session.manualPaused || session.autoPaused) return;
+    watchRef.current = await startLocationWatch(
+      handleIncomingPoint,
+      (message) => {
+        setOfflineWarning(message);
+      },
+    );
+  }, [handleIncomingPoint, session]);
+
+  useEffect(() => {
+    if (!visible || screen !== "live") return;
+    void ensureWatcher();
+  }, [ensureWatcher, screen, visible]);
 
   useEffect(() => () => stopWatch(), [stopWatch]);
 
@@ -278,41 +325,9 @@ export default function PaceSheet({
       setCurrentActivity(activity);
       commitSession(linked);
       setScreen("live");
-      watchRef.current = await startLocationWatch(
-        (point) => {
-          setSession((current) => {
-            if (!current) return current;
-            if (current.manualPaused) return current;
-            const speed = typeof point.speed === "number" ? point.speed : 0;
-            const now = Date.now();
-            let working = current;
-            if (speed > 0.75) {
-              movingRef.current = now;
-              if (working.autoPaused && working.autoPauseEnabled) {
-                const resumed = resumeSession(working);
-                void resumePaceActivity(token, resumed.activityId!, resumed.syncStatus).catch(() => undefined);
-                void saveActiveTrackingSession(resumed);
-                working = resumed;
-              }
-            }
-            let next = updateSessionWithPoint(working, point);
-            if (next.autoPauseEnabled && !next.autoPaused && now - movingRef.current > 30000) {
-              next = pauseSession(next, true);
-              void pausePaceActivity(token, next.activityId!, next.syncStatus).catch(() => undefined);
-            }
-            void saveActiveTrackingSession(next);
-            void flushPending(next).then((updated) => {
-              if (updated.activityUuid !== next.activityUuid) return;
-              setSession((latest) => (latest?.activityUuid === updated.activityUuid ? updated : latest));
-              void saveActiveTrackingSession(updated);
-            });
-            return next;
-          });
-        },
-        (message) => {
-          setOfflineWarning(message);
-        },
-      );
+      watchRef.current = await startLocationWatch(handleIncomingPoint, (message) => {
+        setOfflineWarning(message);
+      });
     } catch (error) {
       Alert.alert("Could not start activity", error instanceof Error ? error.message : "Please try again.");
     } finally {
@@ -502,8 +517,12 @@ export default function PaceSheet({
               <TextInput value={caption} onChangeText={setCaption} placeholder="Activity caption (optional)" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} />
               {offlineWarning ? <Text style={{ color: colors.destructive }}>{offlineWarning}</Text> : null}
               <View style={styles.actionRow}>
-                <Pressable style={[styles.secondaryAction, { borderColor: colors.border }]} onPress={() => void toggleManualPause()}>
-                  <Text style={{ color: colors.foreground, fontWeight: "700" }}>PAUSE</Text>
+                <Pressable
+                  accessibilityLabel={session.manualPaused || session.autoPaused ? "Resume activity" : "Pause activity"}
+                  style={[styles.secondaryAction, { borderColor: colors.border }]}
+                  onPress={() => void toggleManualPause()}
+                >
+                  <Text style={{ color: colors.foreground, fontWeight: "700" }}>{session.manualPaused || session.autoPaused ? "RESUME" : "PAUSE"}</Text>
                 </Pressable>
                 <Pressable style={[styles.primaryAction, { backgroundColor: colors.primary }]} onPress={() => void finishTracking()}>
                   <Text style={{ color: colors.primaryForeground, fontWeight: "800" }}>FINISH</Text>

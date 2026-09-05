@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { z } from "@workspace/api-zod";
 import {
   db,
@@ -94,11 +94,6 @@ function parseLimit(value: unknown, fallback = 20, cap = 50): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return fallback;
   return Math.max(1, Math.min(cap, parsed));
-}
-
-function parseGeo(value: unknown): number | null {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function toRadians(value: number): number {
@@ -704,7 +699,12 @@ router.get("/pace/feed", async (req, res): Promise<void> => {
   const items = await db
     .select()
     .from(paceActivitiesTable)
-    .where(and(eq(paceActivitiesTable.lifecycleStatus, "finished"), ne(paceActivitiesTable.visibility, "private")))
+    .where(
+      and(
+        eq(paceActivitiesTable.lifecycleStatus, "finished"),
+        or(eq(paceActivitiesTable.visibility, "public"), eq(paceActivitiesTable.userId, userId)),
+      ),
+    )
     .orderBy(desc(paceActivitiesTable.createdAt))
     .limit(queryLimit);
   const visible = [] as typeof items;
@@ -963,7 +963,11 @@ router.get("/pace/segments/:segmentId/leaderboard", async (req, res): Promise<vo
     res.status(400).json({ error: "Invalid segment id." });
     return;
   }
-  const scope = req.query.scope === "friends" || req.query.scope === "local" ? req.query.scope : "all";
+  if (req.query.scope === "local") {
+    res.status(400).json({ error: "Local scope is not available yet." });
+    return;
+  }
+  const scope = req.query.scope === "friends" ? "friends" : "all";
   const rows = await db
     .select({
       userId: paceSegmentEffortsTable.userId,
@@ -1136,10 +1140,6 @@ router.get("/pace/challenges/:challengeId/leaderboard", async (req, res): Promis
 router.get("/pace/nearby", async (req, res): Promise<void> => {
   const userId = await requireChatAuth(req, res);
   if (userId === null) return;
-  const latitude = parseGeo(req.query.latitude);
-  const longitude = parseGeo(req.query.longitude);
-  const radiusKm = Math.min(100, Math.max(0.2, parseGeo(req.query.radiusKm) ?? 5));
-  const center = latitude !== null && longitude !== null ? { latitude, longitude } : null;
   const latestSequence = db
     .select({
       activityId: paceActivityPointsTable.activityId,
@@ -1151,18 +1151,9 @@ router.get("/pace/nearby", async (req, res): Promise<void> => {
   const points = await db
     .select({
       activityType: paceActivitiesTable.activityType,
-      latitude: paceActivityPointsTable.latitude,
-      longitude: paceActivityPointsTable.longitude,
     })
     .from(paceActivitiesTable)
     .innerJoin(latestSequence, eq(latestSequence.activityId, paceActivitiesTable.id))
-    .innerJoin(
-      paceActivityPointsTable,
-      and(
-        eq(paceActivityPointsTable.activityId, latestSequence.activityId),
-        eq(paceActivityPointsTable.sequence, latestSequence.maxSequence),
-      ),
-    )
     .where(
       and(
         ne(paceActivitiesTable.userId, userId),
@@ -1172,10 +1163,6 @@ router.get("/pace/nearby", async (req, res): Promise<void> => {
     );
   const counts = new Map<string, number>();
   for (const point of points) {
-    if (center) {
-      const km = distanceMeters(center, { latitude: point.latitude, longitude: point.longitude }) / 1000;
-      if (km > radiusKm) continue;
-    }
     counts.set(point.activityType, (counts.get(point.activityType) ?? 0) + 1);
   }
   res.json({

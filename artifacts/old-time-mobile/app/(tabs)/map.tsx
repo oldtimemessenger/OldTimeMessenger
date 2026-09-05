@@ -172,7 +172,7 @@ export default function MapScreen() {
       return;
     }
     let active = true;
-    void getPaceNearby(session.authToken, region.latitude, region.longitude, radiusForRegion(region))
+    void getPaceNearby(session.authToken)
       .then((result) => {
         if (active) setPaceNearby(result.items);
       })
@@ -182,7 +182,7 @@ export default function MapScreen() {
     return () => {
       active = false;
     };
-  }, [paceLayerEnabled, session?.authToken, region.latitude, region.longitude]);
+  }, [paceLayerEnabled, session?.authToken]);
 
   const loadRegion = useCallback(async (nextRegion: SocialMapRegion, force = false) => {
     if (!session?.authToken) return;
