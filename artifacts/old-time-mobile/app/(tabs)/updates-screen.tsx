@@ -94,7 +94,7 @@ const storyGradients = [
   ['#00C6FF', '#0072FF', '#6A11CB'],
 ] as const;
 const creatorTags = ['comedy', 'music', 'food', 'fitness', 'travel', 'technology', 'art', 'sports'];
-type FeedTab = 'for-you' | 'following' | 'interests';
+type FeedTab = 'for-you' | 'following' | 'community' | 'interests';
 const FEED_LANGUAGE_OPTIONS = [
   { id: 'English', label: 'English', nativeLabel: 'English' },
   { id: 'French', label: 'French', nativeLabel: 'Français' },
@@ -121,6 +121,8 @@ function MediaFeedFloatingHeader({
   onSelectTab,
   onOpenHub,
   onOpenCommunity,
+  onOpenCreate,
+  onOpenSettings,
   onOpenSearch,
   onOpenMessages,
   onOpenProfile,
@@ -132,6 +134,8 @@ function MediaFeedFloatingHeader({
   onSelectTab: (tab: FeedTab) => void;
   onOpenHub: () => void;
   onOpenCommunity: () => void;
+  onOpenCreate: () => void;
+  onOpenSettings: () => void;
   onOpenSearch: () => void;
   onOpenMessages: () => void;
   onOpenProfile: () => void;
@@ -144,25 +148,17 @@ function MediaFeedFloatingHeader({
     <View style={[styles.mediaFeedHeader, { top: insets.top }]}>
       <View style={styles.mediaFeedHeaderActions}>
         <View style={styles.mediaFeedHeaderGroup}>
-          <Pressable
-            onPress={onOpenHub}
-            accessibilityRole="button"
-            accessibilityLabel="Open Current Updates"
-            style={styles.floatingUpdatesButton}
-          >
-            <Ionicons name="newspaper" size={17} color="#fff" />
-            <Text style={styles.floatingUpdatesText}>Current</Text>
-          </Pressable>
-          <Pressable
-            onPress={onOpenCommunity}
-            accessibilityRole="button"
-            accessibilityLabel="Open Hubs"
-            style={styles.floatingIconButton}
-          >
-            <Ionicons name="albums" size={21} color="#fff" />
+          <Pressable onPress={onOpenHub} accessibilityRole="button" accessibilityLabel="Open Updates" style={styles.floatingUpdatesButton}>
+            <Text style={styles.floatingUpdatesText}>Updates</Text>
           </Pressable>
         </View>
         <View style={styles.mediaFeedHeaderGroup}>
+          <Pressable onPress={onOpenCreate} accessibilityRole="button" accessibilityLabel="Create an update" style={styles.floatingIconButton}>
+            <Ionicons name="add" size={23} color="#fff" />
+          </Pressable>
+          <Pressable onPress={onOpenSettings} accessibilityRole="button" accessibilityLabel="Open Updates settings" style={styles.floatingIconButton}>
+            <Ionicons name="options-outline" size={21} color="#fff" />
+          </Pressable>
           <Pressable onPress={onOpenSearch} accessibilityRole="button" accessibilityLabel="Search people" style={styles.floatingIconButton}>
             <Ionicons name="search" size={21} color="#fff" />
           </Pressable>
@@ -177,11 +173,14 @@ function MediaFeedFloatingHeader({
       </View>
 
       <View style={styles.mediaFeedTabs}>
+        <Pressable onPress={() => onSelectTab('for-you')} accessibilityRole="tab" accessibilityState={{ selected: tab === 'for-you' }}>
+          <Text style={[styles.mediaFeedTabText, tab === 'for-you' && styles.mediaFeedTabTextActive]}>For You</Text>
+        </Pressable>
         <Pressable onPress={() => onSelectTab('following')} accessibilityRole="tab" accessibilityState={{ selected: tab === 'following' }}>
           <Text style={[styles.mediaFeedTabText, tab === 'following' && styles.mediaFeedTabTextActive]}>Following</Text>
         </Pressable>
-        <Pressable onPress={() => onSelectTab('for-you')} accessibilityRole="tab" accessibilityState={{ selected: tab === 'for-you' }}>
-          <Text style={[styles.mediaFeedTabText, tab === 'for-you' && styles.mediaFeedTabTextActive]}>For You</Text>
+        <Pressable onPress={onOpenCommunity} accessibilityRole="tab" accessibilityState={{ selected: tab === 'community' }}>
+          <Text style={[styles.mediaFeedTabText, tab === 'community' && styles.mediaFeedTabTextActive]}>Community</Text>
         </Pressable>
       </View>
     </View>
@@ -191,6 +190,7 @@ function MediaFeedFloatingHeader({
 export default function UpdatesScreen() {
   const colors = useColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { mediaUri, mediaType, mediaFit, composeType } = useLocalSearchParams<{
     mediaUri?: string;
     mediaType?: 'photo' | 'video';
@@ -200,7 +200,7 @@ export default function UpdatesScreen() {
   const { statuses, posts, interests, interestWeights, followedCreators, hiddenPostIds, markStatusViewed, togglePostLike, togglePostSaved, addPostComment, recordPostInteraction, recordInterestFeedback, toggleInterest, toggleFollow, hidePost: persistHiddenPost, session, settings, updateSettings } = useApp();
   const requestUploadUrl = useRequestUploadUrl();
 
-  const [viewMode, setViewMode] = useState<'media-feed' | 'landing' | 'feed' | 'creator-feed' | 'status'>('media-feed');
+  const [viewMode, setViewMode] = useState<'media-feed' | 'landing' | 'feed' | 'creator-feed' | 'status'>('landing');
   const [showCommunity, setShowCommunity] = useState(false);
   const [communityFilter, setCommunityFilter] = useState<CommunityFilter>('friends');
   const [hubQuery, setHubQuery] = useState('');
@@ -248,6 +248,10 @@ export default function UpdatesScreen() {
   const [messageRequests, setMessageRequests] = useState<MessageRequest[]>([]);
   const [messageRequestsLoading, setMessageRequestsLoading] = useState(false);
   const [showPeopleSearch, setShowPeopleSearch] = useState(false);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
+  const [showFeedSettings, setShowFeedSettings] = useState(false);
+  const [showInterestSettings, setShowInterestSettings] = useState(false);
+  const [socialVideoOpen, setSocialVideoOpen] = useState<{ uri: string; title: string } | null>(null);
   const [peopleQuery, setPeopleQuery] = useState('');
   const [peopleResults, setPeopleResults] = useState<SocialUser[]>([]);
   const [peopleSearchLoading, setPeopleSearchLoading] = useState(false);
@@ -515,6 +519,10 @@ export default function UpdatesScreen() {
   }
 
   function selectFeedTab(nextTab: FeedTab) {
+    if (nextTab === 'community') {
+      openCommunity();
+      return;
+    }
     setTab(nextTab);
     setFeedIndex(0);
     if (nextTab === 'interests') void loadSocial('for-you', 'interests');
@@ -663,6 +671,8 @@ export default function UpdatesScreen() {
              onSelectTab={selectFeedTab}
              onOpenHub={() => setViewMode('landing')}
              onOpenCommunity={openCommunity}
+              onOpenCreate={() => setShowCreateMenu(true)}
+              onOpenSettings={() => setShowFeedSettings((value) => !value)}
              onOpenSearch={() => setShowPeopleSearch(true)}
              onOpenMessages={openMessagesInbox}
              onOpenProfile={() => setProfileUserId(session?.id ?? 0)}
@@ -678,41 +688,31 @@ export default function UpdatesScreen() {
        />
 
        {/* Layer 1: Current Updates (Hub) Modal */}
-       <Modal visible={viewMode === 'landing'} transparent animationType="slide" onRequestClose={() => setViewMode('media-feed')}>
+        <Modal visible={viewMode === 'landing'} transparent animationType="slide" onRequestClose={() => setViewMode('media-feed')}>
          <View style={{ flex: 1, backgroundColor: colors.background }}>
-            <Screen title="Current Updates" left={
+             <Screen title="Updates" left={
              <View style={styles.headerLeftActions}>
                <IconButton name="chevron-down" label="Back to Feed" onPress={() => setViewMode('media-feed')} />
-               <IconButton name="albums-outline" label="Open Hubs" onPress={openCommunity} />
              </View>
            } right={
              <View style={styles.socialHeaderActions}>
-               <View>
-                 <IconButton name="mail-outline" label="Open messages" onPress={openMessagesInbox} />
-                 {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
-               </View>
+                <IconButton name="add" label="Create an update" onPress={() => setShowCreateMenu(true)} />
+                <IconButton name="options-outline" label="Open Updates settings" onPress={() => setShowFeedSettings((value) => !value)} />
                <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
+                <View>
+                  <IconButton name="mail-outline" label="Open messages" onPress={openMessagesInbox} />
+                  {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
+                </View>
                <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
                   <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} uri={socialAvatarUrl(ownCard?.avatarObjectPath ?? session?.avatarObjectPath)} />
                </Pressable>
-               <IconButton
-                 name="add"
-                 label="Create a photo or video"
-                 onPress={() => {
-                   setPostComposerSurface('creator');
-                   setCompose('post');
-                 }}
-               />
              </View>
            }>
              <FlatList
-               testID="landing-grid"
-               data={tab === 'interests' ? [] : creatorGridItems}
-               numColumns={3}
-               keyExtractor={item => String(item.id)}
-               columnWrapperStyle={{ gap: 2 }}
-               ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
-               contentContainerStyle={{ paddingHorizontal: 2, paddingBottom: 100 }}
+                testID="updates-feed"
+                data={socialPosts.filter((post) => post.media.some((media) => media.type === 'image' || media.type === 'video'))}
+                keyExtractor={(item) => String(item.id)}
+                contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 100 }}
                showsVerticalScrollIndicator={false}
                ListHeaderComponent={<>
                  <SocialHubPanel
@@ -726,11 +726,12 @@ export default function UpdatesScreen() {
                    onRetry={() => void loadSocial()}
                    onOpenProfile={setProfileUserId}
                    onOpenStory={(story) => setServerStoryOpen(story)}
-                   onCreatePost={() => {
-                     setPostComposerSurface('creator');
-                     setCompose('post');
-                   }}
-                   onCreateStory={() => setCompose('status')}
+                    tab={tab}
+                    interests={interests}
+                    onSelectTab={selectFeedTab}
+                    onOpenCommunity={openCommunity}
+                    onOpenCreate={() => setShowCreateMenu(true)}
+                    onOpenSettings={() => setShowFeedSettings((value) => !value)}
                    interestPrompt={interestPrompt}
                    onDismissInterestPrompt={() => setInterestPrompt(null)}
                    onInterestFeedback={(interested) => {
@@ -743,53 +744,40 @@ export default function UpdatesScreen() {
                    onShare={shareSocialPost}
                    onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
                    onOpenHub={openHubFromChip}
+                    onOpenVideo={(post) => {
+                      const media = post.media[0];
+                      if (media?.type === 'video') setSocialVideoOpen({ uri: socialMediaUrl(media.objectPath), title: post.author.name });
+                    }}
                  />
                  <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 }}>
                    <AdMobBanner />
                  </View>
-                 <View style={[styles.feedTabs, { borderBottomColor: colors.border }]}>
-                   {(['for-you', 'following', 'interests'] as FeedTab[]).map(item => (
-                     <Pressable key={item} testID={`tab-${item}`} onPress={() => selectFeedTab(item)} style={[styles.feedTab, tab === item && { borderBottomColor: colors.primary }]}>
-                       <Text style={[styles.feedTabText, { color: tab === item ? colors.primary : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : item === 'following' ? 'Following' : 'Interests'}</Text>
-                     </Pressable>
-                   ))}
-                 </View>
-                 {tab === 'interests' && <InterestPanel interests={interests} onToggle={toggleInterest} languages={settings.feedLanguages} onToggleLanguage={chooseFeedLanguage} onBack={() => setTab('for-you')} colors={colors} />}
-                 {tab !== 'interests' && creatorGridItems.length === 0 && (
-                   <EmptyState icon="people-outline" title={tab === 'following' ? 'Follow a creator' : 'Choose some interests'} description={tab === 'following' ? 'Follow creators from a story to build your Following feed.' : 'Choose topics so For You knows what to prioritize.'} action={<Pressable onPress={() => setTab(tab === 'following' ? 'for-you' : 'interests')}><Text style={{ color: colors.primary, fontWeight: '600' }}>{tab === 'following' ? 'Open For You' : 'Set interests'}</Text></Pressable>} />
-                 )}
                </>}
                renderItem={({ item, index }) => (
-                 <Pressable testID={`grid-item-${'platform' in item ? `discovery-${item.id}` : 'starterAction' in item ? `starter-${item.id}` : item.id}`} onPress={() => {
-                   if ('platform' in item) {
-                     void openDiscoveryItem(item);
-                     return;
-                   }
-                   if ('starterAction' in item) {
-                     if (item.starterAction === 'map') router.push('/(tabs)/map');
-                     else if (item.starterAction === 'story') setCompose('status');
-                     else if (item.starterAction === 'interests') setTab('interests');
-                     else openCommunity();
-                     return;
-                   }
-                   const nativeIndex = creatorPosts.findIndex((post) => post.id === item.id);
-                   setFeedIndex(Math.max(0, nativeIndex));
-                   setViewMode('media-feed');
-                 }} style={{ width: (WINDOW_WIDTH - 8) / 3, aspectRatio: 3/4, backgroundColor: colors.card, justifyContent: 'flex-end', padding: 8 }}>
-                   {'platform' in item ? (
-                     <DiscoveryGridCard item={item} />
-                   ) : 'starterAction' in item ? (
-                     <StarterGridCard item={item} />
-                   ) : item.media?.[0] ? (
-                     <Image source={{ uri: socialMediaUrl(item.media[0].objectPath) }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                   ) : null}
-                   {'platform' in item || 'starterAction' in item ? null : <><View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.15)' }]} />
-                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                       <Ionicons name={item.media?.[0]?.type === 'video' ? 'play' : 'image-outline'} size={12} color="#fff" />
-                       <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{item.counts.likes}</Text>
-                     </View></>}
-                 </Pressable>
+                  <SocialPostCard
+                    post={item}
+                    colors={colors}
+                    token={session?.authToken ?? ''}
+                    onOpenProfile={() => setProfileUserId(item.author.id)}
+                    onShare={() => shareSocialPost(item)}
+                    onComment={() => setSocialCommentPost(item)}
+                    onChanged={(post) => setSocialPosts((items) => items.map((current) => current.id === post.id ? post : current))}
+                    onOpenHub={openHubFromChip}
+                    onOpenVideo={(post) => {
+                      const media = post.media[0];
+                      if (media?.type === 'video') setSocialVideoOpen({ uri: socialMediaUrl(media.objectPath), title: post.author.name });
+                    }}
+                  />
                )}
+                ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+                ListEmptyComponent={
+                  socialLoading ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 42 }} /> :
+                    <EmptyState
+                      icon="people-outline"
+                      title={tab === 'following' ? 'Follow a creator' : 'No updates yet'}
+                      description={tab === 'following' ? 'Follow creators from a Story or post to build your Following feed.' : 'Photo and video updates from people and creators will appear here.'}
+                    />
+                }
              />
            </Screen>
          </View>
@@ -976,6 +964,74 @@ export default function UpdatesScreen() {
              }}
           />
         )}
+      </Modal>
+
+      <Modal visible={showCreateMenu} transparent animationType="slide" onRequestClose={() => setShowCreateMenu(false)}>
+        <CreateActionSheet
+          colors={colors}
+          onClose={() => setShowCreateMenu(false)}
+          onCreatePost={() => {
+            setShowCreateMenu(false);
+            setPostComposerSurface('creator');
+            setCompose('post');
+          }}
+          onCreateStory={() => {
+            setShowCreateMenu(false);
+            setCompose('status');
+          }}
+          onOpenCamera={() => {
+            setShowCreateMenu(false);
+            router.push({ pathname: '/camera', params: { returnTo: 'post' } });
+          }}
+        />
+      </Modal>
+
+      <Modal visible={showFeedSettings} transparent animationType="fade" onRequestClose={() => setShowFeedSettings(false)}>
+        <Pressable style={styles.feedSettingsOverlay} onPress={() => setShowFeedSettings(false)}>
+          <View style={[styles.feedSettingsMenu, { top: insets.top + 58, backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.feedSettingsEyebrow, { color: colors.mutedForeground }]}>UPDATES</Text>
+            <Pressable style={styles.feedSettingsItem} onPress={() => { setShowFeedSettings(false); setShowInterestSettings(true); }}>
+              <Ionicons name="options-outline" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.feedSettingsTitle, { color: colors.foreground }]}>Edit interests</Text>
+                <Text style={[styles.feedSettingsHint, { color: colors.mutedForeground }]}>Tune what appears in For You</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={17} color={colors.mutedForeground} />
+            </Pressable>
+            <Pressable style={styles.feedSettingsItem} onPress={() => { setShowFeedSettings(false); openCommunity(); }}>
+              <Ionicons name="albums-outline" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.feedSettingsTitle, { color: colors.foreground }]}>Browse Hubs</Text>
+                <Text style={[styles.feedSettingsHint, { color: colors.mutedForeground }]}>Find conversations around your interests</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={17} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showInterestSettings} animationType="slide" onRequestClose={() => setShowInterestSettings(false)}>
+        <Screen title="Feed settings" left={<IconButton name="chevron-down" label="Close feed settings" onPress={() => setShowInterestSettings(false)} />}>
+          <InterestPanel
+            interests={interests}
+            onToggle={toggleInterest}
+            languages={settings.feedLanguages}
+            onToggleLanguage={chooseFeedLanguage}
+            onBack={() => setShowInterestSettings(false)}
+            colors={colors}
+          />
+        </Screen>
+      </Modal>
+
+      <Modal visible={socialVideoOpen !== null} animationType="fade" presentationStyle="fullScreen" onRequestClose={() => setSocialVideoOpen(null)}>
+        {socialVideoOpen ? (
+          <SocialVideoViewer
+            video={socialVideoOpen}
+            token={session?.authToken ?? ''}
+            colors={colors}
+            onClose={() => setSocialVideoOpen(null)}
+          />
+        ) : null}
       </Modal>
 
       <Modal visible={commentPost !== null} transparent animationType="slide" onRequestClose={() => setCommentPost(null)}>
@@ -2238,8 +2294,13 @@ function SocialHubPanel({
   onRetry,
   onOpenProfile,
   onOpenStory,
-  onCreatePost,
-  onCreateStory,
+  tab,
+  interests,
+  onSelectTab,
+  onOpenCommunity,
+  onOpenCreate,
+  onOpenSettings,
+  onOpenVideo,
   interestPrompt,
   onDismissInterestPrompt,
   onInterestFeedback,
@@ -2258,8 +2319,13 @@ function SocialHubPanel({
   onRetry: () => void;
   onOpenProfile: (id: number) => void;
   onOpenStory: (story: Story) => void;
-  onCreatePost: () => void;
-  onCreateStory: () => void;
+  tab: FeedTab;
+  interests: string[];
+  onSelectTab: (tab: FeedTab) => void;
+  onOpenCommunity: () => void;
+  onOpenCreate: () => void;
+  onOpenSettings: () => void;
+  onOpenVideo: (post: SocialPost) => void;
   interestPrompt: { topic: string; title: string } | null;
   onDismissInterestPrompt: () => void;
   onInterestFeedback: (interested: boolean) => void;
@@ -2273,26 +2339,54 @@ function SocialHubPanel({
   return (
     <View style={styles.socialHub}>
       <View style={styles.socialStoryHeading}>
-        <View>
-          <Text style={[styles.socialSectionTitle, { color: colors.foreground }]}>Stories</Text>
-          <Text style={[styles.socialSectionHint, { color: colors.mutedForeground }]}>Share a moment with your people</Text>
-        </View>
+        <Text style={[styles.socialHubTitle, { color: colors.foreground }]}>Your feed</Text>
+        <Pressable onPress={onOpenSettings} style={[styles.feedSettingsButton, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityRole="button" accessibilityLabel="Open Updates settings">
+          <Ionicons name="options-outline" size={17} color={colors.foreground} />
+        </Pressable>
+      </View>
+      <View style={[styles.socialFeedTabs, { borderBottomColor: colors.border }]}>
+        {(['for-you', 'following', 'community'] as FeedTab[]).map((item) => (
+          <Pressable
+            key={item}
+            testID={`tab-${item}`}
+            onPress={() => item === 'community' ? onOpenCommunity() : onSelectTab(item)}
+            style={[styles.socialFeedTab, tab === item && styles.socialFeedTabActive]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === item }}
+          >
+            <Text style={[styles.socialFeedTabText, { color: tab === item ? colors.foreground : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : item === 'following' ? 'Following' : 'Community'}</Text>
+          </Pressable>
+        ))}
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.socialStoryRail}>
-        <StoryCard story={ownStory} name={card?.name ?? 'You'} isOwn colors={colors} token={token} onPress={ownStory ? () => onOpenStory(ownStory) : onCreateStory} />
+        <StoryCard story={ownStory} name={card?.name ?? 'You'} isOwn colors={colors} token={token} onPress={ownStory ? () => onOpenStory(ownStory) : onOpenCreate} />
         {otherStories.slice(0, 10).map((story) => (
           <StoryCard key={story.id} story={story} name={story.author.name} colors={colors} token={token} onPress={() => onOpenStory(story)} />
         ))}
       </ScrollView>
-      <View style={styles.socialCreateRow}>
-        <Pressable onPress={onCreatePost} style={[styles.socialCreateButton, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Create a photo or video">
-          <Ionicons name="videocam-outline" size={18} color="#fff" />
-          <Text style={styles.socialCreateButtonText}>Create media</Text>
+      <View style={styles.interestRailHeader}>
+        <Text style={[styles.socialSectionHint, { color: colors.mutedForeground }]}>Interests</Text>
+        <Pressable onPress={onOpenSettings} accessibilityRole="button" accessibilityLabel="Edit interests">
+          <Text style={[styles.interestEditText, { color: colors.primary }]}>Edit</Text>
         </Pressable>
-        <Pressable onPress={onCreateStory} style={[styles.socialCreateButton, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]} accessibilityRole="button" accessibilityLabel="Create a story">
-          <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-          <Text style={[styles.socialCreateButtonText, { color: colors.foreground }]}>Create a story</Text>
-        </Pressable>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.interestRail}>
+        {(interests.length ? interests.slice(0, 8) : ['Add interests']).map((interest) => (
+          <Pressable key={interest} onPress={onOpenSettings} style={[styles.compactInterestChip, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+            <Text style={[styles.interestChipText, { color: colors.foreground }]}>{interest}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <View style={styles.suggestedPeopleRail}>
+        <Text style={[styles.socialSectionHint, { color: colors.mutedForeground }]}>Suggested for you</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestedPeopleList}>
+          {Array.from(new Map(posts.map((post) => [post.author.id, post.author])).values()).slice(0, 6).map((author) => (
+            <Pressable key={author.id} onPress={() => onOpenProfile(author.id)} style={[styles.suggestedPerson, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel={`Open ${author.name}'s profile`}>
+              <Avatar name={author.name} size={28} color={colors.primary} uri={socialAvatarUrl(author.avatarObjectPath)} />
+              <Text style={[styles.suggestedPersonName, { color: colors.foreground }]} numberOfLines={1}>{author.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
       </View>
 
       {loading ? (
@@ -2682,7 +2776,7 @@ function CommunityFeed({
   );
 }
 
-function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment, onChanged, onOpenHub }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onComment?: () => void; onChanged: (post: SocialPost) => void; onOpenHub?: (hub: { id: number; name: string; slug: string }) => void }) {
+function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment, onChanged, onOpenHub, onOpenVideo }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onComment?: () => void; onChanged: (post: SocialPost) => void; onOpenHub?: (hub: { id: number; name: string; slug: string }) => void; onOpenVideo?: (post: SocialPost) => void }) {
   const [busy, setBusy] = useState(false);
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -2783,7 +2877,20 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment
         </ScrollView>
       ) : null}
       {media?.type === 'image' ? <Image source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.socialPostMedia} contentFit="cover" /> : null}
-      {media?.type === 'video' ? <VideoSurface source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.socialPostMedia} controls /> : null}
+      {media?.type === 'video' ? (
+        <Pressable
+          onPress={() => onOpenVideo?.(post)}
+          style={styles.socialVideoPreview}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${post.author.name}'s video full screen`}
+          accessibilityHint="Opens the video viewer"
+        >
+          <VideoSurface source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.socialPostMedia} muted controls={false} />
+          <View pointerEvents="none" style={styles.socialVideoExpand}>
+            <Ionicons name="expand-outline" size={18} color="#fff" />
+          </View>
+        </Pressable>
+      ) : null}
       {post.linkUrl ? (
         <Pressable onPress={() => void Linking.openURL(post.linkUrl!)} style={[styles.socialLinkCard, { backgroundColor: colors.secondary }]}>
           <Ionicons name="link-outline" size={18} color={colors.primary} />
@@ -2843,6 +2950,88 @@ function relativeSocialTime(timestamp: number) {
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
+}
+
+function CreateActionSheet({
+  colors,
+  onClose,
+  onCreatePost,
+  onCreateStory,
+  onOpenCamera,
+}: {
+  colors: any;
+  onClose: () => void;
+  onCreatePost: () => void;
+  onCreateStory: () => void;
+  onOpenCamera: () => void;
+}) {
+  const options = [
+    { icon: 'create-outline' as const, title: 'Create a post', hint: 'Share a photo or video with your feed.', onPress: onCreatePost },
+    { icon: 'timer-outline' as const, title: 'Create a story', hint: 'Share a moment that disappears after 24 hours.', onPress: onCreateStory },
+    { icon: 'camera-outline' as const, title: 'Camera / media creation', hint: 'Open the camera to capture something new.', onPress: onOpenCamera },
+  ];
+  return (
+    <View style={styles.sheetOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={[styles.createActionSheet, { backgroundColor: colors.card }]}>
+        <View style={styles.sheetTop}>
+          <View>
+            <Text style={[styles.sheetEyebrow, { color: colors.mutedForeground }]}>SHARE SOMETHING</Text>
+            <Text style={[styles.notificationsTitle, { color: colors.foreground }]}>Create</Text>
+          </View>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        {options.map((option) => (
+          <Pressable key={option.title} onPress={option.onPress} style={[styles.createActionItem, { borderBottomColor: colors.border }]} accessibilityRole="button">
+            <View style={[styles.createActionIcon, { backgroundColor: colors.secondary }]}>
+              <Ionicons name={option.icon} size={22} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.shareOptionTitle, { color: colors.foreground }]}>{option.title}</Text>
+              <Text style={[styles.shareOptionHint, { color: colors.mutedForeground }]}>{option.hint}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function SocialVideoViewer({
+  video,
+  token,
+  colors,
+  onClose,
+}: {
+  video: { uri: string; title: string };
+  token: string;
+  colors: any;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={styles.socialVideoViewer}>
+      <View style={[styles.socialVideoViewerHeader, { paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={onClose} style={styles.socialVideoClose} accessibilityRole="button" accessibilityLabel="Close video viewer">
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={styles.socialVideoViewerTitle} numberOfLines={1}>{video.title}</Text>
+        <View style={{ width: 42 }} />
+      </View>
+      <View style={styles.socialVideoViewerStage}>
+        <VideoSurface
+          source={{ uri: video.uri, headers: { Authorization: `Bearer ${token}` } }}
+          style={styles.socialVideoViewerMedia}
+          controls
+          muted={false}
+          loop={false}
+          contentFit="contain"
+        />
+      </View>
+      <Text style={[styles.socialVideoViewerHint, { color: 'rgba(255,255,255,0.65)', paddingBottom: insets.bottom + 12 }]}>Tap the back button to return to Updates</Text>
+    </View>
+  );
 }
 
 function socialPostReference(post: SocialPost) {
@@ -3984,13 +4173,24 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 9, marginTop: 2 },
   socialStoryRail: { gap: 14, paddingVertical: 14, paddingHorizontal: 4 },
   socialStoryHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingTop: 4 },
+  feedSettingsButton: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  socialFeedTabs: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, marginTop: 2 },
+  socialFeedTab: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  socialFeedTabActive: { borderBottomColor: '#FF7A1A' },
+  socialFeedTabText: { fontSize: 13, fontWeight: '700' },
   socialStoryCard: { width: 92, height: 142, borderRadius: 18, overflow: 'hidden', padding: 8, justifyContent: 'space-between' },
   socialStoryCardTop: { alignItems: 'flex-start' },
   socialStoryCardBottom: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   socialStoryCardName: { flex: 1, color: '#fff', fontSize: 11, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.4)', textShadowRadius: 4 },
-  socialCreateRow: { flexDirection: 'row', gap: 9, marginTop: 2, marginBottom: 5 },
-  socialCreateButton: { flex: 1, minHeight: 44, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  socialCreateButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  interestRailHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginTop: 2 },
+  interestRail: { gap: 7, paddingHorizontal: 4, paddingVertical: 8 },
+  compactInterestChip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 11, paddingVertical: 7 },
+  interestChipText: { fontSize: 11, fontWeight: '700' },
+  interestEditText: { fontSize: 11, fontWeight: '800' },
+  suggestedPeopleRail: { marginTop: 2 },
+  suggestedPeopleList: { gap: 7, paddingVertical: 8, paddingHorizontal: 4 },
+  suggestedPerson: { minHeight: 42, borderWidth: 1, borderRadius: 21, paddingHorizontal: 8, paddingRight: 12, flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 142 },
+  suggestedPersonName: { fontSize: 11, fontWeight: '700', flexShrink: 1 },
   socialStoryItem: { width: 64, alignItems: 'center' },
   socialStoryName: { fontSize: 10.5, fontWeight: '600', width: 64, textAlign: 'center', marginTop: 5 },
   socialStoryAudience: { fontSize: 8, marginTop: 1 },
@@ -4009,6 +4209,8 @@ const styles = StyleSheet.create({
   postHubChip: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
   postHubChipText: { fontSize: 11, fontWeight: '700' },
   socialPostMedia: { width: '100%', height: 210, borderRadius: 12, marginTop: 11 },
+  socialVideoPreview: { position: 'relative' },
+  socialVideoExpand: { position: 'absolute', right: 10, bottom: 10, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.52)' },
   socialLinkCard: { borderRadius: 11, padding: 10, marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
   socialLinkTitle: { fontSize: 12, fontWeight: '600' },
   socialLinkUrl: { fontSize: 10, marginTop: 2 },
@@ -4031,6 +4233,22 @@ const styles = StyleSheet.create({
   shareOptionHint: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   shareReferenceHint: { borderRadius: 13, padding: 11, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 9 },
   sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
+  createActionSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 28 },
+  createActionItem: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
+  createActionIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  feedSettingsOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.12)' },
+  feedSettingsMenu: { position: 'absolute', right: 12, width: 268, borderWidth: 1, borderRadius: 18, padding: 12, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 8 },
+  feedSettingsEyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, paddingHorizontal: 4, paddingBottom: 5 },
+  feedSettingsItem: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(128,128,128,0.18)' },
+  feedSettingsTitle: { fontSize: 13, fontWeight: '700' },
+  feedSettingsHint: { fontSize: 10, marginTop: 2 },
+  socialVideoViewer: { flex: 1, backgroundColor: '#000', justifyContent: 'space-between' },
+  socialVideoViewerHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 },
+  socialVideoClose: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
+  socialVideoViewerTitle: { color: '#fff', fontSize: 15, fontWeight: '700', maxWidth: WINDOW_WIDTH - 130, textAlign: 'center' },
+  socialVideoViewerStage: { flex: 1, justifyContent: 'center' },
+  socialVideoViewerMedia: { width: WINDOW_WIDTH, height: WINDOW_HEIGHT * 0.76 },
+  socialVideoViewerHint: { fontSize: 11, textAlign: 'center' },
   socialProfileSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, minHeight: 440, maxHeight: WINDOW_HEIGHT * 0.88, alignItems: 'center' },
   socialProfileContent: { width: '100%', alignItems: 'center', paddingBottom: 12 },
   profilePostsHeading: { width: '100%', flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 9 },
