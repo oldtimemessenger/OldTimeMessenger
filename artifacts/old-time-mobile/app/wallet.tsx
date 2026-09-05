@@ -51,24 +51,28 @@ export default function WalletScreen() {
     }
   }, [walletQuery.data, walletQuery.error]);
 
-  async function refreshWallet(options?: { clearFeedback?: boolean; alertOnError?: boolean }) {
+  async function refreshWallet() {
     const result = await walletQuery.refetch();
     if (result.status === 'error') {
-      const message = result.error instanceof Error ? result.error.message : 'Wallet unavailable.';
-      if (options?.alertOnError) {
-        setFeedback(null);
-        Alert.alert('Wallet not updated', message);
-      } else setFeedback(message);
-      return null;
+      return {
+        ok: false as const,
+        message: result.error instanceof Error ? result.error.message : 'Wallet unavailable.',
+      };
     }
-    if (options?.clearFeedback) setFeedback(null);
-    return result.data ?? wallet;
+    return {
+      ok: true as const,
+      data: result.data ?? wallet,
+    };
   }
 
   async function handlePurchase(item: (typeof revenueCat.packages)[number]) {
     try {
       const credited = await revenueCat.purchase(item);
-      await refreshWallet({ clearFeedback: true });
+      const refreshed = await refreshWallet();
+      if (!refreshed.ok) {
+        setFeedback(refreshed.message);
+        return;
+      }
       setFeedback(`${credited} coins added.`);
     } catch (error) {
       const details = revenueCatErrorDetails(error);
@@ -81,7 +85,11 @@ export default function WalletScreen() {
     setRestoring(true);
     try {
       const credited = await revenueCat.restore();
-      await refreshWallet({ clearFeedback: true });
+      const refreshed = await refreshWallet();
+      if (!refreshed.ok) {
+        setFeedback(refreshed.message);
+        return;
+      }
       setFeedback(credited ? `${credited} coins restored.` : 'Wallet is up to date.');
     } catch (error) {
       const details = revenueCatErrorDetails(error);
@@ -100,7 +108,11 @@ export default function WalletScreen() {
         </Pressable>
       )}
       right={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing} onPress={() => void refreshWallet({ clearFeedback: true, alertOnError: true })} style={({ pressed }) => [{ opacity: loading || refreshing ? 0.45 : pressed ? 0.65 : 1 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing} onPress={async () => {
+          setFeedback(null);
+          const refreshed = await refreshWallet();
+          if (!refreshed.ok) Alert.alert('Wallet not updated', refreshed.message);
+        }} style={({ pressed }) => [{ opacity: loading || refreshing ? 0.45 : pressed ? 0.65 : 1 }]}>
           <Text style={[styles.refreshText, { color: colors.primary }]}>{refreshing ? 'Refreshing…' : 'Refresh'}</Text>
         </Pressable>
       )}
@@ -137,7 +149,7 @@ export default function WalletScreen() {
 
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>GET COINS</Text>
         <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.sectionIntro, { color: colors.mutedForeground }]}>App Store pricing appears here when coin packs are available for this device.</Text>
+          <Text style={[styles.sectionIntro, { color: colors.mutedForeground }]}>Store pricing appears here when coin packs are available for this device.</Text>
           {revenueCat.loading ? (
             <ActivityIndicator color={colors.primary} style={{ marginVertical: 18 }} />
           ) : revenueCat.packages.length > 0 ? revenueCat.packages.map((item, index) => (
