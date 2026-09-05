@@ -75,6 +75,22 @@ export default function PaceScreen() {
   const [backgroundTrackingEnabled, setBackgroundTrackingEnabled] = useState(false);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
 
+  const syncRecordingState = useCallback(async () => {
+    const stored = await getStoredPaceRecording();
+    setRecording(stored);
+    if (Platform.OS === 'web') return;
+    if (stored?.status === 'recording') {
+      try {
+        setBackgroundTrackingEnabled(await startPaceLocationUpdates());
+      } catch {
+        setBackgroundTrackingEnabled(false);
+      }
+      return;
+    }
+    setBackgroundTrackingEnabled(false);
+    await stopPaceLocationUpdates().catch(() => undefined);
+  }, []);
+
   const load = useCallback(async (showRefresh = false) => {
     if (!session?.authToken) return;
     if (showRefresh) setRefreshing(true);
@@ -104,30 +120,16 @@ export default function PaceScreen() {
   }, [permission?.granted]);
 
   useEffect(() => {
-    void getStoredPaceRecording()
-      .then(async (stored) => {
-        setRecording(stored);
-        if (Platform.OS !== 'web') {
-          if (stored?.status === 'recording') {
-            try {
-              setBackgroundTrackingEnabled(await startPaceLocationUpdates());
-            } catch {
-              setBackgroundTrackingEnabled(false);
-            }
-          } else {
-            await stopPaceLocationUpdates().catch(() => undefined);
-          }
-        }
-      })
+    void syncRecordingState()
       .finally(() => setRecordingLoading(false));
 
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void getStoredPaceRecording().then((stored) => setRecording(stored));
+        void syncRecordingState();
       }
     });
     return () => subscription.remove();
-  }, []);
+  }, [syncRecordingState]);
 
   useEffect(() => {
     if (recording?.status !== 'recording' || (Platform.OS !== 'web' && backgroundTrackingEnabled)) {
@@ -238,6 +240,7 @@ export default function PaceScreen() {
     const paused = { ...recording, status: 'paused' as const, elapsedSeconds: Math.max(recording.elapsedSeconds, Math.floor((Date.now() - recording.startedAt) / 1_000)) };
     await savePaceRecording(paused);
     await stopPaceLocationUpdates().catch(() => undefined);
+    setBackgroundTrackingEnabled(false);
     setRecording(paused);
   }
 
@@ -261,6 +264,7 @@ export default function PaceScreen() {
     const finished = { ...recording, status: 'finished' as const, elapsedSeconds: recording.status === 'recording' ? Math.max(recording.elapsedSeconds, Math.floor((Date.now() - recording.startedAt) / 1_000)) : recording.elapsedSeconds };
     await savePaceRecording(finished);
     await stopPaceLocationUpdates().catch(() => undefined);
+    setBackgroundTrackingEnabled(false);
     setRecording(finished);
     if (finished.points.length < 2 || finished.distanceKm < 0.01) {
       Alert.alert('Route is too short', 'Keep moving a little longer so Pace can create a useful route shape.');
@@ -275,6 +279,7 @@ export default function PaceScreen() {
     }
     await stopPaceLocationUpdates().catch(() => undefined);
     await clearPaceRecording();
+    setBackgroundTrackingEnabled(false);
     setRecording(null);
   }
 
@@ -299,12 +304,6 @@ export default function PaceScreen() {
           <Text style={[styles.headerEyebrow, { color: colors.primary }]}>OLD TIME</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Pace</Text>
         </View>
-      }
-      right={
-        <Pressable onPress={() => void useLocation()} style={[styles.headerLocation, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityRole="button" accessibilityLabel="Use my location">
-          <Ionicons name="navigate-outline" size={16} color={location ? colors.primary : colors.mutedForeground} />
-          <Text style={[styles.headerLocationText, { color: colors.foreground }]}>{location ? 'Nearby' : 'Set area'}</Text>
-        </Pressable>
       }
     >
       <FlatList
@@ -331,7 +330,10 @@ export default function PaceScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Suggested for you</Text>
                 <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>{location ? 'Based on your current area' : 'Set an area for local route ideas'}</Text>
               </View>
-              <Ionicons name="shuffle-outline" size={18} color={colors.primary} />
+              <Pressable onPress={() => void useLocation()} style={[styles.locationAction, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityRole="button" accessibilityLabel="Use my location">
+                <Ionicons name="navigate-outline" size={16} color={location ? colors.primary : colors.mutedForeground} />
+                <Text style={[styles.locationActionText, { color: colors.foreground }]}>{location ? 'Nearby' : 'Set area'}</Text>
+              </Pressable>
             </View>
             {suggestions.length ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>
@@ -340,14 +342,13 @@ export default function PaceScreen() {
                 ))}
               </ScrollView>
             ) : (
-              <Pressable onPress={() => void useLocation()} style={[styles.locationPrompt, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.locationPrompt, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Ionicons name="location-outline" size={22} color={colors.primary} />
                 <View style={styles.flex}>
                   <Text style={[styles.promptTitle, { color: colors.foreground }]}>Unlock local route ideas</Text>
-                  <Text style={[styles.promptText, { color: colors.mutedForeground }]}>Your exact location is never posted. Pace only uses it to shape nearby suggestions.</Text>
+                  <Text style={[styles.promptText, { color: colors.mutedForeground }]}>{location ? 'Update your area anytime with the control above. Your exact location is never posted.' : 'Your exact location is never posted. Pace only uses it to shape nearby suggestions.'}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
-              </Pressable>
+              </View>
             )}
 
             <View style={styles.feedHeading}>
@@ -667,8 +668,6 @@ function GiftSheet({ route, token, colors, onClose, onSent }: { route: PaceRoute
 const styles = StyleSheet.create({
   headerEyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 1.4 },
   headerTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.4, marginTop: 1 },
-  headerLocation: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 18, paddingHorizontal: 10, paddingVertical: 7 },
-  headerLocationText: { fontSize: 11, fontWeight: '700' },
   content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 110 },
   hero: { minHeight: 172, borderRadius: 25, padding: 21, flexDirection: 'row', justifyContent: 'space-between', overflow: 'hidden' },
   heroCopy: { flex: 1, paddingRight: 18 },
@@ -691,6 +690,8 @@ const styles = StyleSheet.create({
   recorderSecondary: { minHeight: 38, borderRadius: 13, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
   recorderSecondaryText: { fontSize: 12, fontWeight: '800' },
   sectionHeading: { marginTop: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  locationAction: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 18, paddingHorizontal: 10, paddingVertical: 7 },
+  locationActionText: { fontSize: 11, fontWeight: '700' },
   sectionTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.35 },
   sectionSubtitle: { fontSize: 12, marginTop: 4 },
   suggestionRow: { gap: 12, paddingVertical: 14, paddingRight: 12 },
