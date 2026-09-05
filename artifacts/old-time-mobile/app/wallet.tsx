@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { type CurrentEventWallet, useGetCurrentEventWallet } from '@workspace/api-client-react';
+import { getCurrentEventWallet, getGetCurrentEventWalletQueryKey, type CurrentEventWallet, useGetCurrentEventWallet } from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -27,6 +28,7 @@ function revenueCatErrorDetails(error: unknown) {
 export default function WalletScreen() {
   const colors = useColors();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { session } = useApp();
   const revenueCat = useRevenueCat();
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -67,17 +69,19 @@ export default function WalletScreen() {
         message: 'Sign in again to refresh your wallet.',
       };
     }
-    const result = await walletQuery.refetch();
-    if (result.status === 'error' || result.data === undefined) {
+    try {
+      const nextWallet = await getCurrentEventWallet();
+      queryClient.setQueryData(getGetCurrentEventWalletQueryKey(), nextWallet);
+      return {
+        ok: true as const,
+        data: nextWallet,
+      };
+    } catch (error) {
       return {
         ok: false as const,
-        message: result.error instanceof Error ? result.error.message : 'Wallet unavailable.',
+        message: error instanceof Error ? error.message : 'Wallet unavailable.',
       };
     }
-    return {
-      ok: true as const,
-      data: result.data,
-    };
   }
 
   async function handlePurchase(item: (typeof revenueCat.packages)[number]) {
@@ -149,7 +153,7 @@ export default function WalletScreen() {
         </Pressable>
       )}
     >
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
         <View style={[styles.balanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Access balance</Text>
           {loading ? (
