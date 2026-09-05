@@ -396,8 +396,8 @@ export default function CurrentEventRoomScreen() {
       <Modal visible={peopleOpen} animationType="slide" transparent onRequestClose={() => setPeopleOpen(false)}>
         <KeyboardAvoidingView behavior="padding" style={styles.modalRoot}>
           <View style={styles.modalShade} />
-          <View style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
-            <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>People</Text><Pressable onPress={() => setPeopleOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
+          <View accessibilityRole="dialog" accessibilityLabel="People panel" style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
+            <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>People</Text><Pressable accessibilityRole="button" accessibilityLabel="Close people panel" onPress={() => setPeopleOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>HOSTS & SPEAKERS</Text>
               {speakers.map((participant) => (
@@ -423,8 +423,8 @@ export default function CurrentEventRoomScreen() {
       <Modal visible={chatOpen} animationType="slide" transparent onRequestClose={() => setChatOpen(false)}>
         <KeyboardAvoidingView behavior="padding" style={styles.modalRoot}>
           <View style={styles.modalShade} />
-          <View style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
-            <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Access chat</Text><Pressable onPress={() => setChatOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
+          <View accessibilityRole="dialog" accessibilityLabel="Access chat panel" style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
+            <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Access chat</Text><Pressable accessibilityRole="button" accessibilityLabel="Close chat panel" onPress={() => setChatOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
             <FlatList
               data={[...messages].reverse()}
               inverted
@@ -487,7 +487,7 @@ export default function CurrentEventRoomScreen() {
         <View style={styles.verifyShade}>
           <View accessibilityRole="alert" accessibilityLabel="Verification prompt" style={[styles.verifyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.verifyTitle, { color: colors.foreground }]}>Stay live longer</Text>
-            <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to host Access rooms longer than 18 minutes.</Text>
+            <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to unlock longer Access hosting sessions.</Text>
             <View style={styles.verifyActions}>
               <Pressable accessibilityRole="button" accessibilityLabel="Dismiss verification prompt" onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); }}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel="Open settings to get verified" onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>

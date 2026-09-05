@@ -32,11 +32,11 @@ const topicLabels: Array<{ key: CurrentEventTopic; label: string }> = [
 ];
 
 const roomTypes = [
-  { key: 'public', label: 'Public' },
-  { key: 'friends', label: 'Friends' },
-  { key: 'friends-of-friends', label: 'Friends of Friends' },
-  { key: 'private', label: 'Private' },
-  { key: 'community', label: 'Space Room' },
+  { key: 'public', label: 'Public', supported: true },
+  { key: 'friends', label: 'Friends', supported: false },
+  { key: 'friends-of-friends', label: 'Friends of Friends', supported: false },
+  { key: 'private', label: 'Private', supported: true },
+  { key: 'community', label: 'Space Room', supported: false },
 ] as const;
 
 const accessDurations = ['15 min', '30 min', '1 hour', '2 hours', '4 hours', 'Custom'] as const;
@@ -310,8 +310,8 @@ export default function CurrentEventsHome({
             <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Who can join</Text>
             <View style={styles.roomTypeRail}>
               {roomTypes.map((item) => (
-                <Pressable key={item.key} onPress={() => setRoomType(item.key)} style={[styles.roomTypeChip, { borderColor: roomType === item.key ? colors.primary : colors.border, backgroundColor: roomType === item.key ? `${colors.primary}16` : 'transparent' }]}>
-                  <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>{item.label}</Text>
+                <Pressable key={item.key} disabled={!item.supported} onPress={() => setRoomType(item.key)} style={[styles.roomTypeChip, { borderColor: roomType === item.key ? colors.primary : colors.border, backgroundColor: roomType === item.key ? `${colors.primary}16` : 'transparent', opacity: item.supported ? 1 : 0.5 }]}>
+                  <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>{item.label}{item.supported ? '' : ' · soon'}</Text>
                 </Pressable>
               ))}
             </View>
