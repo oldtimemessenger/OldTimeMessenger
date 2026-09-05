@@ -131,6 +131,12 @@ export default function WalletScreen() {
     }
   }
 
+  async function handleRefresh() {
+    setFeedback(null);
+    const refreshed = await refreshWallet();
+    if (!refreshed.ok) Alert.alert('Wallet not updated', refreshed.message);
+  }
+
   return (
     <Screen
       title="Wallet"
@@ -140,11 +146,7 @@ export default function WalletScreen() {
         </Pressable>
       )}
       right={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing || !session?.authToken} onPress={async () => {
-          setFeedback(null);
-          const refreshed = await refreshWallet();
-          if (!refreshed.ok) Alert.alert('Wallet not updated', refreshed.message);
-        }} style={({ pressed }) => [{ opacity: loading || refreshing || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing || !session?.authToken} onPress={() => { void handleRefresh(); }} style={({ pressed }) => [{ opacity: loading || refreshing || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
           <Text style={[styles.refreshText, { color: colors.primary }]}>{refreshing ? 'Refreshing…' : 'Refresh'}</Text>
         </Pressable>
       )}
@@ -168,7 +170,7 @@ export default function WalletScreen() {
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending gold</Text>
                 </View>
               </View>
-              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.loading || revenueCat.purchasing || restoring} />
+              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.loading || revenueCat.purchasing || restoring || !session?.authToken} />
               {!session?.authToken ? <Text style={[styles.authHint, { color: colors.mutedForeground }]}>Sign in again to restore purchases and refresh this wallet.</Text> : null}
             </>
           )}
