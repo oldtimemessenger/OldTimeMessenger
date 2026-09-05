@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "738bca8d-4487-4758-a2b5-f6efd9fb3197"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.oldtime.messenger",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}

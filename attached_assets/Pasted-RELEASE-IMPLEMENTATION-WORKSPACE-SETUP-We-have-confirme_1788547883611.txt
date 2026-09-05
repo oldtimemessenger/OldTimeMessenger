@@ -1,0 +1,75 @@
+RELEASE IMPLEMENTATION WORKSPACE SETUP
+
+We have confirmed this Replit workspace has authenticated GitHub access with push and PR permissions.
+
+GitHub repository:
+oldtimemessenger/OldTimeMessenger
+
+GitHub main:
+152f154a5b9d8119ec4f2bfa4aa3ab3e5e251c26
+
+IMPORTANT:
+GitHub main is the source of truth.
+
+Before implementation, we need to establish a clean release branch based EXACTLY on GitHub main.
+
+CURRENT STATE:
+
+Current branch:
+slice-3-share-save-final
+
+Current HEAD:
+cc90d18ff154c7613d4ac395160d0dd9d8fb0dad
+
+Known Slice 3 commit:
+8886231c0efa1637b404fa6e6f087872a888921b
+
+There is an unrelated working-tree modification:
+
+artifacts/mockup-sandbox/src/.generated/mockup-components.ts
+
+DO NOT delete, reset, stash, overwrite, or otherwise modify that file yet.
+
+DO NOT modify GitHub main.
+
+DO NOT implement application changes yet.
+
+DO NOT install dependencies yet.
+
+DO NOT merge anything.
+
+First determine the safest way to establish a clean implementation workspace based on:
+
+152f154a5b9d8119ec4f2bfa4aa3ab3e5e251c26
+
+Because the remote main SHA is known and verified, use the authenticated GitHub repository as the source of truth.
+
+IMPORTANT:
+Before doing any operation that could affect the working tree, report what you intend to do and why.
+
+The goal is eventually to create:
+
+release/apple-submission-fixes
+
+based directly on:
+
+152f154a5b9d8119ec4f2bfa4aa3ab3e5e251c26
+
+But DO NOT create that branch yet until you have determined how to preserve the existing modified mockup file safely.
+
+Also verify whether commit:
+
+8886231c0efa1637b404fa6e6f087872a888921b
+
+is an ancestor of GitHub main or otherwise already represented in the current repository history.
+
+Do not assume.
+
+REPORT:
+1. How you will preserve the modified mockup file.
+2. Whether GitHub main can be used as the clean release base.
+3. Whether 8886231 exists in the current Git history and its relationship to main.
+4. Whether any unpushed commits contain useful work.
+5. Exact safe next operation.
+
+STOP before performing destructive working-tree operations.

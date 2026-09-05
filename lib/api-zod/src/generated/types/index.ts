@@ -46,6 +46,7 @@ export * from './currentEventTopic';
 export * from './currentEventUser';
 export * from './currentEventWallet';
 export * from './currentEventWalletSyncResult';
+export * from './deleteAccountBody';
 export * from './directChat';
 export * from './discoverContactsBody';
 export * from './errorResponse';

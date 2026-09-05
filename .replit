@@ -23,5 +23,9 @@ timeoutMs = 20000
 # Never commit tokens, service keys, or private client secrets.
 [userenv]
 
+[userenv.production]
+FIREBASE_PROJECT_ID = "oldtime-a23af"
+SUPABASE_URL = "https://kcwawiqtfmravkljfswu.supabase.co"
+
 [nix]
 channel = "stable-25_05"

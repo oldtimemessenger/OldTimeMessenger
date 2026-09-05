@@ -1,22 +1,30 @@
 import Constants from 'expo-constants';
 
-const FALLBACK_DOMAIN = 'old-time-messenger--kingvercetti59.replit.app';
+const DEVELOPMENT_FALLBACK_ORIGIN = 'https://old-time-messenger--kingvercetti59.replit.app';
 
-function stripProtocol(value: string): string {
-  return value.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+function normalizeOrigin(value: string): string {
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`;
+  const url = new URL(candidate);
+  if (!__DEV__ && url.protocol !== 'https:') {
+    throw new Error('Production API origin must use HTTPS.');
+  }
+  if (url.username || url.password || url.search || url.hash || (url.pathname && url.pathname !== '/')) {
+    throw new Error('API origin must not contain credentials, a path, query parameters, or a fragment.');
+  }
+  return url.origin;
 }
 
-function domainFromExtra(): string | null {
+function configuredOrigin(): string | null {
   const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
   const candidates = [
     process.env.EXPO_PUBLIC_DOMAIN,
     typeof extra?.domain === 'string' ? extra.domain : null,
     typeof extra?.apiDomain === 'string' ? extra.apiDomain : null,
-    typeof Constants.expoConfig?.hostUri === 'string' ? Constants.expoConfig.hostUri.split(':')[0] : null,
+    __DEV__ && typeof Constants.expoConfig?.hostUri === 'string' ? Constants.expoConfig.hostUri : null,
   ];
   for (const candidate of candidates) {
     if (typeof candidate === 'string' && candidate.trim()) {
-      return stripProtocol(candidate.trim());
+      return normalizeOrigin(candidate.trim());
     }
   }
   return null;
@@ -34,12 +42,14 @@ export function apiBaseUrl(): string {
     return window.location.origin;
   }
 
-  const domain = domainFromExtra() ?? FALLBACK_DOMAIN;
-  return `https://${domain}`;
+  const configured = configuredOrigin();
+  if (configured) return configured;
+  if (__DEV__) return DEVELOPMENT_FALLBACK_ORIGIN;
+  throw new Error('EXPO_PUBLIC_DOMAIN must be configured for production builds.');
 }
 
 /** True when the resolved host is only the hard-coded fallback. */
 export function isApiBaseUrlFallback(): boolean {
   if (typeof window !== 'undefined' && window.location?.origin) return false;
-  return domainFromExtra() === null;
+  return __DEV__ && configuredOrigin() === null;
 }

@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import * as Crypto from 'expo-crypto';
 import {
   GoogleAuthProvider,
+  OAuthProvider,
   createUserWithEmailAndPassword,
   signInWithCredential,
   signInWithEmailAndPassword,
@@ -50,6 +53,13 @@ function readableExchangeError(error: unknown): string {
   return 'Your sign-in was verified, but Old Time could not finish signing you in. Please try again.';
 }
 
+function isAppleSignInCancellation(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === 'ERR_REQUEST_CANCELED';
+}
+
 export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
   const colors = useColors();
   const [name, setName] = useState('');
@@ -58,6 +68,7 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
   const [password, setPassword] = useState('');
   const [createAccount, setCreateAccount] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
   const processedGoogleToken = useRef<string | null>(null);
   const exchangeFirebaseToken = useFirebaseSignIn();
   const [googleRequest, googleResponse, promptGoogle] = Google.useIdTokenAuthRequest(
@@ -108,6 +119,65 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
       })
       .finally(() => setBusy(false));
   }, [finishFirebaseSignIn, googleResponse, handleExchangeFailure]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (Platform.OS !== 'ios') return undefined;
+
+    void AppleAuthentication.isAvailableAsync()
+      .then((available) => {
+        if (mounted) setAppleAvailable(available);
+      })
+      .catch(() => {
+        if (mounted) setAppleAvailable(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function signInWithApple() {
+    if (busy) return;
+
+    setBusy(true);
+    try {
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+      );
+      const appleCredential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      });
+
+      if (!appleCredential.identityToken) {
+        throw new Error('Apple did not return an identity token.');
+      }
+
+      const provider = new OAuthProvider('apple.com');
+      const firebaseCredential = provider.credential({
+        idToken: appleCredential.identityToken,
+        rawNonce,
+      });
+      const { user } = await signInWithCredential(auth, firebaseCredential);
+      try {
+        await finishFirebaseSignIn(user);
+      } catch (error) {
+        handleExchangeFailure(error, user);
+      }
+    } catch (error) {
+      if (isAppleSignInCancellation(error)) return;
+      await signOut(auth).catch(() => undefined);
+      Alert.alert('Apple Sign-In unavailable', readableFirebaseError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submitEmail() {
     const cleanName = name.trim();
@@ -239,12 +309,23 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
         <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>OR</Text>
         <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
       </View>
+      {appleAvailable ? (
+        <AppleAuthentication.AppleAuthenticationButton
+          testID="button-apple-sign-in"
+          buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+          cornerRadius={10}
+          onPress={() => void signInWithApple()}
+          style={[styles.appleButton, { opacity: busy ? 0.5 : 1 }]}
+        />
+      ) : null}
       <Pressable
         testID="button-google-sign-in"
         disabled={!googleRequest || !googleAvailable || busy}
         onPress={() => void promptGoogle()}
         style={({ pressed }) => [
           styles.secondaryButton,
+          appleAvailable && styles.stackedSocialButton,
           { borderColor: colors.border, backgroundColor: colors.card, opacity: !googleAvailable ? 0.5 : pressed ? 0.75 : 1 },
         ]}
       >
@@ -269,6 +350,8 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 54, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 22 },
   primaryText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   secondaryButton: { minHeight: 54, borderRadius: 10, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  appleButton: { width: '100%', height: 54 },
+  stackedSocialButton: { marginTop: 12 },
   secondaryText: { fontSize: 15, fontWeight: '700' },
   linkButton: { alignItems: 'center', paddingVertical: 14 },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 8 },

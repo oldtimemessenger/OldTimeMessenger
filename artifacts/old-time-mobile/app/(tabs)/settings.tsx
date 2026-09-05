@@ -1,15 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useState, useMemo } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { File, Paths } from 'expo-file-system';
+import { signOut as firebaseSignOut } from 'firebase/auth';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, PrimaryButton, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
-import { useLogout } from '@workspace/api-client-react';
+import { useDeleteAccount, useLogout } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { auth } from '@/firebaseConfig';
 import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib/social-api';
 import { t } from '@/lib/i18n';
 import { unregisterDeviceForPush } from '@/lib/push-notifications';
@@ -28,8 +31,10 @@ const SUPPORTED_LANGUAGES = [
 
 export default function SettingsScreen() {
   const colors = useColors();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const logout = useLogout();
+  const deleteAccount = useDeleteAccount();
   const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, removeSavedMessage, setSession, resetLocalData } = useApp();
   const translate = (key: Parameters<typeof t>[1]) => t(settings.language, key);
 
@@ -37,6 +42,7 @@ export default function SettingsScreen() {
   const [query, setQuery] = useState('');
   const [cacheStatus, setCacheStatus] = useState<'idle' | 'clearing' | 'cleared' | 'error'>('idle');
   const [signingOut, setSigningOut] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [updatingNotifications, setUpdatingNotifications] = useState(false);
 
   // Profile state
@@ -108,6 +114,50 @@ export default function SettingsScreen() {
     }
     queryClient.clear();
     setSession(null);
+  }
+
+  async function permanentlyDeleteAccount() {
+    if (deletingAccount) return;
+    setDeletingAccount(true);
+    try {
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) throw new Error('Please sign in again before deleting your account.');
+      const idToken = await firebaseUser.getIdToken(true);
+      await deleteAccount.mutateAsync({ data: { idToken } });
+      queryClient.clear();
+      resetLocalData();
+      setSession(null);
+      await firebaseSignOut(auth).catch(() => undefined);
+    } catch (error) {
+      Alert.alert(
+        'Account was not deleted',
+        error instanceof Error ? error.message : 'Old Time could not delete your account. Please try again.',
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
+  function confirmAccountDeletion() {
+    Alert.alert(
+      'Delete your Old Time account?',
+      'This permanently removes your private account data. Shared messages and public posts may remain without your identity.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => Alert.alert(
+            'This cannot be undone',
+            'Are you sure you want to permanently delete your account?',
+            [
+              { text: 'Keep account', style: 'cancel' },
+              { text: 'Delete account', style: 'destructive', onPress: () => void permanentlyDeleteAccount() },
+            ],
+          ),
+        },
+      ],
+    );
   }
 
   async function chooseProfilePhoto() {
@@ -203,6 +253,7 @@ export default function SettingsScreen() {
       { items: [
       { key: "profile", icon: "person", bg: colors.settingsRed, label: translate('myProfile'), value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
       { key: "phone", icon: "call", bg: colors.settingsGreen, label: 'Phone Number', value: session?.hasRegisteredPhone ? (session.phoneVerified ? 'Verified' : 'Registered') : 'Not registered', onPress: () => { setDraftPhone(session?.phone ?? ''); setPhonePermission(session?.phoneDiscoveryPermission ?? 'contacts'); setPanel('phone'); } },
+      { key: "wallet", icon: "wallet", bg: colors.settingsViolet, label: 'Balance & Coins', onPress: () => router.push('/wallet') },
       { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
     ]},
     { items: [
@@ -220,10 +271,11 @@ export default function SettingsScreen() {
     { title: "Old Time", items: [
        { key: "faq", icon: "help-circle", bg: colors.settingsCyan, label: translate('faq'), onPress: () => setPanel('faq') },
     ]},
-    { items: [
+    { title: 'Account', items: [
        { key: "logout", icon: "log-out", bg: colors.settingsRed, label: translate('logout'), danger: true, onPress: signOut },
+       { key: "delete-account", icon: "trash-outline", bg: colors.settingsRed, label: deletingAccount ? 'Deleting Account…' : 'Delete Account', danger: true, onPress: confirmAccountDeletion, disabled: deletingAccount },
     ]},
-  ] as const), [colors, profile, savedMessages.length, session, settings, logout]);
+  ] as const), [colors, profile, savedMessages.length, session, settings, logout, deletingAccount]);
 
   const filteredGroups = useMemo(() => {
     if (!query.trim()) return groups;
@@ -519,6 +571,26 @@ export default function SettingsScreen() {
                   <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>Start fresh without deleting your account.</Text>
                 </View>
               </Pressable>
+              <Pressable
+                disabled={deletingAccount}
+                onPress={confirmAccountDeletion}
+                style={[styles.panelRow, { backgroundColor: colors.card, borderBottomColor: 'transparent' }]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.settingIcon, { backgroundColor: `${colors.destructive}22` }]}>
+                  {deletingAccount
+                    ? <ActivityIndicator size="small" color={colors.destructive} />
+                    : <Ionicons name="person-remove-outline" size={16} color={colors.destructive} />}
+                </View>
+                <View style={{ flex: 1, marginLeft: 16 }}>
+                  <Text style={[styles.panelRowLabel, { color: colors.destructive }]}>
+                    {deletingAccount ? 'Deleting account…' : 'Delete account'}
+                  </Text>
+                  <Text style={[styles.panelRowSub, { color: colors.mutedForeground }]}>
+                    Permanently delete your Old Time account and private data.
+                  </Text>
+                </View>
+              </Pressable>
             </PanelSection>
           </DetailShell>
         );
@@ -630,7 +702,7 @@ export default function SettingsScreen() {
 
 function SettingRow({ item, isLast, colors }: any) {
   return (
-    <Pressable testID={`setting-${item.key}`} accessibilityRole="button" accessibilityLabel={item.label} onPress={item.onPress} style={({pressed}) => [styles.settingRow, { borderBottomColor: isLast ? 'transparent' : colors.border, backgroundColor: pressed ? colors.muted : 'transparent' }]}>
+    <Pressable testID={`setting-${item.key}`} accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ disabled: Boolean(item.disabled) }} disabled={item.disabled} onPress={item.onPress} style={({pressed}) => [styles.settingRow, { borderBottomColor: isLast ? 'transparent' : colors.border, backgroundColor: pressed ? colors.muted : 'transparent', opacity: item.disabled ? 0.6 : 1 }]}>
        <View style={[styles.settingIcon, { backgroundColor: item.danger ? `${colors.destructive}16` : item.bg }]}>
           <Ionicons name={item.icon as any} size={17} color={item.danger ? colors.destructive : colors.foreground} />
        </View>

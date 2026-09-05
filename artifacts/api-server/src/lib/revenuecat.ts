@@ -32,6 +32,37 @@ type RevenueCatPage<T> = {
 
 const REVENUECAT_API_ORIGIN = "https://api.revenuecat.com";
 const MAX_REVENUECAT_PAGES = 100;
+const CUSTOM_COIN_STEP = 450;
+const MAX_CUSTOM_COINS = 900_000;
+
+function coinAmountForStoreIdentifier(storeIdentifier: string): number | undefined {
+  const legacyAndRecommendedAmounts: Record<string, number> = {
+    oldtime_coins_100: 100,
+    oldtime_coins_550: 550,
+    oldtime_coins_1200: 1200,
+    oldtime_coins_1000: 1000,
+    oldtime_coins_5000: 5000,
+    oldtime_coins_10000: 10000,
+    oldtime_coins_25000: 25000,
+    oldtime_coins_50000: 50000,
+    oldtime_coins_100000: 100000,
+  };
+  const knownAmount = legacyAndRecommendedAmounts[storeIdentifier];
+  if (knownAmount) return knownAmount;
+
+  const match = /^oldtime_coins_(\d+)$/.exec(storeIdentifier);
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  if (
+    !Number.isSafeInteger(amount)
+    || amount < CUSTOM_COIN_STEP
+    || amount > MAX_CUSTOM_COINS
+    || amount % CUSTOM_COIN_STEP !== 0
+  ) {
+    return undefined;
+  }
+  return amount;
+}
 
 async function request(path: string) {
   const secretKey = process.env.REVENUECAT_SECRET_KEY;
@@ -128,12 +159,6 @@ export async function getVerifiedCoinPurchases(userId: number) {
   const projectId = process.env.REVENUECAT_PROJECT_ID;
   const useV2 = process.env.REVENUECAT_API_VERSION === "v2" && projectId;
   const customerId = encodeURIComponent(`oldtime-user-${userId}`);
-  const coinAmounts: Record<string, number> = {
-    oldtime_coins_100: 100,
-    oldtime_coins_550: 550,
-    oldtime_coins_1200: 1200,
-  };
-
   if (!useV2) {
     let payload: RevenueCatV1Subscriber;
     try {
@@ -144,7 +169,7 @@ export async function getVerifiedCoinPurchases(userId: number) {
     }
     const purchases = payload.subscriber?.non_subscriptions ?? {};
     return Object.entries(purchases).flatMap(([storeIdentifier, entries]) => {
-      const coins = coinAmounts[storeIdentifier];
+      const coins = coinAmountForStoreIdentifier(storeIdentifier);
       if (!coins) return [];
       return entries.flatMap((purchase) => {
         const purchaseId = purchase.store_transaction_id ?? purchase.id;
@@ -176,7 +201,7 @@ export async function getVerifiedCoinPurchases(userId: number) {
   const productById = new Map(products.map((product) => [product.id, product]));
   return purchases.flatMap((purchase) => {
     const product = productById.get(purchase.product_id);
-    const amount = product ? coinAmounts[product.store_identifier] : undefined;
+    const amount = product ? coinAmountForStoreIdentifier(product.store_identifier) : undefined;
     if (!product || product.state !== "active" || !amount || purchase.status !== "owned") return [];
     return [{
       purchaseId: purchase.id,
