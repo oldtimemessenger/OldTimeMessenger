@@ -366,6 +366,79 @@ export const socialNotificationsTable = pgTable(
   }),
 );
 
+export const socialHubsTable = pgTable(
+  "social_hubs",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description").notNull().default(""),
+    icon: text("icon"),
+    coverImage: text("cover_image"),
+    category: text("category"),
+    parentHubId: integer("parent_hub_id").references(() => socialHubsTable.id, { onDelete: "set null" }),
+    createdBy: integer("created_by").notNull(),
+    status: text("status").notNull().default("active"),
+    privacy: text("privacy").notNull().default("public"),
+    memberCount: integer("member_count").notNull().default(0),
+    postCount: integer("post_count").notNull().default(0),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: pgBigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    slugIndex: uniqueIndex("social_hubs_slug_unique").on(table.slug),
+    nameIndex: index("social_hubs_name_idx").on(table.name),
+    parentIndex: index("social_hubs_parent_idx").on(table.parentHubId),
+    categoryIndex: index("social_hubs_category_idx").on(table.category),
+    statusPrivacyIndex: index("social_hubs_status_privacy_idx").on(table.status, table.privacy),
+  }),
+);
+
+export const socialHubAliasesTable = pgTable(
+  "social_hub_aliases",
+  {
+    id: serial("id").primaryKey(),
+    hubId: integer("hub_id").notNull().references(() => socialHubsTable.id, { onDelete: "cascade" }),
+    alias: text("alias").notNull(),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    uniqueAlias: uniqueIndex("social_hub_aliases_unique").on(table.hubId, table.alias),
+    hubIndex: index("social_hub_aliases_hub_idx").on(table.hubId),
+  }),
+);
+
+export const socialHubMembersTable = pgTable(
+  "social_hub_members",
+  {
+    id: serial("id").primaryKey(),
+    hubId: integer("hub_id").notNull().references(() => socialHubsTable.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull(),
+    role: text("role").notNull().default("member"),
+    joinedAt: pgBigint("joined_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    uniqueMembership: uniqueIndex("social_hub_members_unique").on(table.hubId, table.userId),
+    hubIndex: index("social_hub_members_hub_idx").on(table.hubId),
+    userIndex: index("social_hub_members_user_idx").on(table.userId),
+  }),
+);
+
+export const socialHubPostsTable = pgTable(
+  "social_hub_posts",
+  {
+    id: serial("id").primaryKey(),
+    hubId: integer("hub_id").notNull(),
+    postId: integer("post_id").notNull().references(() => socialPostsTable.id, { onDelete: "cascade" }),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    uniqueHubPost: uniqueIndex("social_hub_posts_unique").on(table.hubId, table.postId),
+    hubCreatedIndex: index("social_hub_posts_hub_idx").on(table.hubId, table.createdAt),
+    postIndex: index("social_hub_posts_post_idx").on(table.postId),
+  }),
+);
+
 export const insertSocialPostSchema = createInsertSchema(socialPostsTable).omit({
   id: true,
 });
@@ -378,3 +451,4 @@ export type SocialStoryReaction = typeof socialStoryReactionsTable.$inferSelect;
 export type SocialStoryReply = typeof socialStoryRepliesTable.$inferSelect;
 export type SocialHighlight = typeof socialHighlightsTable.$inferSelect;
 export type SocialNotification = typeof socialNotificationsTable.$inferSelect;
+export type SocialHub = typeof socialHubsTable.$inferSelect;

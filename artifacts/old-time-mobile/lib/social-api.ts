@@ -32,6 +32,7 @@ export type SocialPost = {
   updatedAt: number;
   author: SocialUser;
   counts: { likes: number; comments: number; reposts: number; saves: number };
+  hubs: Array<{ id: number; name: string; slug: string }>;
   viewer: {
     liked: boolean;
     reposted: boolean;
@@ -87,6 +88,25 @@ export type CommunityFilter = 'friends' | 'following' | 'interests';
 export type SearchResults = {
   users: SocialUser[];
   posts: SocialPost[];
+};
+export type SocialHub = {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  icon: string | null;
+  coverImage: string | null;
+  category: string | null;
+  status: 'active' | 'pending' | 'suspended' | 'archived';
+  privacy: 'public' | 'private';
+  memberCount: number;
+  postCount: number;
+  createdBy: number;
+  joined: boolean;
+  role: 'member' | 'moderator' | 'owner' | null;
+  parent: { id: number; name: string; slug: string } | null;
+  createdAt: number;
+  updatedAt: number;
 };
 export type Story = {
   id: number; kind: 'text' | 'image' | 'video'; content: string;
@@ -162,11 +182,71 @@ export function createSocialPost(
     linkTitle?: string | null;
     linkDescription?: string | null;
     linkImageUrl?: string | null;
+    hubIds?: number[];
   },
 ) {
   return request<SocialPost>(token, '/api/social/posts', {
     method: 'POST',
     body: JSON.stringify(input),
+  });
+}
+
+export function getHubDiscovery(token: string, query?: string) {
+  const params = new URLSearchParams();
+  if (query?.trim()) params.set('q', query.trim());
+  return request<{
+    myHubs: SocialHub[];
+    suggestedHubs: SocialHub[];
+    trendingHubs: SocialHub[];
+    recentlyActiveHubs: SocialHub[];
+    categories: string[];
+    searchResults: SocialHub[];
+  }>(token, `/api/social/hubs/discover${params.toString() ? `?${params.toString()}` : ''}`);
+}
+
+export function searchHubs(token: string, query: string) {
+  const params = new URLSearchParams({ q: query, limit: '20' });
+  return request<{ items: SocialHub[] }>(token, `/api/social/hubs/search?${params.toString()}`);
+}
+
+export function createHub(token: string, input: {
+  name: string;
+  description?: string;
+  category?: string | null;
+  parentHubId?: number | null;
+  icon?: string | null;
+  coverImage?: string | null;
+  privacy?: 'public' | 'private';
+}) {
+  return request<SocialHub>(token, '/api/social/hubs', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function getHub(token: string, hubId: number) {
+  return request<{ hub: SocialHub; children: SocialHub[] }>(token, `/api/social/hubs/${hubId}`);
+}
+
+export function getMyHubs(token: string) {
+  return request<{ items: SocialHub[] }>(token, '/api/social/hubs/my');
+}
+
+export function joinHub(token: string, hubId: number) {
+  return request<{ success: boolean; joined: boolean }>(token, `/api/social/hubs/${hubId}/join`, { method: 'POST' });
+}
+
+export function leaveHub(token: string, hubId: number) {
+  return request<{ success: boolean; joined: boolean }>(token, `/api/social/hubs/${hubId}/join`, { method: 'DELETE' });
+}
+
+export function getHubFeed(token: string, hubId: number, tab: 'for-you' | 'trending' | 'latest', cursor?: number | null) {
+  const params = new URLSearchParams({ tab, limit: '20' });
+  if (cursor) params.set('cursor', String(cursor));
+  return request<{ items: SocialPost[]; nextCursor: number | null }>(token, `/api/social/hubs/${hubId}/feed?${params.toString()}`);
+}
+
+export function setPostHubs(token: string, postId: number, hubIds: number[]) {
+  return request<{ post: SocialPost | null }>(token, `/api/social/posts/${postId}/hubs`, {
+    method: 'PUT',
+    body: JSON.stringify({ hubIds }),
   });
 }
 
