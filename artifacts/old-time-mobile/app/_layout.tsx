@@ -130,28 +130,36 @@ function CallRealtimeManager() {
   return null;
 }
 
-export default function RootLayout() {
-  useEffect(() => {
-    SplashScreen.hideAsync();
-  }, []);
+function AppShell() {
+  const { hydrated } = useApp();
 
+  useEffect(() => {
+    if (hydrated) void SplashScreen.hideAsync();
+  }, [hydrated]);
+
+  return (
+    <RevenueCatProvider>
+      <AdMobInitializer />
+      <PresenceHeartbeat />
+      <PushNotificationManager />
+      <CallRealtimeManager />
+      <ErrorBoundary>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <KeyboardProvider>
+            <RootLayoutNav />
+          </KeyboardProvider>
+        </GestureHandlerRootView>
+      </ErrorBoundary>
+    </RevenueCatProvider>
+  );
+}
+
+export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AppProvider>
-          <RevenueCatProvider>
-            <AdMobInitializer />
-            <PresenceHeartbeat />
-            <PushNotificationManager />
-            <CallRealtimeManager />
-            <ErrorBoundary>
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <KeyboardProvider>
-                  <RootLayoutNav />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </ErrorBoundary>
-          </RevenueCatProvider>
+          <AppShell />
         </AppProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

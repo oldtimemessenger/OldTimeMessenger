@@ -2,7 +2,7 @@ import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 import { BlurView } from 'expo-blur';
-import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useColors } from '@/hooks/useColors';
@@ -71,7 +71,15 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 export default function TabLayout() {
   const colors = useColors();
   const { hydrated, session } = useApp();
-  if (!hydrated) return null;
+  if (!hydrated) {
+    return (
+      <View style={[styles.startup, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.startupTitle, { color: colors.foreground }]}>Opening Old Time…</Text>
+        <Text style={[styles.startupText, { color: colors.mutedForeground }]}>Restoring your session.</Text>
+      </View>
+    );
+  }
   if (!session) return <Redirect href="/" />;
   return <Tabs tabBar={(props) => <FloatingTabBar {...props} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.background } }}>
     <Tabs.Screen name="updates" options={{ title: 'Updates', tabBarIcon: ({ color, size }) => <Ionicons name="play-circle-outline" color={color} size={size} /> }} />
@@ -84,6 +92,9 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  startup: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
+  startupTitle: { fontSize: 18, fontWeight: '800', marginTop: 16 },
+  startupText: { fontSize: 14, marginTop: 6 },
   dock: {
     position: 'absolute',
     left: 0,

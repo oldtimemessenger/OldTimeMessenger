@@ -152,8 +152,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([]);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
-      if (raw) {
+    let active = true;
+    async function hydrate() {
+      try {
+        // A stalled or rejected native storage read must never hold the
+        // router on its loading screen indefinitely.
+        const raw = await Promise.race([
+          AsyncStorage.getItem(STORAGE_KEY),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+        ]);
+        if (!active || !raw) return;
         try {
           const state = JSON.parse(raw);
           setSessionState(state.session?.authToken ? state.session : null);
@@ -162,9 +170,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setCalls(state.calls ?? []);
           setSavedMessages(state.savedMessages ?? []);
           setProfile({ ...defaultProfile, ...(state.profile ?? {}) });
-           const savedSettings = { ...defaultSettings, ...(state.settings ?? {}) };
-           if (savedSettings.accent === '#2F63D0' || savedSettings.accent === '#123B73') savedSettings.accent = defaultSettings.accent;
-           setSettings(savedSettings);
+          const savedSettings = { ...defaultSettings, ...(state.settings ?? {}) };
+          if (savedSettings.accent === '#2F63D0' || savedSettings.accent === '#123B73') savedSettings.accent = defaultSettings.accent;
+          setSettings(savedSettings);
           setInterests((state.interests ?? defaultInterests).filter((interest: string) => interest !== 'haiti'));
           setInterestWeights(state.interestWeights ?? {});
           setFollowedCreators(state.followedCreators ?? defaultFollowedCreators);
@@ -172,9 +180,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } catch {
           // A corrupted local cache should not block app launch.
         }
+      } catch {
+        // Native storage can reject during a cold start; use clean defaults.
+      } finally {
+        if (active) setHydrated(true);
       }
-      setHydrated(true);
-    });
+    }
+    void hydrate();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
