@@ -131,7 +131,6 @@ export interface ContactDiscoveryResponse {
 export type AuthenticatedUser = User & {
   authToken: string;
 };
-
 export interface FirebaseSignInBody {
   /** @minLength 100 */
   idToken: string;
@@ -419,7 +418,6 @@ export type SocialUserCard = SocialUser & {
   muted: boolean;
   canMessage: boolean;
 };
-
 export type MessageRequestStatus = typeof MessageRequestStatus[keyof typeof MessageRequestStatus];
 
 
