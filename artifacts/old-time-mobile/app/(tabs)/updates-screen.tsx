@@ -149,7 +149,11 @@ function MediaFeedFloatingHeader({
       <View style={styles.mediaFeedHeaderActions}>
         <View style={styles.mediaFeedHeaderGroup}>
           <Pressable onPress={onOpenHub} accessibilityRole="button" accessibilityLabel="Open Updates" style={styles.floatingUpdatesButton}>
-            <Text style={styles.floatingUpdatesText}>Updates</Text>
+            <Ionicons name="newspaper" size={17} color="#fff" />
+            <Text style={styles.floatingUpdatesText}>Current</Text>
+          </Pressable>
+          <Pressable onPress={onOpenCommunity} accessibilityRole="button" accessibilityLabel="Open Hubs" style={styles.floatingIconButton}>
+            <Ionicons name="albums" size={21} color="#fff" />
           </Pressable>
         </View>
         <View style={styles.mediaFeedHeaderGroup}>
@@ -179,9 +183,6 @@ function MediaFeedFloatingHeader({
         <Pressable onPress={() => onSelectTab('following')} accessibilityRole="tab" accessibilityState={{ selected: tab === 'following' }}>
           <Text style={[styles.mediaFeedTabText, tab === 'following' && styles.mediaFeedTabTextActive]}>Following</Text>
         </Pressable>
-        <Pressable onPress={onOpenCommunity} accessibilityRole="tab" accessibilityState={{ selected: tab === 'community' }}>
-          <Text style={[styles.mediaFeedTabText, tab === 'community' && styles.mediaFeedTabTextActive]}>Community</Text>
-        </Pressable>
       </View>
     </View>
   );
@@ -200,7 +201,7 @@ export default function UpdatesScreen() {
   const { statuses, posts, interests, interestWeights, followedCreators, hiddenPostIds, markStatusViewed, togglePostLike, togglePostSaved, addPostComment, recordPostInteraction, recordInterestFeedback, toggleInterest, toggleFollow, hidePost: persistHiddenPost, session, settings, updateSettings } = useApp();
   const requestUploadUrl = useRequestUploadUrl();
 
-  const [viewMode, setViewMode] = useState<'media-feed' | 'landing' | 'feed' | 'creator-feed' | 'status'>('landing');
+  const [viewMode, setViewMode] = useState<'media-feed' | 'landing' | 'feed' | 'creator-feed' | 'status'>('media-feed');
   const [showCommunity, setShowCommunity] = useState(false);
   const [communityFilter, setCommunityFilter] = useState<CommunityFilter>('friends');
   const [hubQuery, setHubQuery] = useState('');
@@ -690,7 +691,7 @@ export default function UpdatesScreen() {
        {/* Layer 1: Current Updates (Hub) Modal */}
         <Modal visible={viewMode === 'landing'} transparent animationType="slide" onRequestClose={() => setViewMode('media-feed')}>
          <View style={{ flex: 1, backgroundColor: colors.background }}>
-             <Screen title="Updates" left={
+             <Screen title="Current" left={
              <View style={styles.headerLeftActions}>
                <IconButton name="chevron-down" label="Back to Feed" onPress={() => setViewMode('media-feed')} />
              </View>
@@ -729,7 +730,6 @@ export default function UpdatesScreen() {
                     tab={tab}
                     interests={interests}
                     onSelectTab={selectFeedTab}
-                    onOpenCommunity={openCommunity}
                     onOpenCreate={() => setShowCreateMenu(true)}
                     onOpenSettings={() => setShowFeedSettings((value) => !value)}
                    interestPrompt={interestPrompt}
@@ -2297,7 +2297,6 @@ function SocialHubPanel({
   tab,
   interests,
   onSelectTab,
-  onOpenCommunity,
   onOpenCreate,
   onOpenSettings,
   onOpenVideo,
@@ -2322,7 +2321,6 @@ function SocialHubPanel({
   tab: FeedTab;
   interests: string[];
   onSelectTab: (tab: FeedTab) => void;
-  onOpenCommunity: () => void;
   onOpenCreate: () => void;
   onOpenSettings: () => void;
   onOpenVideo: (post: SocialPost) => void;
@@ -2339,22 +2337,22 @@ function SocialHubPanel({
   return (
     <View style={styles.socialHub}>
       <View style={styles.socialStoryHeading}>
-        <Text style={[styles.socialHubTitle, { color: colors.foreground }]}>Your feed</Text>
+        <View />
         <Pressable onPress={onOpenSettings} style={[styles.feedSettingsButton, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityRole="button" accessibilityLabel="Open Updates settings">
           <Ionicons name="options-outline" size={17} color={colors.foreground} />
         </Pressable>
       </View>
       <View style={[styles.socialFeedTabs, { borderBottomColor: colors.border }]}>
-        {(['for-you', 'following', 'community'] as FeedTab[]).map((item) => (
+        {(['for-you', 'following'] as FeedTab[]).map((item) => (
           <Pressable
             key={item}
             testID={`tab-${item}`}
-            onPress={() => item === 'community' ? onOpenCommunity() : onSelectTab(item)}
+            onPress={() => onSelectTab(item)}
             style={[styles.socialFeedTab, tab === item && styles.socialFeedTabActive]}
             accessibilityRole="tab"
             accessibilityState={{ selected: tab === item }}
           >
-            <Text style={[styles.socialFeedTabText, { color: tab === item ? colors.foreground : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : item === 'following' ? 'Following' : 'Community'}</Text>
+            <Text style={[styles.socialFeedTabText, { color: tab === item ? colors.foreground : colors.mutedForeground }]}>{item === 'for-you' ? 'For You' : 'Following'}</Text>
           </Pressable>
         ))}
       </View>
