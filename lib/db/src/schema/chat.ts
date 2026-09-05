@@ -30,6 +30,7 @@ export const usersTable = pgTable("chat_users", {
   online: boolean("online").notNull().default(false),
   lastSeen: pgBigint("last_seen", { mode: "number" }).notNull(),
   lastSeenVisible: boolean("last_seen_visible").notNull().default(true),
+  chatPresence: text("chat_presence").notNull().default("available"),
 }, (table) => ({
   phoneDiscoveryHashIndex: uniqueIndex("chat_users_phone_discovery_hash_idx").on(table.phoneDiscoveryHash),
 }));
@@ -83,9 +84,10 @@ export const messagesTable = pgTable("chat_messages", {
   id: serial("id").primaryKey(),
   chatId: integer("chat_id").notNull(),
   senderId: integer("sender_id").notNull(),
+  clientId: text("client_id"),
   content: text("content").notNull().default(""),
   attachment: jsonb("attachment").$type<{
-    type: "image" | "video" | "audio" | "file";
+    type: "image" | "video" | "audio" | "file" | "location";
     objectPath: string;
     name: string;
     mimeType: string;
@@ -93,13 +95,60 @@ export const messagesTable = pgTable("chat_messages", {
     width?: number;
     height?: number;
     duration?: number;
+    latitude?: number;
+    longitude?: number;
+    label?: string;
+  } | null>(),
+  replyToMessageId: integer("reply_to_message_id"),
+  replyPreview: jsonb("reply_preview").$type<{
+    id: number;
+    senderId: number;
+    senderName: string;
+    content: string;
+    attachmentType: "image" | "video" | "audio" | "file" | "location" | "text";
+    deleted: boolean;
   } | null>(),
   timestamp: pgBigint("timestamp", { mode: "number" }).notNull(),
   read: boolean("read").notNull().default(false),
+  deliveredAt: pgBigint("delivered_at", { mode: "number" }),
   openedAt: pgBigint("opened_at", { mode: "number" }),
+  playedAt: pgBigint("played_at", { mode: "number" }),
+  editedAt: pgBigint("edited_at", { mode: "number" }),
+  deletedAt: pgBigint("deleted_at", { mode: "number" }),
+  deletedForEveryone: boolean("deleted_for_everyone").notNull().default(false),
   expiresAt: pgBigint("expires_at", { mode: "number" }),
   saved: boolean("saved").notNull().default(false),
-});
+}, (table) => ({
+  clientIdIndex: uniqueIndex("chat_messages_client_id_idx").on(table.chatId, table.clientId),
+  deliveredIndex: index("chat_messages_chat_delivered_idx").on(table.chatId, table.deliveredAt),
+}));
+
+export const messageReactionsTable = pgTable(
+  "chat_message_reactions",
+  {
+    messageId: integer("message_id").notNull(),
+    userId: integer("user_id").notNull(),
+    emoji: text("emoji").notNull(),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.messageId, table.userId] }),
+    messageIndex: index("chat_message_reactions_message_idx").on(table.messageId),
+  }),
+);
+
+export const messageHiddenTable = pgTable(
+  "chat_message_hidden",
+  {
+    messageId: integer("message_id").notNull(),
+    userId: integer("user_id").notNull(),
+    hiddenAt: pgBigint("hidden_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.messageId, table.userId] }),
+    userIndex: index("chat_message_hidden_user_idx").on(table.userId, table.hiddenAt),
+  }),
+);
 
 export const chatNotesTable = pgTable(
   "chat_notes",

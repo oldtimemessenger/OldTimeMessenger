@@ -9,7 +9,10 @@ import { emitToUser } from "../lib/realtime";
 
 const router: IRouter = Router();
 const callIdSchema = z.coerce.number().int().positive();
-const startCallInput = z.object({ calleeId: z.coerce.number().int().positive() });
+const startCallInput = z.object({
+  calleeId: z.coerce.number().int().positive(),
+  type: z.enum(["voice", "video"]).default("voice"),
+});
 const RING_TIMEOUT_MS = 60_000;
 
 function callRoomName(callId: number): string {
@@ -39,6 +42,7 @@ function serializeCall(call: typeof callsTable.$inferSelect) {
     id: call.id,
     callerId: call.callerId,
     calleeId: call.calleeId,
+    type: call.type,
     status: call.status,
     roomName: call.roomName,
     createdAt: call.createdAt,
@@ -113,7 +117,7 @@ router.post("/calls", async (req, res): Promise<void> => {
     if (active[0]) return null;
     const timestamp = Date.now();
     const [call] = await tx.insert(callsTable).values({
-      callerId, calleeId: callee.id, status: "ringing", roomName: "pending", createdAt: timestamp,
+      callerId, calleeId: callee.id, type: parsed.data.type, status: "ringing", roomName: "pending", createdAt: timestamp,
     }).returning();
     const [updated] = await tx.update(callsTable).set({ roomName: callRoomName(call.id) })
       .where(eq(callsTable.id, call.id)).returning();
@@ -125,9 +129,9 @@ router.post("/calls", async (req, res): Promise<void> => {
   }
   emitCall(created);
   void sendPushToUsers([callee.id], {
-    title: "Incoming audio call",
-    body: "You have an incoming Old Time audio call.",
-    data: { callId: created.id, route: "call" },
+    title: parsed.data.type === "video" ? "Incoming video call" : "Incoming audio call",
+    body: parsed.data.type === "video" ? "You have an incoming Old Time video call." : "You have an incoming Old Time audio call.",
+    data: { callId: created.id, route: "call", type: parsed.data.type },
   });
   res.status(201).json(serializeCall(created));
 });
