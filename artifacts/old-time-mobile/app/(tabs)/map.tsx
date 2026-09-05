@@ -43,6 +43,8 @@ function categoryLabel(category: PlaceCategory) {
 function seasonalMapMessage(now = new Date()) {
   const month = now.getMonth();
   const day = now.getDate();
+  const isMotherDay = month === 4 && now.getDay() === 0 && day >= 8 && day <= 14;
+  if (isMotherDay) return 'Happy Mother’s Day';
   if (month === 8 && day >= 4 && day <= 8) return 'Happy Labor Day';
   if ((month === 11 && day === 31) || (month === 0 && day <= 2)) return 'Happy New Year';
   return null;

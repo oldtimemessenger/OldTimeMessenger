@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { io } from 'socket.io-client';
 import { Avatar } from '@/components/ui';
+import { CallVideoSurface } from '@/components/call-video-surface';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { apiBaseUrl } from '@/lib/api-base-url';
@@ -54,8 +55,11 @@ export default function CallScreen() {
   const [busy, setBusy] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [callCredentials, setCallCredentials] = useState<{ token: string; url: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const connectStarted = useRef(false);
+  const connectedCallId = useRef<number | null>(null);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session?.id), queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
 
   const otherUserId = call
@@ -83,11 +87,17 @@ export default function CallScreen() {
   }, [callId, session?.authToken]);
 
   const connectAudio = useCallback(async () => {
-    if (!session?.authToken || !call || call.status !== 'accepted' || connectStarted.current) return;
+    if (!session?.authToken || !call || call.status !== 'accepted' || connectStarted.current || connectedCallId.current === call.id) return;
     connectStarted.current = true;
     try {
       const token = await getManagedCallToken(session.authToken, call.id);
+      if (call.type === 'video') {
+        setCallCredentials(token);
+        connectedCallId.current = call.id;
+        return;
+      }
       await audioService.join(call.id, 'speaker', { ...token, canPublish: true });
+      connectedCallId.current = call.id;
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Call couldn’t connect.');
     } finally {
@@ -126,7 +136,11 @@ export default function CallScreen() {
 
   useEffect(() => {
     if (call?.status === 'accepted') void connectAudio();
-    if (call && ['declined', 'missed', 'ended'].includes(call.status)) void audioService.leave();
+    if (call && ['declined', 'missed', 'ended'].includes(call.status)) {
+      connectedCallId.current = null;
+      setCallCredentials(null);
+      void audioService.leave();
+    }
   }, [call, connectAudio]);
 
   useEffect(() => () => { void audioService.leave(); }, []);
@@ -151,6 +165,8 @@ export default function CallScreen() {
     try {
       if (call.status === 'ringing' && isCallee) await declineManagedCall(session.authToken, call.id);
       else await endManagedCall(session.authToken, call.id);
+      setCallCredentials(null);
+      connectedCallId.current = null;
       await audioService.leave();
       router.back();
     } catch (nextError) {
@@ -163,6 +179,7 @@ export default function CallScreen() {
   async function toggleMute() {
     const nextMuted = !muted;
     setMuted(nextMuted);
+    if (call?.type === 'video') return;
     await audioService.setMuted(nextMuted).catch(() => {
       setMuted(!nextMuted);
       Alert.alert('Microphone unavailable', 'Microphone state could not be changed.');
@@ -184,7 +201,7 @@ export default function CallScreen() {
   }
 
   function toggleCamera() {
-    Alert.alert('Video preview coming soon', 'This build keeps the call connected, but camera publishing is not available yet.');
+    setCameraEnabled((current) => !current);
   }
 
   function swapCamera() {
@@ -206,7 +223,7 @@ export default function CallScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 18 }]}>
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} style={[styles.topButton, { backgroundColor: colors.card }]}>
+        <Pressable onPress={() => void hangup()} style={[styles.topButton, { backgroundColor: colors.card }]}>
           <Ionicons name="chevron-down" size={22} color={colors.foreground} />
         </Pressable>
         <View style={[styles.callTypeChip, { backgroundColor: colors.card }]}>
@@ -225,21 +242,29 @@ export default function CallScreen() {
         <Text style={[styles.detail, { color: colors.mutedForeground }]}>{error ? 'Please try again.' : tone.detail}</Text>
       </View>
 
-      <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={[styles.previewBadge, { backgroundColor: connected && call?.type === 'video' ? '#DCFCE7' : colors.secondary }]}>
-          <Ionicons name={call?.type === 'video' ? 'videocam' : 'person'} size={18} color={call?.type === 'video' ? '#166534' : colors.foreground} />
+      {call?.type === 'video' && callCredentials ? (
+        <CallVideoSurface
+          serverUrl={callCredentials.url}
+          token={callCredentials.token}
+          muted={muted}
+          cameraEnabled={cameraEnabled}
+          onError={setError}
+        />
+      ) : (
+        <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.previewBadge, { backgroundColor: colors.secondary }]}>
+            <Ionicons name={call?.type === 'video' ? 'videocam' : 'person'} size={18} color={colors.foreground} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.previewTitle, { color: colors.foreground }]}>
+              {call?.type === 'video' ? 'Connecting video' : 'Audio connected'}
+            </Text>
+            <Text style={[styles.previewMeta, { color: colors.mutedForeground }]}>
+              {call?.type === 'video' ? 'Starting camera and microphone.' : tone.detail}
+            </Text>
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.previewTitle, { color: colors.foreground }]}>
-            {call?.type === 'video' ? 'Video calling' : 'Audio connected'}
-          </Text>
-          <Text style={[styles.previewMeta, { color: colors.mutedForeground }]}>
-            {call?.type === 'video'
-              ? 'Video controls are prepared here without leaving chat flow.'
-              : 'Muted, speaker, and call controls stay in one place.'}
-          </Text>
-        </View>
-      </View>
+      )}
 
       <View style={styles.controlsGrid}>
         <Pressable onPress={() => void toggleMute()} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
@@ -251,8 +276,8 @@ export default function CallScreen() {
           <Text style={[styles.controlLabel, { color: colors.foreground }]}>{speaker ? 'Speaker' : 'Earpiece'}</Text>
         </Pressable>
         <Pressable onPress={toggleCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
-          <Ionicons name="videocam-off" size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Camera unavailable</Text>
+          <Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={22} color={colors.foreground} />
+          <Text style={[styles.controlLabel, { color: colors.foreground }]}>{cameraEnabled ? 'Camera' : 'Camera off'}</Text>
         </Pressable>
         <Pressable onPress={swapCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
           <Ionicons name="camera-reverse" size={22} color={colors.foreground} />
