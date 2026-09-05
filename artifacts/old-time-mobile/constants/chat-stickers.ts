@@ -71,13 +71,13 @@ export function getChatStickerSuggestions(input?: { locale?: string; recipientLo
   const seasonal = seasonalSticker(date, words);
   const place = input?.locationLabel ?? localeRegionLabel(resolvedLocale);
   return [
-    { id: 'love', emoji: '❤️', text: '❤️', group: 'quick' },
-    { id: 'laugh', emoji: '😂', text: '😂', group: 'quick' },
     { id: 'thumbs-up', emoji: '👍', text: '👍', group: 'quick' },
     { id: 'thanks', emoji: '🙏', text: '🙏', group: 'quick' },
     { id: 'greeting', ...greeting, group: 'seasonal' },
     ...(seasonal ? [{ ...seasonal, group: 'seasonal' as const }] : []),
     { id: weekend ? 'weekend' : 'thinking', emoji: weekend ? '🎉' : '💭', text: weekend ? words.happyWeekend : words.thinkingOfYou, group: 'seasonal' },
+    { id: 'love', emoji: '❤️', text: '❤️', group: 'quick' },
+    { id: 'laugh', emoji: '😂', text: '😂', group: 'quick' },
     ...(place ? [{ id: 'local', emoji: '📍', text: `${words.from} ${place}`, group: 'local' as const }] : []),
   ];
 }
