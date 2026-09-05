@@ -83,6 +83,10 @@ export default function WalletScreen() {
   }
 
   async function handlePurchase(item: (typeof revenueCat.packages)[number]) {
+    if (!session?.authToken) {
+      setFeedback('Sign in again to buy coin packs and refresh this wallet.');
+      return;
+    }
     try {
       const credited = await revenueCat.purchase(item);
       const refreshed = await refreshWallet();
@@ -176,6 +180,7 @@ export default function WalletScreen() {
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>GET COINS</Text>
         <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.sectionIntro, { color: colors.mutedForeground }]}>Store pricing appears here when coin packs are available for this device.</Text>
+          {!session?.authToken ? <Text style={[styles.sectionIntro, { color: colors.mutedForeground, paddingTop: 0 }]}>Sign in again to buy coin packs from this wallet.</Text> : null}
           {revenueCat.loading ? (
             <ActivityIndicator color={colors.primary} style={{ marginVertical: 18 }} />
           ) : revenueCat.packages.length > 0 ? revenueCat.packages.map((item, index) => (
