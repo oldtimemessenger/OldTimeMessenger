@@ -59,7 +59,7 @@ export default function WalletScreen() {
 
   async function refreshWallet() {
     const result = await walletQuery.refetch();
-    if (result.status === 'error') {
+    if (result.status === 'error' || !result.data) {
       return {
         ok: false as const,
         message: result.error instanceof Error ? result.error.message : 'Wallet unavailable.',
@@ -67,7 +67,7 @@ export default function WalletScreen() {
     }
     return {
       ok: true as const,
-      data: result.data ?? wallet,
+      data: result.data,
     };
   }
 
@@ -146,7 +146,7 @@ export default function WalletScreen() {
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending gold</Text>
                 </View>
               </View>
-              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.purchasing || restoring || loading} />
+              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.purchasing || restoring} />
             </>
           )}
         </View>
