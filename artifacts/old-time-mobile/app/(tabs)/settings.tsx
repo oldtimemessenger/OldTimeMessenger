@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useDeleteAccount, useGetCurrentEventWallet, useLogout } from '@workspace/api-client-react';
+import { useDeleteAccount, useLogout } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -37,12 +37,6 @@ export default function SettingsScreen() {
   const deleteAccount = useDeleteAccount();
   const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, removeSavedMessage, setSession, resetLocalData } = useApp();
   const translate = (key: Parameters<typeof t>[1]) => t(settings.language, key);
-  const walletCoins = useGetCurrentEventWallet({
-    query: {
-      enabled: false,
-      select: (wallet: { coins: number }) => wallet.coins,
-    },
-  }).data;
 
   const [panel, setPanel] = useState<Panel>(null);
   const [query, setQuery] = useState('');
@@ -259,7 +253,7 @@ export default function SettingsScreen() {
       { items: [
       { key: "profile", icon: "person", bg: colors.settingsRed, label: translate('myProfile'), value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
       { key: "phone", icon: "call", bg: colors.settingsGreen, label: 'Phone Number', value: session?.hasRegisteredPhone ? (session.phoneVerified ? 'Verified' : 'Registered') : 'Not registered', onPress: () => { setDraftPhone(session?.phone ?? ''); setPhonePermission(session?.phoneDiscoveryPermission ?? 'contacts'); setPanel('phone'); } },
-    { key: "wallet", icon: "wallet", bg: colors.settingsViolet, label: 'Wallet', value: walletCoins === undefined ? undefined : `◈ ${walletCoins}`, onPress: () => router.push('/wallet') },
+    { key: "wallet", icon: "wallet", bg: colors.settingsViolet, label: 'Wallet', onPress: () => router.push('/wallet') },
     { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
   ]},
     { items: [
@@ -280,7 +274,7 @@ export default function SettingsScreen() {
     { items: [
        { key: "logout", icon: "log-out", bg: colors.settingsRed, label: translate('logout'), danger: true, onPress: signOut },
     ]},
-  ] as const), [colors, profile, router, savedMessages.length, session, settings, logout, translate, walletCoins]);
+  ] as const), [colors, profile, router, savedMessages.length, session, settings, logout, translate]);
 
   const filteredGroups = useMemo(() => {
     if (!query.trim()) return groups;
