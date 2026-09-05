@@ -157,8 +157,14 @@ function handleForUser(user: { id: number; name: string; username?: string | nul
   return normalized || `user${user.id}`;
 }
 
-function publicUser(user: { id: number; name: string; username?: string | null; bio?: string | null }) {
-  return { id: user.id, name: user.name, username: handleForUser(user), bio: user.bio ?? "" };
+function publicUser(user: { id: number; name: string; username?: string | null; bio?: string | null; avatarObjectPath?: string | null }) {
+  return {
+    id: user.id,
+    name: user.name,
+    username: handleForUser(user),
+    bio: user.bio ?? "",
+    avatarObjectPath: user.avatarObjectPath ?? null,
+  };
 }
 
 type MessageRequest = typeof chatMessageRequestsTable.$inferSelect;
@@ -187,8 +193,8 @@ async function directChatForUsers(userOneId: number, userTwoId: number) {
 
 async function serializeMessageRequest(request: MessageRequest) {
   const [sender, recipient] = await Promise.all([
-    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(eq(usersTable.id, request.senderId)).limit(1),
-    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(eq(usersTable.id, request.recipientId)).limit(1),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(eq(usersTable.id, request.senderId)).limit(1),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(eq(usersTable.id, request.recipientId)).limit(1),
   ]);
   return {
     id: request.id,
@@ -342,7 +348,7 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
   const [authors, likes, reposts, saves, comments, viewerLikes, viewerReposts, viewerSaves, follows] =
     await Promise.all([
       db
-        .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio })
+        .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
         .from(usersTable)
         .where(inArray(usersTable.id, authorIds)),
       db
@@ -448,8 +454,10 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
             id: author.id,
             name: author.name,
             username: handleForUser(author),
+            bio: author.bio,
+            avatarObjectPath: author.avatarObjectPath,
           }
-        : { id: post.authorId, name: "Old Time user", username: `user${post.authorId}` },
+        : { id: post.authorId, name: "Old Time user", username: `user${post.authorId}`, bio: "", avatarObjectPath: null },
       counts: {
         likes: likeCounts.get(post.id) ?? 0,
         comments: commentCounts.get(post.id) ?? 0,
@@ -767,6 +775,7 @@ router.get("/social/posts/:postId/comments", async (req, res): Promise<void> => 
       authorName: usersTable.name,
       authorUsername: usersTable.username,
       authorBio: usersTable.bio,
+      authorAvatarObjectPath: usersTable.avatarObjectPath,
     })
     .from(socialCommentsTable)
     .innerJoin(usersTable, eq(usersTable.id, socialCommentsTable.authorId))
@@ -810,6 +819,7 @@ router.get("/social/posts/:postId/comments", async (req, res): Promise<void> => 
         name: comment.authorName,
         username: handleForUser({ id: comment.authorId, name: comment.authorName, username: comment.authorUsername }),
         bio: comment.authorBio ?? "",
+        avatarObjectPath: comment.authorAvatarObjectPath ?? null,
       },
       liked: likedIds.has(comment.id),
       likeCount: likeCountById.get(comment.id) ?? 0,
@@ -869,7 +879,7 @@ router.post("/social/posts/:postId/comments", async (req, res): Promise<void> =>
     .limit(1);
   res.status(201).json({
     ...created,
-    author: author ? publicUser(author) : { id: viewerId, name: "You", username: `user${viewerId}`, bio: "" },
+    author: author ? publicUser(author) : { id: viewerId, name: "You", username: `user${viewerId}`, bio: "", avatarObjectPath: null },
     liked: false,
     likeCount: 0,
   });
@@ -1157,7 +1167,7 @@ router.get("/social/privacy/exclusions", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   if (viewerId === null) return;
   const rows = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
     .from(socialSharingExclusionsTable)
     .innerJoin(usersTable, eq(usersTable.id, socialSharingExclusionsTable.excludedUserId))
     .where(eq(socialSharingExclusionsTable.ownerId, viewerId))
@@ -1320,7 +1330,7 @@ router.get("/social/users/search", async (req, res): Promise<void> => {
   }
   const blocked = await blockedUserIds(viewerId);
   const users = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, contactPermission: usersTable.contactPermission })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, contactPermission: usersTable.contactPermission })
     .from(usersTable)
     .where(
       and(
@@ -1340,6 +1350,7 @@ router.get("/social/users/search", async (req, res): Promise<void> => {
       name: user.name,
       username: handleForUser(user),
       bio: user.bio ?? "",
+        avatarObjectPath: user.avatarObjectPath ?? null,
     }));
   const posts = await db
     .select()
@@ -1365,7 +1376,7 @@ router.get("/social/users/:userId/card", async (req, res): Promise<void> => {
   const targetId = parseId(req.params.userId);
   if (viewerId === null || targetId === null) return;
   const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, contactPermission: usersTable.contactPermission })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, contactPermission: usersTable.contactPermission })
     .from(usersTable)
     .where(eq(usersTable.id, targetId))
     .limit(1);
@@ -1408,6 +1419,7 @@ router.get("/social/users/:userId/card", async (req, res): Promise<void> => {
     name: user.name,
     username: handleForUser(user),
     bio: user.bio ?? "",
+    avatarObjectPath: user.avatarObjectPath ?? null,
     followerCount: Number(followers[0]?.count ?? 0),
     followingCount: Number(following[0]?.count ?? 0),
     following: follow.length > 0,
@@ -1433,7 +1445,7 @@ router.get("/social/users/:userId/connections", async (req, res): Promise<void> 
     ? socialFollowsTable.followingId
     : socialFollowsTable.followerId;
   const rows = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
     .from(socialFollowsTable)
     .innerJoin(usersTable, eq(usersTable.id, relatedUserId))
     .where(and(
@@ -1543,13 +1555,13 @@ async function serializeStories(stories: Story[], viewerId: number) {
   const authorIds = [...new Set(stories.map((story) => story.authorId))];
   const taggedIds = [...new Set(stories.flatMap((story) => story.taggedUserIds ?? []))];
   const [authors, views, reactions, mine, myReactions, taggedUsers] = await Promise.all([
-    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(inArray(usersTable.id, authorIds)),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(inArray(usersTable.id, authorIds)),
     db.select({ storyId: socialStoryViewersTable.storyId, count: sql<number>`count(*)` }).from(socialStoryViewersTable).where(inArray(socialStoryViewersTable.storyId, storyIds)).groupBy(socialStoryViewersTable.storyId),
     db.select({ storyId: socialStoryReactionsTable.storyId, count: sql<number>`count(*)` }).from(socialStoryReactionsTable).where(inArray(socialStoryReactionsTable.storyId, storyIds)).groupBy(socialStoryReactionsTable.storyId),
     db.select({ storyId: socialStoryViewersTable.storyId }).from(socialStoryViewersTable).where(and(eq(socialStoryViewersTable.viewerId, viewerId), inArray(socialStoryViewersTable.storyId, storyIds))),
     db.select({ storyId: socialStoryReactionsTable.storyId }).from(socialStoryReactionsTable).where(and(eq(socialStoryReactionsTable.userId, viewerId), inArray(socialStoryReactionsTable.storyId, storyIds))),
     taggedIds.length
-      ? db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(inArray(usersTable.id, taggedIds))
+      ? db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(inArray(usersTable.id, taggedIds))
       : Promise.resolve([] as Array<{ id: number; name: string; username: string; bio: string }>),
   ]);
   const authorById = new Map(authors.map((author) => [author.id, author]));
@@ -1564,7 +1576,7 @@ async function serializeStories(stories: Story[], viewerId: number) {
       id: story.id, kind: story.kind, content: story.content, textPosition: story.textPosition ?? null, visibility: story.visibility, media: story.media,
       createdAt: story.createdAt, expiresAt: story.expiresAt,
       location: story.latitude !== null && story.longitude !== null ? { latitude: story.latitude, longitude: story.longitude } : null,
-      author: author ? publicUser(author) : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}`, bio: "" },
+      author: author ? publicUser(author) : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}`, bio: "", avatarObjectPath: null },
       taggedUsers: (story.taggedUserIds ?? [])
         .map((id) => taggedById.get(id))
         .filter((user): user is { id: number; name: string; username: string; bio: string } => Boolean(user))
@@ -1607,7 +1619,7 @@ type ChatNote = typeof chatNotesTable.$inferSelect;
 async function serializeNotes(notes: ChatNote[]) {
   if (!notes.length) return [];
   const owners = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
     .from(usersTable)
     .where(inArray(usersTable.id, notes.map((note) => note.ownerId)));
   const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
@@ -1882,7 +1894,7 @@ router.post("/social/stories/:storyId/replies", async (req, res): Promise<void> 
     void sendPushToUsers([access.story.authorId], { title: "Old Time", body: "Someone replied to your story." })
       .catch((error) => req.log.warn({ err: error }, "Unable to queue story reply push notification"));
   }
-  const [author] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(eq(usersTable.id, access.viewerId)).limit(1);
+  const [author] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(eq(usersTable.id, access.viewerId)).limit(1);
   res.status(201).json({ ...reply, author: author ? publicUser(author) : { id: access.viewerId, name: "Old Time user", username: `user${access.viewerId}`, bio: "" } });
 });
 router.get("/social/stories/:storyId/replies", async (req, res): Promise<void> => {
@@ -1929,7 +1941,7 @@ router.delete("/social/close-friends/:userId", async (req, res): Promise<void> =
 });
 router.get("/social/close-friends", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
-  const rows = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(socialCloseFriendsTable).innerJoin(usersTable, eq(usersTable.id, socialCloseFriendsTable.memberId)).where(eq(socialCloseFriendsTable.ownerId, viewerId));
+  const rows = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(socialCloseFriendsTable).innerJoin(usersTable, eq(usersTable.id, socialCloseFriendsTable.memberId)).where(eq(socialCloseFriendsTable.ownerId, viewerId));
   res.json({ items: rows.map((row) => ({ ...row, username: handleForUser(row), bio: row.bio ?? "" })) });
 });
 
