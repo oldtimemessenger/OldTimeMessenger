@@ -143,10 +143,17 @@ io.on("connection", (socket) => {
   });
   socket.on("typing", async (payload: unknown) => {
     if (!payload || typeof payload !== "object") return;
-    const { chatId, isTyping } = payload as { chatId?: unknown; isTyping?: unknown };
-    if (typeof chatId !== "number" || typeof isTyping !== "boolean") return;
+    const { chatId, isTyping, state } = payload as { chatId?: unknown; isTyping?: unknown; state?: unknown };
+    if (typeof chatId !== "number") return;
+    const resolvedState =
+      state === "typing" || state === "recording" || state === "idle"
+        ? state
+        : typeof isTyping === "boolean"
+          ? isTyping ? "typing" : "idle"
+          : null;
+    if (!resolvedState) return;
     if (await isParticipant(chatId)) {
-      socket.to(`chat_${chatId}`).emit("user-typing", { chatId, isTyping, userId });
+      socket.to(`chat_${chatId}`).emit("user-typing", { chatId, state: resolvedState, userId });
     }
   });
   socket.on("disconnect", () => {

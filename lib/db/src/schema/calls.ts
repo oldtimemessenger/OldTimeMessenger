@@ -6,6 +6,7 @@ export const callsTable = pgTable(
     id: serial("id").primaryKey(),
     callerId: integer("caller_id").notNull(),
     calleeId: integer("callee_id").notNull(),
+    type: text("type").notNull().default("voice"),
     status: text("status").notNull().default("ringing"),
     roomName: text("room_name").notNull(),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),

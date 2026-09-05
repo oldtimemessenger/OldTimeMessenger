@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
 import {
   Chat,
   CreateChatBody,
@@ -44,6 +44,8 @@ import {
   authChallengesTable,
   authSessionsTable,
   chatMessageRequestsTable,
+  messageHiddenTable,
+  messageReactionsTable,
   chatParticipantsTable,
   chatsTable,
   db,
@@ -86,6 +88,9 @@ const router: IRouter = Router();
 type ChatUser = typeof usersTable.$inferSelect;
 type ChatRecord = typeof chatsTable.$inferSelect;
 type MessageRecord = typeof messagesTable.$inferSelect;
+type ChatPresence = "available" | "busy" | "dnd";
+type ChatAttachment =
+  NonNullable<MessageRecord["attachment"]>;
 
 const OTP_LIFETIME_MS = 10 * 60 * 1000;
 const OTP_RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -116,6 +121,7 @@ function parseUser(user: ChatUser, viewerId = user.id) {
     online: revealPresence && user.online,
     lastSeen: revealPresence ? user.lastSeen : 0,
     lastSeenVisible: user.lastSeenVisible,
+    chatPresence: (user.chatPresence || "available") as ChatPresence,
   };
 }
 
@@ -133,27 +139,116 @@ function parseChat(chat: ChatRecord, participantIds: number[]) {
   };
 }
 
-function parseMessage(message: MessageRecord) {
-  return {
-    id: message.id,
-    chatId: message.chatId,
-    senderId: message.senderId,
-    content: message.content,
-    timestamp: message.timestamp,
-    read: message.read,
-    attachment: message.attachment,
-    openedAt: message.openedAt,
-    expiresAt: message.expiresAt,
-    saved: message.saved,
-  };
-}
-
 function visibleMessageCondition(timestamp: number) {
   return or(
     eq(messagesTable.saved, true),
     isNull(messagesTable.expiresAt),
     gt(messagesTable.expiresAt, timestamp),
   );
+}
+
+function visibleForUserCondition(userId: number) {
+  return notExists(
+    db.select({ messageId: messageHiddenTable.messageId })
+      .from(messageHiddenTable)
+      .where(and(eq(messageHiddenTable.messageId, messagesTable.id), eq(messageHiddenTable.userId, userId))),
+  );
+}
+
+function attachmentKind(message: MessageRecord): "image" | "video" | "audio" | "file" | "location" | "text" {
+  return message.attachment?.type ?? "text";
+}
+
+function reactionChoices(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return ["❤️", "😂", "👍", "👎", "😮", "😢", "🙏"].includes(value) ? value : null;
+}
+
+function serializeReplyPreview(
+  message: MessageRecord,
+  senderName: string,
+) {
+  return {
+    id: message.id,
+    senderId: message.senderId,
+    senderName,
+    content: message.deletedForEveryone ? "This message was deleted." : message.content,
+    attachmentType: message.deletedForEveryone ? "text" : attachmentKind(message),
+    deleted: Boolean(message.deletedForEveryone),
+  } as const;
+}
+
+async function loadReactions(messageIds: number[]) {
+  if (!messageIds.length) return new Map<number, Array<{ emoji: string; count: number; userIds: number[] }>>();
+  const rows = await db
+    .select({
+      messageId: messageReactionsTable.messageId,
+      userId: messageReactionsTable.userId,
+      emoji: messageReactionsTable.emoji,
+    })
+    .from(messageReactionsTable)
+    .where(inArray(messageReactionsTable.messageId, messageIds))
+    .orderBy(asc(messageReactionsTable.createdAt));
+  const grouped = new Map<number, Map<string, { emoji: string; count: number; userIds: number[] }>>();
+  for (const row of rows) {
+    const byMessage = grouped.get(row.messageId) ?? new Map<string, { emoji: string; count: number; userIds: number[] }>();
+    const entry = byMessage.get(row.emoji) ?? { emoji: row.emoji, count: 0, userIds: [] };
+    entry.count += 1;
+    entry.userIds.push(row.userId);
+    byMessage.set(row.emoji, entry);
+    grouped.set(row.messageId, byMessage);
+  }
+  return new Map(
+    [...grouped.entries()].map(([messageId, byEmoji]) => [messageId, [...byEmoji.values()]]),
+  );
+}
+
+async function serializeMessages(messages: MessageRecord[], viewerId: number) {
+  const reactionMap = await loadReactions(messages.map((message) => message.id));
+  const replyTargetIds = [...new Set(messages.map((message) => message.replyToMessageId).filter((messageId): messageId is number => Number.isInteger(messageId)))];
+  const replyTargets = replyTargetIds.length
+    ? await db.select().from(messagesTable).where(and(
+      inArray(messagesTable.id, replyTargetIds),
+      visibleMessageCondition(now()),
+      visibleForUserCondition(viewerId),
+    ))
+    : [];
+  const replyTargetMap = new Map(replyTargets.map((message) => [message.id, message]));
+  const replySenderIds = [...new Set(replyTargets.map((message) => message.senderId))];
+  const replySenders = replySenderIds.length
+    ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, replySenderIds))
+    : [];
+  const replySenderMap = new Map(replySenders.map((user) => [user.id, user.name]));
+  return messages.map((message) => ({
+    id: message.id,
+    chatId: message.chatId,
+    senderId: message.senderId,
+    clientId: message.clientId,
+    content: message.deletedForEveryone ? "This message was deleted." : message.content,
+    timestamp: message.timestamp,
+    read: message.read,
+    deliveredAt: message.deliveredAt,
+    openedAt: message.openedAt,
+    playedAt: message.playedAt,
+    editedAt: message.editedAt,
+    deletedAt: message.deletedAt,
+    deletedForEveryone: message.deletedForEveryone,
+    attachment: message.deletedForEveryone ? null : message.attachment,
+    replyToMessageId: message.replyToMessageId,
+    replyPreview: message.replyToMessageId && replyTargetMap.get(message.replyToMessageId)
+      ? serializeReplyPreview(
+        replyTargetMap.get(message.replyToMessageId)!,
+        replySenderMap.get(replyTargetMap.get(message.replyToMessageId)!.senderId) ?? message.replyPreview?.senderName ?? "Unknown",
+      )
+      : message.replyPreview,
+    expiresAt: message.expiresAt,
+    saved: message.saved,
+    reactions: (reactionMap.get(message.id) ?? []).map((reaction) => ({
+      emoji: reaction.emoji,
+      count: reaction.count,
+      reacted: reaction.userIds.includes(viewerId),
+    })),
+  }));
 }
 
 async function cleanupExpiredMessages(): Promise<void> {
@@ -837,17 +932,19 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   const contactPermission = body.contactPermission;
   const phoneNumber = body.phoneNumber;
   const phoneDiscoveryPermission = body.phoneDiscoveryPermission;
+  const chatPresence = body.chatPresence;
   const validBirthday = birthday === undefined || isValidBirthday(birthday);
   if (
     !Number.isInteger(userId) ||
     userId <= 0 ||
-    (name === undefined && username === undefined && bio === undefined && birthday === undefined && contactPermission === undefined && phoneNumber === undefined && phoneDiscoveryPermission === undefined) ||
+    (name === undefined && username === undefined && bio === undefined && birthday === undefined && contactPermission === undefined && phoneNumber === undefined && phoneDiscoveryPermission === undefined && chatPresence === undefined) ||
     (name !== undefined && (name.length < 1 || name.length > 80)) ||
     (username !== undefined && !/^[a-z0-9_]{3,24}$/.test(username)) ||
     (bio !== undefined && bio.length > 150) ||
     !validBirthday ||
     (contactPermission !== undefined &&
       !["everyone", "followers", "nobody"].includes(contactPermission)) ||
+    (chatPresence !== undefined && !["available", "busy", "dnd"].includes(chatPresence)) ||
     (phoneNumber !== undefined && phoneNumber !== null && typeof phoneNumber !== "string") ||
     (phoneDiscoveryPermission !== undefined &&
       !["contacts", "everyone", "nobody"].includes(phoneDiscoveryPermission))
@@ -900,6 +997,7 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
       ...(bio !== undefined ? { bio } : {}),
       ...(birthday !== undefined ? { birthday } : {}),
       ...(contactPermission !== undefined ? { contactPermission } : {}),
+      ...(chatPresence !== undefined ? { chatPresence } : {}),
       ...(phoneDiscoveryPermission !== undefined ? { phoneDiscoveryPermission } : {}),
       ...(normalizedPhone === null ? {
         phone: `firebase:${currentUser.firebaseUid}`,
@@ -1019,7 +1117,11 @@ router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
     const [lastMessage] = await db
       .select()
       .from(messagesTable)
-      .where(and(eq(messagesTable.chatId, chat.id), visibleMessageCondition(now())))
+      .where(and(
+        eq(messagesTable.chatId, chat.id),
+        visibleMessageCondition(now()),
+        visibleForUserCondition(viewer.id),
+      ))
       .orderBy(desc(messagesTable.timestamp))
       .limit(1);
     const [{ count }] = await db
@@ -1036,7 +1138,7 @@ router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
     items.push({
       chat: parseChat(chat, participants),
       contact: parseUser(contact, viewer.id),
-      lastMessage: lastMessage ? parseMessage(lastMessage) : null,
+      lastMessage: lastMessage ? (await serializeMessages([lastMessage], viewer.id))[0] : null,
       unreadCount: Number(count),
     });
   }
@@ -1044,7 +1146,7 @@ router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
   items.sort(
     (a, b) => (b.lastMessage?.timestamp ?? b.chat.createdAt) - (a.lastMessage?.timestamp ?? a.chat.createdAt),
   );
-  res.json(GetInboxResponse.parse(items));
+  res.json(items);
 });
 
 router.get(
@@ -1080,17 +1182,19 @@ router.get(
           await db
             .select()
             .from(messagesTable)
-            .where(and(eq(messagesTable.chatId, chat.id), visibleMessageCondition(now())))
-            .orderBy(desc(messagesTable.timestamp))
-            .limit(1)
-        )[0]
+          .where(and(
+            eq(messagesTable.chatId, chat.id),
+            visibleMessageCondition(now()),
+            visibleForUserCondition(parsed.data.userOneId),
+          ))
+          .orderBy(desc(messagesTable.timestamp))
+          .limit(1)
+      )[0]
       : undefined;
-    res.json(
-      GetDirectChatResponse.parse({
-        chat: chat ? parseChat(chat, await getChatParticipants(chat.id)) : null,
-        lastMessage: lastMessage ? parseMessage(lastMessage) : null,
-      }),
-    );
+    res.json({
+      chat: chat ? parseChat(chat, await getChatParticipants(chat.id)) : null,
+      lastMessage: lastMessage ? (await serializeMessages([lastMessage], parsed.data.userOneId))[0] : null,
+    });
   },
 );
 
@@ -1186,42 +1290,71 @@ router.get("/chats/:chatId/messages", async (req, res): Promise<void> => {
     res.status(403).json({ error: "This conversation is unavailable." });
     return;
   }
+  await db
+    .update(messagesTable)
+    .set({ deliveredAt: now() })
+    .where(
+      and(
+        eq(messagesTable.chatId, params.data.chatId),
+        ne(messagesTable.senderId, query.data.viewerId),
+        isNull(messagesTable.deliveredAt),
+        visibleMessageCondition(now()),
+        visibleForUserCondition(query.data.viewerId),
+      ),
+    );
   const messages = await db
     .select()
     .from(messagesTable)
-    .where(and(eq(messagesTable.chatId, params.data.chatId), visibleMessageCondition(now())))
+    .where(and(
+      eq(messagesTable.chatId, params.data.chatId),
+      visibleMessageCondition(now()),
+      visibleForUserCondition(query.data.viewerId),
+    ))
     .orderBy(messagesTable.timestamp);
-  res.json(ListMessagesResponse.parse(messages.map(parseMessage)));
+  res.json(await serializeMessages(messages, query.data.viewerId));
 });
 
 router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
   const params = CreateMessageParams.safeParse({
     chatId: readParam(req.params.chatId),
   });
-  const body = CreateMessageBody.safeParse(req.body);
-  if (!params.success || !body.success) {
+  const body = req.body ?? {};
+  const senderId = typeof body.senderId === "number" ? body.senderId : Number(body.senderId);
+  const clientId = typeof body.clientId === "string" && body.clientId.trim() ? body.clientId.trim().slice(0, 120) : null;
+  const replyToMessageId = typeof body.replyToMessageId === "number" ? body.replyToMessageId : Number(body.replyToMessageId);
+  const input = {
+    senderId,
+    content: typeof body.content === "string" ? body.content : undefined,
+    attachment: (body.attachment ?? undefined) as ChatAttachment | undefined,
+    clientId,
+    replyToMessageId: Number.isInteger(replyToMessageId) && replyToMessageId > 0 ? replyToMessageId : null,
+  };
+  if (!params.success || !Number.isInteger(senderId) || senderId <= 0) {
     res.status(400).json({ error: "Enter a message before sending." });
     return;
   }
-  if (!(await callerMatches(req, res, body.data.senderId))) return;
-  const input = body.data as {
-    senderId: number;
-    content?: string;
-    attachment?: NonNullable<MessageRecord["attachment"]>;
-  };
+  if (!(await callerMatches(req, res, senderId))) return;
   const content = input.content?.trim() ?? "";
   if (!content && !input.attachment) {
     res.status(400).json({ error: "Enter a message or attach media before sending." });
     return;
   }
   const participants = await getChatParticipants(params.data.chatId);
-  if (!participants.includes(body.data.senderId)) {
+  if (!participants.includes(senderId)) {
     res.status(403).json({ error: "You are not part of this conversation." });
     return;
   }
-  if (await chatIsBlockedForUser(params.data.chatId, body.data.senderId)) {
+  if (await chatIsBlockedForUser(params.data.chatId, senderId)) {
     res.status(403).json({ error: "This conversation is unavailable." });
     return;
+  }
+  if (clientId) {
+    const [existing] = await db.select().from(messagesTable)
+      .where(and(eq(messagesTable.chatId, params.data.chatId), eq(messagesTable.clientId, clientId))).limit(1);
+    if (existing) {
+      res.status(201).json((await serializeMessages([existing], senderId))[0]);
+      return;
+    }
   }
   let claimedUploadId: string | null = null;
   if (input.attachment) {
@@ -1231,7 +1364,7 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
       .where(
         and(
           eq(uploadSlotsTable.objectPath, input.attachment.objectPath),
-          eq(uploadSlotsTable.userId, body.data.senderId),
+          eq(uploadSlotsTable.userId, senderId),
           eq(uploadSlotsTable.status, "uploaded"),
           gt(uploadSlotsTable.expiresAt, now()),
         ),
@@ -1278,6 +1411,17 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
   }
   const createdAt = now();
   const expiresAt = await messageExpiryForChat(params.data.chatId, createdAt);
+  let replyPreview: MessageRecord["replyPreview"] = null;
+  if (input.replyToMessageId) {
+    const [replyTarget] = await db.select({
+      message: messagesTable,
+      name: usersTable.name,
+    }).from(messagesTable)
+      .innerJoin(usersTable, eq(usersTable.id, messagesTable.senderId))
+      .where(and(eq(messagesTable.id, input.replyToMessageId), eq(messagesTable.chatId, params.data.chatId)))
+      .limit(1);
+    if (replyTarget) replyPreview = serializeReplyPreview(replyTarget.message, replyTarget.name);
+  }
   let message: MessageRecord;
   try {
     message = await db.transaction(async (tx) => {
@@ -1285,9 +1429,12 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
         .insert(messagesTable)
         .values({
           chatId: params.data.chatId,
-          senderId: body.data.senderId,
+          senderId,
+          clientId,
           content,
           attachment: input.attachment ?? null,
+          replyToMessageId: input.replyToMessageId,
+          replyPreview,
           timestamp: createdAt,
           expiresAt,
           read: false,
@@ -1305,7 +1452,7 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
           .where(
             and(
               eq(uploadSlotsTable.id, claimedUploadId),
-              eq(uploadSlotsTable.userId, body.data.senderId),
+              eq(uploadSlotsTable.userId, senderId),
               eq(uploadSlotsTable.status, "committing"),
             ),
           )
@@ -1330,22 +1477,22 @@ router.post("/chats/:chatId/messages", async (req, res): Promise<void> => {
     res.status(500).json({ error: "Unable to send message." });
     return;
   }
-  const response = parseMessage(message);
+  const response = (await serializeMessages([message], senderId))[0];
   emitToChat(params.data.chatId, "new-message", response);
   for (const participantId of participants) {
     emitToUser(participantId, "inbox-updated", response);
   }
   const [sender] = await db.select({ name: usersTable.name }).from(usersTable)
-    .where(eq(usersTable.id, body.data.senderId)).limit(1);
+    .where(eq(usersTable.id, senderId)).limit(1);
   void sendPushToUsers(
-    participants.filter((participantId) => participantId !== body.data.senderId),
+    participants.filter((participantId) => participantId !== senderId),
     {
       title: sender?.name ?? "New message",
-      body: content ? content.slice(0, 120) : "Sent an attachment",
+      body: content ? content.slice(0, 120) : input.attachment?.type === "location" ? "Shared a location" : "Sent an attachment",
       data: { chatId: params.data.chatId },
     },
   ).catch((error) => req.log.warn({ err: error }, "Unable to queue message push notification"));
-  res.status(201).json(CreateMessageResponse.parse(response));
+  res.status(201).json(response);
 });
 
 router.post("/chats/:chatId/read", async (req, res): Promise<void> => {
@@ -1375,7 +1522,8 @@ router.post("/chats/:chatId/read", async (req, res): Promise<void> => {
         eq(messagesTable.chatId, params.data.chatId),
         ne(messagesTable.senderId, body.data.viewerId),
         eq(messagesTable.read, false),
-          visibleMessageCondition(now()),
+        visibleMessageCondition(now()),
+        visibleForUserCondition(body.data.viewerId),
       ),
     )
     .returning({ id: messagesTable.id });
@@ -1423,7 +1571,7 @@ router.post("/messages/:messageId/open", async (req, res): Promise<void> => {
     const openedAt = now();
     const [updated] = await db
       .update(messagesTable)
-      .set({ openedAt })
+      .set({ openedAt, deliveredAt: message.deliveredAt ?? openedAt, read: true })
       .where(
         and(
           eq(messagesTable.id, message.id),
@@ -1447,9 +1595,9 @@ router.post("/messages/:messageId/open", async (req, res): Promise<void> => {
       current = latest;
     }
   }
-  const response = parseMessage(current);
+  const response = (await serializeMessages([current], body.data.recipientId))[0];
   emitToChat(message.chatId, "message-updated", response);
-  res.json(OpenMessageResponse.parse(response));
+  res.json(response);
 });
 
 router.post("/messages/:messageId/save", async (req, res): Promise<void> => {
@@ -1498,9 +1646,166 @@ router.post("/messages/:messageId/save", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Message expired before it could be saved." });
     return;
   }
-  const response = parseMessage(updated);
+  const response = (await serializeMessages([updated], body.data.recipientId))[0];
   emitToChat(message.chatId, "message-updated", response);
-  res.json(SaveMessageResponse.parse(response));
+  res.json(response);
+});
+
+router.patch("/messages/:messageId", async (req, res): Promise<void> => {
+  const messageId = Number(readParam(req.params.messageId));
+  const userId = typeof req.body?.userId === "number" ? req.body.userId : Number(req.body?.userId);
+  if (!Number.isInteger(messageId) || !Number.isInteger(userId) || userId <= 0) {
+    res.status(400).json({ error: "A valid message and user are required." });
+    return;
+  }
+  if (!(await callerMatches(req, res, userId))) return;
+  const [message] = await db.select().from(messagesTable).where(eq(messagesTable.id, messageId)).limit(1);
+  if (!message) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const participants = await getChatParticipants(message.chatId);
+  if (!participants.includes(userId) || await chatIsBlockedForUser(message.chatId, userId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
+    return;
+  }
+
+  const mode = req.body?.mode;
+  if (mode === "edit") {
+    const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+    if (message.senderId !== userId || !content || content.length > 2000 || message.attachment || message.deletedForEveryone) {
+      res.status(400).json({ error: "This message cannot be edited." });
+      return;
+    }
+    const editTime = now();
+    const [updated] = await db.update(messagesTable).set({ content, editedAt: editTime })
+      .where(eq(messagesTable.id, message.id)).returning();
+    if (!updated) {
+      res.status(404).json({ error: "Message not found." });
+      return;
+    }
+    const response = (await serializeMessages([updated], userId))[0];
+    emitToChat(message.chatId, "message-updated", response);
+    for (const participantId of participants) emitToUser(participantId, "inbox-updated", response);
+    res.json(response);
+    return;
+  }
+
+  if (mode === "delete_for_me") {
+    await db.insert(messageHiddenTable).values({ messageId: message.id, userId, hiddenAt: now() }).onConflictDoNothing();
+    emitToUser(userId, "message-hidden", { chatId: message.chatId, messageId: message.id });
+    emitToUser(userId, "inbox-updated", { chatId: message.chatId, messageId: message.id });
+    res.json({ success: true });
+    return;
+  }
+
+  if (mode === "delete_for_everyone") {
+    if (message.senderId !== userId || message.deletedForEveryone) {
+      res.status(400).json({ error: "This message cannot be deleted for everyone." });
+      return;
+    }
+    const [updated] = await db.update(messagesTable).set({
+      content: "",
+      attachment: null,
+      editedAt: null,
+      deletedAt: now(),
+      deletedForEveryone: true,
+    }).where(eq(messagesTable.id, message.id)).returning();
+    if (!updated) {
+      res.status(404).json({ error: "Message not found." });
+      return;
+    }
+    await db.delete(messageReactionsTable).where(eq(messageReactionsTable.messageId, message.id));
+    const [latest] = await db.select().from(messagesTable).where(eq(messagesTable.id, message.id)).limit(1);
+    if (!latest) {
+      res.status(404).json({ error: "Message not found." });
+      return;
+    }
+    const response = (await serializeMessages([latest], userId))[0];
+    emitToChat(message.chatId, "message-updated", response);
+    for (const participantId of participants) emitToUser(participantId, "inbox-updated", response);
+    res.json(response);
+    return;
+  }
+
+  res.status(400).json({ error: "A supported message action is required." });
+});
+
+router.put("/messages/:messageId/reaction", async (req, res): Promise<void> => {
+  const messageId = Number(readParam(req.params.messageId));
+  const userId = typeof req.body?.userId === "number" ? req.body.userId : Number(req.body?.userId);
+  const emoji = reactionChoices(req.body?.emoji);
+  if (!Number.isInteger(messageId) || !Number.isInteger(userId) || userId <= 0 || !emoji) {
+    res.status(400).json({ error: "A valid reaction is required." });
+    return;
+  }
+  if (!(await callerMatches(req, res, userId))) return;
+  const [message] = await db.select().from(messagesTable).where(eq(messagesTable.id, messageId)).limit(1);
+  if (!message) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const participants = await getChatParticipants(message.chatId);
+  if (!participants.includes(userId) || await chatIsBlockedForUser(message.chatId, userId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
+    return;
+  }
+  await db.transaction(async (tx) => {
+    const existing = await tx.select().from(messageReactionsTable)
+      .where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.userId, userId))).limit(1);
+    if (existing[0]?.emoji === emoji) {
+      await tx.delete(messageReactionsTable).where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.userId, userId)));
+      return;
+    }
+    await tx.insert(messageReactionsTable).values({ messageId, userId, emoji, createdAt: now() })
+      .onConflictDoUpdate({
+        target: [messageReactionsTable.messageId, messageReactionsTable.userId],
+        set: { emoji, createdAt: now() },
+      });
+  });
+  const [latest] = await db.select().from(messagesTable).where(eq(messagesTable.id, messageId)).limit(1);
+  if (!latest) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const response = (await serializeMessages([latest], userId))[0];
+  emitToChat(message.chatId, "message-updated", response);
+  res.json(response);
+});
+
+router.post("/messages/:messageId/play", async (req, res): Promise<void> => {
+  const messageId = Number(readParam(req.params.messageId));
+  const userId = typeof req.body?.userId === "number" ? req.body.userId : Number(req.body?.userId);
+  if (!Number.isInteger(messageId) || !Number.isInteger(userId) || userId <= 0) {
+    res.status(400).json({ error: "A valid message and user are required." });
+    return;
+  }
+  if (!(await callerMatches(req, res, userId))) return;
+  const [message] = await db.select().from(messagesTable).where(eq(messagesTable.id, messageId)).limit(1);
+  if (!message) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const participants = await getChatParticipants(message.chatId);
+  if (!participants.includes(userId) || await chatIsBlockedForUser(message.chatId, userId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
+    return;
+  }
+  if (message.senderId === userId || message.attachment?.type !== "audio") {
+    res.json({ success: true });
+    return;
+  }
+  const [updated] = await db.update(messagesTable)
+    .set({ playedAt: message.playedAt ?? now(), deliveredAt: message.deliveredAt ?? now(), openedAt: message.openedAt ?? now(), read: true })
+    .where(eq(messagesTable.id, messageId))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const response = (await serializeMessages([updated], userId))[0];
+  emitToChat(message.chatId, "message-updated", response);
+  res.json(response);
 });
 
 export default router;

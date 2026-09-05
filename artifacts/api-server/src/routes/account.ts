@@ -4,6 +4,7 @@ import {
   authChallengesTable, authSessionsTable, chatMessageRequestsTable, chatNotesTable,
   chatParticipantsTable, callsTable, currentEventParticipantsTable, currentEventWalletsTable,
   db, discoveryCreatorClaimsTable, mapPinCommentsTable,
+  messageHiddenTable, messageReactionsTable,
   mapPinReactionsTable, mapPinReportsTable, mapPinSavesTable, mapPinsTable, messagesTable,
   pushTokensTable, socialBlocksTable, socialCloseFriendsTable, socialCommentLikesTable,
   socialCommentsTable, socialFollowsTable, socialHighlightItemsTable, socialHighlightsTable,
@@ -105,6 +106,8 @@ router.delete("/account", async (req, res): Promise<void> => {
       }
       await tx.delete(socialHighlightsTable).where(eq(socialHighlightsTable.ownerId, userId));
       await tx.delete(chatNotesTable).where(eq(chatNotesTable.ownerId, userId));
+      await tx.delete(messageHiddenTable).where(eq(messageHiddenTable.userId, userId));
+      await tx.delete(messageReactionsTable).where(eq(messageReactionsTable.userId, userId));
       await tx.delete(chatParticipantsTable).where(eq(chatParticipantsTable.userId, userId));
       await tx.delete(chatMessageRequestsTable).where(or(eq(chatMessageRequestsTable.senderId, userId), eq(chatMessageRequestsTable.recipientId, userId)));
       await tx.delete(uploadSlotsTable).where(eq(uploadSlotsTable.userId, userId));

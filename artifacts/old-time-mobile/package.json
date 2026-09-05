@@ -77,6 +77,7 @@
     "expo-audio": "~1.1.1",
     "expo-auth-session": "~7.0.11",
     "expo-camera": "~17.0.10",
+    "expo-clipboard": "8.0.7",
     "expo-contacts": "~15.0.11",
     "expo-crypto": "~15.0.9",
     "expo-dev-client": "~6.0.21",

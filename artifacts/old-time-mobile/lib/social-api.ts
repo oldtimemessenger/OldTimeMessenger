@@ -63,6 +63,7 @@ export type SocialConnection = SocialUser & {
 };
 
 export type ContactPermission = 'everyone' | 'followers' | 'nobody';
+export type ChatPresence = 'available' | 'busy' | 'dnd';
 export type MessageRequest = {
   id: number;
   sender: SocialUser;
@@ -262,7 +263,7 @@ export function getUserPosts(token: string, userId: number) {
 export function updateUserProfile(
   token: string,
   userId: number,
-  input: { name?: string; username?: string; bio?: string; birthday?: string; contactPermission?: ContactPermission; phoneNumber?: string | null; phoneDiscoveryPermission?: 'contacts' | 'everyone' | 'nobody' },
+  input: { name?: string; username?: string; bio?: string; birthday?: string; contactPermission?: ContactPermission; phoneNumber?: string | null; phoneDiscoveryPermission?: 'contacts' | 'everyone' | 'nobody'; chatPresence?: ChatPresence },
 ) {
   return request<{
     id: number;
@@ -275,6 +276,7 @@ export function updateUserProfile(
     online: boolean;
     lastSeen: number;
     lastSeenVisible: boolean;
+    chatPresence: ChatPresence;
     hasRegisteredPhone: boolean;
     phoneVerified: boolean;
     phoneDiscoveryPermission: 'contacts' | 'everyone' | 'nobody';
