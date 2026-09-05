@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { type CurrentEventWallet, useGetCurrentEventWallet } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PrimaryButton, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
@@ -34,8 +34,8 @@ export default function WalletScreen() {
   const { session } = useApp();
   const revenueCat = useRevenueCat();
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [loadFailureMessage, setLoadFailureMessage] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const loadFailureMessageRef = useRef<string | null>(null);
   const walletQuery = useGetCurrentEventWallet({
     query: {
       enabled: Boolean(session?.authToken),
@@ -49,13 +49,18 @@ export default function WalletScreen() {
   useEffect(() => {
     if (walletQuery.error && !walletQuery.data) {
       const message = walletQuery.error instanceof Error ? walletQuery.error.message : 'Wallet unavailable.';
-      setLoadFailureMessage(message);
-      setFeedback(message);
-    } else if (walletQuery.data && loadFailureMessage && feedback === loadFailureMessage) {
-      setLoadFailureMessage(null);
-      setFeedback(null);
+      if (loadFailureMessageRef.current !== message) {
+        loadFailureMessageRef.current = message;
+        setFeedback(message);
+      }
+      return;
     }
-  }, [feedback, loadFailureMessage, walletQuery.data, walletQuery.error]);
+    if (walletQuery.data && loadFailureMessageRef.current) {
+      const lastFailure = loadFailureMessageRef.current;
+      loadFailureMessageRef.current = null;
+      setFeedback((current) => current === lastFailure ? null : current);
+    }
+  }, [walletQuery.data, walletQuery.error]);
 
   async function refreshWallet() {
     const result = await walletQuery.refetch();
