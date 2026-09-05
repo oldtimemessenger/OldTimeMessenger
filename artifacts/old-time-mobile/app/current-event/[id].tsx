@@ -22,6 +22,7 @@ import {
   Animated,
   Alert,
   FlatList,
+  Image,
   Modal,
   Pressable,
   Share,
@@ -43,6 +44,18 @@ import { apiBaseUrl } from '@/lib/api-base-url';
 import { io } from 'socket.io-client';
 
 const gifts = currentEventGifts;
+const coinLogo = require('../../assets/coins/coin-logo.jpeg');
+
+type GiftPayload = {
+  id: number;
+  roomId: number;
+  senderId: number;
+  senderName: string;
+  recipientId: number;
+  recipientName: string;
+  gift: (typeof gifts)[number]['key'];
+  createdAt: number;
+};
 
 function mergeMessages(current: CurrentEventMessage[], incoming: CurrentEventMessage[]) {
   const byId = new Map(current.map((item) => [item.id, item]));
@@ -79,13 +92,21 @@ export default function CurrentEventRoomScreen() {
   const [giftRecipientId, setGiftRecipientId] = useState<number | null>(null);
   const [reactionCount, setReactionCount] = useState(0);
   const [floatingHearts, setFloatingHearts] = useState<Array<{ id: number; progress: Animated.Value; drift: number }>>([]);
+  const [giftBursts, setGiftBursts] = useState<Array<{ id: number; progress: Animated.Value; gift: (typeof gifts)[number]; recipientName: string }>>([]);
+  const [recentGifts, setRecentGifts] = useState<Array<{ id: number; gift: (typeof gifts)[number]; senderName: string; recipientName: string }>>([]);
   const nextHeartId = useRef(0);
+  const seenGiftIds = useRef(new Set<number>());
   const currentEventSocketRef = useRef<ReturnType<typeof io> | null>(null);
   const [roomUnavailable, setRoomUnavailable] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [audioState, setAudioState] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
   const [audioMuted, setAudioMuted] = useState(false);
   const roomEndedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   const showFloatingHeart = useCallback((withHaptic = false) => {
     const id = nextHeartId.current++;
@@ -107,6 +128,30 @@ export default function CurrentEventRoomScreen() {
     showFloatingHeart(true);
     currentEventSocketRef.current?.emit('current-event-reaction', { roomId });
   }, [roomId, showFloatingHeart]);
+
+  const showGiftAnimation = useCallback((incoming: GiftPayload) => {
+    if (incoming.roomId !== roomId || seenGiftIds.current.has(incoming.id)) return;
+    const gift = gifts.find((item) => item.key === incoming.gift);
+    if (!gift) return;
+    seenGiftIds.current.add(incoming.id);
+    const progress = new Animated.Value(0);
+    setGiftBursts((current) => [...current, { id: incoming.id, progress, gift, recipientName: incoming.recipientName }]);
+    if (incoming.senderId === session?.id || incoming.recipientId === session?.id) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    Animated.sequence([
+      Animated.timing(progress, { toValue: 0.28, duration: 260, useNativeDriver: true }),
+      Animated.delay(300),
+      Animated.timing(progress, { toValue: 1, duration: 720, useNativeDriver: true }),
+    ]).start(() => {
+      if (!mountedRef.current) return;
+      setGiftBursts((current) => current.filter((item) => item.id !== incoming.id));
+      setRecentGifts((current) => [
+        { id: incoming.id, gift, senderName: incoming.senderName, recipientName: incoming.recipientName },
+        ...current.filter((item) => item.id !== incoming.id),
+      ].slice(0, 5));
+    });
+  }, [roomId, session?.id]);
 
   const loadRoom = useCallback(async (join = false) => {
     if (!Number.isInteger(roomId) || roomId < 1) return;
@@ -174,12 +219,19 @@ export default function CurrentEventRoomScreen() {
       if (incoming.roomId !== roomId) return;
       showFloatingHeart();
     };
+    const receiveGift = (payload: unknown) => {
+      if (!payload || typeof payload !== 'object') return;
+      const incoming = payload as GiftPayload;
+      if (!Number.isInteger(incoming.id) || incoming.roomId !== roomId) return;
+      showGiftAnimation(incoming);
+    };
     const joinRoom = () => socket.emit('join-current-event', { roomId });
 
     currentEventSocketRef.current = socket;
     socket.on('connect', joinRoom);
     socket.on('current-event-message', receiveMessage);
     socket.on('current-event-reaction', receiveReaction);
+    socket.on('current-event-gift', receiveGift);
     socket.on('current-event-room-updated', refreshRoom);
     return () => {
       if (currentEventSocketRef.current === socket) currentEventSocketRef.current = null;
@@ -187,10 +239,11 @@ export default function CurrentEventRoomScreen() {
       socket.off('connect', joinRoom);
       socket.off('current-event-message', receiveMessage);
       socket.off('current-event-reaction', receiveReaction);
+      socket.off('current-event-gift', receiveGift);
       socket.off('current-event-room-updated', refreshRoom);
       socket.disconnect();
     };
-  }, [loadRoom, room?.isLive, room?.viewer.participantId, roomId, session?.authToken, showFloatingHeart]);
+  }, [loadRoom, room?.isLive, room?.viewer.participantId, roomId, session?.authToken, showFloatingHeart, showGiftAnimation]);
 
   const connectAudio = useCallback(async () => {
     if (!room || room.viewer.participantId === null) return;
@@ -343,7 +396,10 @@ export default function CurrentEventRoomScreen() {
         <View style={styles.liveRow}>
           <View style={styles.livePill}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
           <Text style={[styles.listenerSummary, { color: colors.mutedForeground }]}>{room.counts.speakers} speakers · {room.counts.listeners} listeners</Text>
-          <Pressable onPress={() => setStoreOpen(true)}><Text style={[styles.coinBalance, { color: colors.foreground }]}>◈ {wallet.coins}  +</Text></Pressable>
+          <Pressable onPress={() => setStoreOpen(true)} style={styles.coinBalance}>
+            <Image source={coinLogo} resizeMode="contain" style={styles.coinLogoSmall} />
+            <Text style={{ color: colors.foreground }}>{wallet.coins}  +</Text>
+          </Pressable>
         </View>
 
         {audioState !== 'live' ? (
@@ -461,6 +517,35 @@ export default function CurrentEventRoomScreen() {
         ))}
       </View>
 
+      <View pointerEvents="none" style={styles.giftBurstLayer}>
+        {giftBursts.map((burst) => (
+          <Animated.View
+            key={burst.id}
+            accessibilityLabel={`${burst.gift.label} gift sent to ${burst.recipientName}`}
+            style={{
+              opacity: burst.progress.interpolate({ inputRange: [0, 0.18, 0.72, 1], outputRange: [0, 1, 1, 0] }),
+              transform: [
+                { translateY: burst.progress.interpolate({ inputRange: [0, 0.72, 1], outputRange: [0, 0, 245] }) },
+                { scale: burst.progress.interpolate({ inputRange: [0, 0.18, 0.72, 1], outputRange: [0.35, 1.14, 1, 0.35] }) },
+              ],
+            }}
+          >
+            <Image source={burst.gift.image} resizeMode="contain" style={styles.giftBurstImage} />
+          </Animated.View>
+        ))}
+      </View>
+
+      {recentGifts.length > 0 ? (
+        <View pointerEvents="none" style={[styles.recentGiftTray, { bottom: insets.bottom + 68 }]}>
+          {recentGifts.map((item) => (
+            <View key={item.id} accessibilityLabel={`${item.gift.label} gift from ${item.senderName} to ${item.recipientName}`} style={[styles.recentGiftChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Image source={item.gift.image} resizeMode="contain" style={styles.recentGiftImage} />
+              <Text style={[styles.recentGiftName, { color: colors.foreground }]} numberOfLines={1}>{item.recipientName}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       <View style={[styles.leaveBar, { backgroundColor: colors.background, paddingBottom: insets.bottom + 10 }]}>
         <Pressable onPress={confirmLeaveRoom} style={[styles.leaveButton, { backgroundColor: colors.destructive }]}><Ionicons name="exit-outline" size={19} color={colors.destructiveForeground} /><Text style={[styles.leaveText, { color: colors.destructiveForeground }]}>{room.viewer.role === 'host' ? 'end room' : 'leave quietly'}</Text></Pressable>
       </View>
@@ -518,8 +603,12 @@ export default function CurrentEventRoomScreen() {
         <View style={styles.modalShadeRoot}><View style={styles.modalShade} /><View style={[styles.giftSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20 }]}>
           <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Send a gift</Text><Pressable onPress={() => setGiftOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
           <Text style={[styles.sheetHint, { color: colors.mutedForeground }]}>{activeRecipientId ? 'Choose a gift.' : 'Choose a speaker.'}</Text>
-          <View style={styles.giftGrid}>{gifts.map((gift) => <Pressable key={gift.key} disabled={!activeRecipientId} onPress={() => void sendGift(gift)} style={[styles.giftItem, { backgroundColor: colors.muted }, !activeRecipientId && { opacity: 0.45 }]}><Ionicons name={gift.icon} size={25} color={colors.primary} /><Text style={[styles.giftLabel, { color: colors.foreground }]}>{gift.label}</Text><Text style={[styles.giftCost, { color: colors.mutedForeground }]}>◈ {gift.cost}</Text></Pressable>)}</View>
-           <Text style={[styles.walletBalance, { color: colors.mutedForeground }]}>Balance ◈ {wallet.coins}</Text>
+          <View style={styles.giftGrid}>{gifts.map((gift) => <Pressable key={gift.key} accessibilityRole="button" accessibilityLabel={`Send ${gift.label} gift for ${gift.cost} coins`} disabled={!activeRecipientId} onPress={() => void sendGift(gift)} style={[styles.giftItem, { backgroundColor: colors.muted }, !activeRecipientId && { opacity: 0.45 }]}>
+            <Image source={gift.image} resizeMode="contain" style={styles.giftItemImage} />
+            <Text style={[styles.giftLabel, { color: colors.foreground }]}>{gift.label}</Text>
+            <View style={styles.giftCostRow}><Image source={coinLogo} resizeMode="contain" style={styles.coinLogoTiny} /><Text style={[styles.giftCost, { color: colors.mutedForeground }]}>{gift.cost}</Text></View>
+          </Pressable>)}</View>
+            <View style={styles.walletBalanceRow}><Image source={coinLogo} resizeMode="contain" style={styles.coinLogoTiny} /><Text style={[styles.walletBalance, { color: colors.mutedForeground }]}>Balance {wallet.coins}</Text></View>
         </View></View>
       </Modal>
 
@@ -617,7 +706,8 @@ const styles = StyleSheet.create({
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#E5484D' },
   liveText: { color: '#C53030', fontSize: 10, fontWeight: '900' },
   listenerSummary: { fontSize: 12, fontWeight: '400', flex: 1 },
-  coinBalance: { fontSize: 13, fontWeight: '600' },
+  coinBalance: { flexDirection: 'row', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: '600' },
+  coinLogoSmall: { width: 20, height: 20, borderRadius: 10 },
   audioNotice: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
   audioNoticeText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '400' },
   feedback: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 11, paddingVertical: 9, marginBottom: 14 },
@@ -645,6 +735,12 @@ const styles = StyleSheet.create({
   actionButtonActive: { borderWidth: 0 },
   actionText: { fontSize: 10, fontWeight: '600' },
   floatingHeartLayer: { position: 'absolute', right: 22, bottom: 124, width: 90, height: 270, alignItems: 'center', justifyContent: 'flex-end' },
+  giftBurstLayer: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingBottom: 82 },
+  giftBurstImage: { width: 220, height: 220 },
+  recentGiftTray: { position: 'absolute', left: 12, right: 12, minHeight: 52, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  recentGiftChip: { minWidth: 54, maxWidth: 76, minHeight: 52, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 3 },
+  recentGiftImage: { width: 32, height: 32 },
+  recentGiftName: { fontSize: 8, fontWeight: '600', maxWidth: 64 },
   leaveBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 9 },
   leaveButton: { minHeight: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   leaveText: { fontWeight: '600' },
@@ -664,12 +760,16 @@ const styles = StyleSheet.create({
   messageInput: { flex: 1, minHeight: 44, borderRadius: 22, paddingHorizontal: 15 },
   sendButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   giftGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  giftItem: { width: '18%', minWidth: 62, alignItems: 'center', paddingVertical: 10, borderRadius: 13, backgroundColor: '#fff' },
+  giftItem: { width: '18%', minWidth: 62, alignItems: 'center', paddingVertical: 8, borderRadius: 13, backgroundColor: '#fff' },
+  giftItemImage: { width: 48, height: 52 },
   giftLabel: { fontSize: 10, fontWeight: '600', marginTop: 5 },
-  giftCost: { fontSize: 10, marginTop: 3, fontWeight: '400' },
+  giftCostRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 3 },
+  coinLogoTiny: { width: 12, height: 12, borderRadius: 6 },
+  giftCost: { fontSize: 10, fontWeight: '400' },
   walletLink: { alignItems: 'center', paddingTop: 19 },
   walletLinkText: { fontSize: 12, fontWeight: '600' },
-  walletBalance: { textAlign: 'center', fontSize: 12, paddingTop: 18 },
+  walletBalanceRow: { justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 3, paddingTop: 18 },
+  walletBalance: { textAlign: 'center', fontSize: 12 },
   packRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 14, padding: 13, marginTop: 8 },
   packName: { fontSize: 14, fontWeight: '600' },
   packCoins: { fontSize: 12, marginTop: 3 },

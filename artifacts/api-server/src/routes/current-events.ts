@@ -586,8 +586,8 @@ router.post("/current-events/rooms/:roomId/gifts", async (req, res): Promise<voi
     return;
   }
   const membership = await requireRoomParticipant(roomId, viewerId);
-  const recipient = await participantFor(roomId, parsed.data.recipientId);
-  if (!membership.room || !membership.participant || !recipient || !["host", "moderator", "speaker"].includes(recipient.role)) {
+  const recipientParticipant = await participantFor(roomId, parsed.data.recipientId);
+  if (!membership.room || !membership.participant || !recipientParticipant || !["host", "moderator", "speaker"].includes(recipientParticipant.role)) {
     res.status(400).json({ error: "Gifts can only be sent to a room speaker." });
     return;
   }
@@ -604,14 +604,30 @@ router.post("/current-events/rooms/:roomId/gifts", async (req, res): Promise<voi
     await tx.update(currentEventWalletsTable)
       .set({ gold: sql`${currentEventWalletsTable.gold} + ${gold}`, updatedAt: Date.now() })
       .where(eq(currentEventWalletsTable.userId, parsed.data.recipientId));
-    await tx.insert(currentEventGiftsTable).values({ roomId, senderId: viewerId, recipientId: parsed.data.recipientId, gift: parsed.data.gift, coins, gold, createdAt: Date.now() });
-    return debited.coins;
+    const [giftRecord] = await tx.insert(currentEventGiftsTable).values({ roomId, senderId: viewerId, recipientId: parsed.data.recipientId, gift: parsed.data.gift, coins, gold, createdAt: Date.now() }).returning();
+    return { coinsRemaining: debited.coins, giftRecord };
   });
   if (result === null) {
     res.status(402).json({ error: "You need more coins to send this gift." });
     return;
   }
-  res.json({ success: true, gift: parsed.data.gift, coinsSpent: coins, goldEarned: gold, coinsRemaining: result });
+  const [sender, recipientUser] = await Promise.all([
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, viewerId)).limit(1),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, parsed.data.recipientId)).limit(1),
+  ]);
+  emitToCurrentEventRoom(roomId, "current-event-gift", {
+    id: result.giftRecord.id,
+    roomId,
+    senderId: viewerId,
+    senderName: sender[0]?.name ?? "Old Time member",
+    recipientId: parsed.data.recipientId,
+    recipientName: recipientUser[0]?.name ?? "speaker",
+    gift: parsed.data.gift,
+    coins,
+    gold,
+    createdAt: result.giftRecord.createdAt,
+  });
+  res.json({ success: true, gift: parsed.data.gift, coinsSpent: coins, goldEarned: gold, coinsRemaining: result.coinsRemaining });
 });
 
 router.get("/current-events/wallet", async (req, res): Promise<void> => {
