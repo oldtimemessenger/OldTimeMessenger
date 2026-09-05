@@ -70,7 +70,7 @@ export default function WalletScreen() {
       const credited = await revenueCat.purchase(item);
       const refreshed = await refreshWallet();
       if (!refreshed.ok) {
-        setFeedback(refreshed.message);
+        setFeedback(`${credited} coins added. The wallet balance will refresh when the connection returns.`);
         return;
       }
       setFeedback(`${credited} coins added.`);
@@ -87,7 +87,9 @@ export default function WalletScreen() {
       const credited = await revenueCat.restore();
       const refreshed = await refreshWallet();
       if (!refreshed.ok) {
-        setFeedback(refreshed.message);
+        setFeedback(credited
+          ? `${credited} coins restored. The wallet balance will refresh when the connection returns.`
+          : 'Wallet is up to date. The balance will refresh when the connection returns.');
         return;
       }
       setFeedback(credited ? `${credited} coins restored.` : 'Wallet is up to date.');
