@@ -39,9 +39,7 @@ export default function SettingsScreen() {
   const translate = (key: Parameters<typeof t>[1]) => t(settings.language, key);
   const walletCoins = useGetCurrentEventWallet({
     query: {
-      enabled: Boolean(session?.authToken),
-      retry: 1,
-      staleTime: 30_000,
+      enabled: false,
       select: (wallet: { coins: number }) => wallet.coins,
     },
   }).data;
