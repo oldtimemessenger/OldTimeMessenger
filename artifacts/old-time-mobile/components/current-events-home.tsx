@@ -167,9 +167,15 @@ export default function CurrentEventsHome({
 
   const flatRooms = useMemo(() => {
     const rows: Array<{ type: 'section'; key: string; title: string } | { type: 'room'; key: string; room: CurrentEventRoom }> = [];
+    const seen = new Set<number>();
     for (const section of sections) {
+      const uniqueRooms = section.items.filter((room) => !seen.has(room.id));
+      if (uniqueRooms.length === 0) continue;
       rows.push({ type: 'section', key: `section-${section.key}`, title: section.title });
-      for (const room of section.items) rows.push({ type: 'room', key: `${section.key}-${room.id}`, room });
+      for (const room of uniqueRooms) {
+        seen.add(room.id);
+        rows.push({ type: 'room', key: `${section.key}-${room.id}`, room });
+      }
     }
     return rows;
   }, [sections]);
@@ -264,7 +270,7 @@ export default function CurrentEventsHome({
                   <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
                 </View>
                 <View style={styles.roomSignals}>
-                  <Text style={[styles.signalText, { color: colors.mutedForeground }]}>People you follow speaking</Text>
+                  <Text style={[styles.signalText, { color: colors.mutedForeground }]}>Live conversation</Text>
                   {meta.duration ? <Text style={[styles.signalText, { color: colors.mutedForeground }]}>Access {meta.duration}</Text> : null}
                 </View>
               </Pressable>

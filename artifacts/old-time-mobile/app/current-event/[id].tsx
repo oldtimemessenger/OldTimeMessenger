@@ -68,6 +68,7 @@ export default function CurrentEventRoomScreen() {
   const [giftOpen, setGiftOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
   const [verifyPromptOpen, setVerifyPromptOpen] = useState(false);
+  const [verifyPromptDismissed, setVerifyPromptDismissed] = useState(false);
   const revenueCat = useRevenueCat();
   const [message, setMessage] = useState('');
   const [giftRecipientId, setGiftRecipientId] = useState<number | null>(null);
@@ -181,8 +182,8 @@ export default function CurrentEventRoomScreen() {
   const activeRecipientId = giftRecipientId ?? speakers.find((participant) => participant.user.id !== room?.viewer.participantId)?.user.id ?? speakers[0]?.user.id ?? null;
 
   useEffect(() => {
-    if (room?.viewer.role === 'host' && !session?.phoneVerified) setVerifyPromptOpen(true);
-  }, [room?.viewer.role, session?.phoneVerified]);
+    if (room?.viewer.role === 'host' && !session?.phoneVerified && !verifyPromptDismissed) setVerifyPromptOpen(true);
+  }, [room?.viewer.role, session?.phoneVerified, verifyPromptDismissed]);
 
   async function leaveRoom() {
     if (room?.isLive && room.viewer.participantId !== null) await leaveCurrentEventRoom(room.id).catch(() => undefined);
@@ -252,6 +253,11 @@ export default function CurrentEventRoomScreen() {
       });
     } catch {
       setFeedback('Sharing is unavailable right now.');
+    }
+
+    async function promoteFromPeople(participant: CurrentEventParticipant) {
+      await moderate(participant, 'promote');
+      setPeopleOpen(false);
     }
   }
 
@@ -402,7 +408,7 @@ export default function CurrentEventRoomScreen() {
               <View key={participant.id} style={styles.controlRow}>
                 <Avatar name={participant.user.name} size={30} color={colors.foreground} />
                 <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}</Text>
-                {canModerate ? <Pressable onPress={() => void moderate(participant, 'promote')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite to speak</Text></Pressable> : null}
+                {canModerate ? <Pressable onPress={() => void promoteFromPeople(participant)} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite to speak</Text></Pressable> : null}
               </View>
             ))}
           </View>
@@ -478,7 +484,7 @@ export default function CurrentEventRoomScreen() {
             <Text style={[styles.verifyTitle, { color: colors.foreground }]}>Stay live longer</Text>
             <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to host Access rooms longer than 18 minutes.</Text>
             <View style={styles.verifyActions}>
-              <Pressable onPress={() => setVerifyPromptOpen(false)}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
+              <Pressable onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); }}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
               <Pressable onPress={() => { setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
             </View>
           </View>
