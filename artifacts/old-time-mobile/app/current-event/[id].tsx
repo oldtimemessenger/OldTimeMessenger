@@ -261,7 +261,7 @@ export default function CurrentEventRoomScreen() {
     if (!room) return;
     try {
       await Share.share({
-        message: `Join me in Access: ${room.title}`,
+        message: `Join me in Access: ${room.title}\noldtime://current-event/${room.id}`,
       });
     } catch {}
   }
@@ -354,7 +354,7 @@ export default function CurrentEventRoomScreen() {
             ))}
             {room.participants.filter((participant) => participant.role === 'listener' && participant.handRaised).length === 0 ? <Text style={styles.mutedNote}>No hands raised.</Text> : null}
             <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>PARTICIPANTS</Text>
-            {room.participants.filter((participant) => participant.role !== 'host').slice(0, 6).map((participant) => (
+            {room.participants.filter((participant) => participant.role !== 'host').map((participant) => (
               <View key={participant.id} style={styles.controlRow}>
                 <Avatar name={participant.user.name} size={30} color={colors.primary} />
                 <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}</Text>

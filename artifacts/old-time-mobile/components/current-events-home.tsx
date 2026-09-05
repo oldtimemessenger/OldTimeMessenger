@@ -33,10 +33,7 @@ const topicLabels: Array<{ key: CurrentEventTopic; label: string }> = [
 
 const roomTypes = [
   { key: 'public', label: 'Public', supported: true },
-  { key: 'friends', label: 'Friends', supported: false },
-  { key: 'friends-of-friends', label: 'Friends of Friends', supported: false },
   { key: 'private', label: 'Private', supported: true },
-  { key: 'community', label: 'Space Room', supported: false },
 ] as const;
 
 type Colors = {
@@ -112,7 +109,11 @@ export default function CurrentEventsHome({
       { key: 'for-you', title: 'FOR YOU', items: sorted.filter((room) => topic === 'for-you' || room.topic === topic).slice(0, 6) },
     ];
     if (typeof currentUserId === 'number' && currentUserId > 0) {
-      sectionList.push({ key: 'my-access', title: 'MY ACCESS', items: sorted.filter((room) => room.hostId === currentUserId).slice(0, 4) });
+      sectionList.push({
+        key: 'my-access',
+        title: 'MY ACCESS',
+        items: sorted.filter((room) => room.participants.find((participant) => participant.role === 'host')?.user.id === currentUserId).slice(0, 4),
+      });
     }
     return sectionList.filter((section) => section.items.length > 0);
   }, [currentUserId, rooms, topic]);
