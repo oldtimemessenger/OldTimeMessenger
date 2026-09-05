@@ -6,6 +6,7 @@ export type SocialUser = {
   name: string;
   username: string;
   bio?: string;
+  avatarObjectPath?: string | null;
 };
 
 export type SocialPost = {
@@ -125,6 +126,10 @@ const request = mobileApiRequest;
 
 export function socialMediaUrl(objectPath: string): string {
   return `${baseUrl()}/api/storage${objectPath}`;
+}
+
+export function socialAvatarUrl(objectPath: string | null | undefined): string | undefined {
+  return objectPath ? `${baseUrl()}/api/storage/profile-images${objectPath.replace(/^\/objects/, '')}` : undefined;
 }
 
 export function getSocialFeed(
@@ -263,7 +268,7 @@ export function getUserPosts(token: string, userId: number) {
 export function updateUserProfile(
   token: string,
   userId: number,
-  input: { name?: string; username?: string; bio?: string; birthday?: string; contactPermission?: ContactPermission; phoneNumber?: string | null; phoneDiscoveryPermission?: 'contacts' | 'everyone' | 'nobody'; chatPresence?: ChatPresence },
+  input: { name?: string; username?: string; bio?: string; avatarObjectPath?: string; birthday?: string; contactPermission?: ContactPermission; phoneNumber?: string | null; phoneDiscoveryPermission?: 'contacts' | 'everyone' | 'nobody'; chatPresence?: ChatPresence },
 ) {
   return request<{
     id: number;
@@ -271,6 +276,7 @@ export function updateUserProfile(
     name: string;
     username: string;
     bio: string;
+    avatarObjectPath: string | null;
     birthday: string | null;
     contactPermission: ContactPermission;
     online: boolean;
@@ -310,6 +316,7 @@ export function completeBirthday(challengeId: string, birthday: string) {
     name: string;
     username: string;
     bio: string;
+    avatarObjectPath: string | null;
     birthday: string | null;
     contactPermission: ContactPermission;
     online: boolean;
