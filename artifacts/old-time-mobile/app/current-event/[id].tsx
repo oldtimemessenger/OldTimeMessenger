@@ -503,8 +503,8 @@ export default function CurrentEventRoomScreen() {
               setFeedback(error?.message ?? 'Restore unavailable.');
             }
           }} style={styles.walletLink}><Text style={[styles.walletLinkText, { color: colors.primary }]}>Restore purchases</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Open wallet page" onPress={() => { setStoreOpen(false); router.push('/wallet'); }} style={styles.walletLink}>
-            <Text style={[styles.walletLinkText, { color: colors.primary }]}>Open wallet page</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open wallet" onPress={() => { setStoreOpen(false); router.push('/wallet'); }} style={styles.walletLink}>
+            <Text style={[styles.walletLinkText, { color: colors.primary }]}>Open wallet</Text>
           </Pressable>
         </View></View>
       </Modal>

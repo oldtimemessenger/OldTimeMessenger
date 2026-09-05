@@ -157,7 +157,7 @@ export default function WalletScreen() {
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending gold</Text>
                 </View>
               </View>
-              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.purchasing || restoring || !session?.authToken} />
+              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.loading || revenueCat.purchasing || restoring || !session?.authToken} />
               {!session?.authToken ? <Text style={[styles.authHint, { color: colors.mutedForeground }]}>Sign in again to restore purchases and refresh this wallet.</Text> : null}
             </>
           )}
