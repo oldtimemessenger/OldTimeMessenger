@@ -394,8 +394,8 @@ export default function CurrentEventRoomScreen() {
 
       <Modal visible={peopleOpen} animationType="slide" transparent onRequestClose={() => setPeopleOpen(false)}>
         <KeyboardAvoidingView behavior="padding" style={styles.modalRoot}>
-          <View style={styles.modalShade} />
-          <View accessibilityRole="dialog" accessibilityLabel="People panel" style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
+          <Pressable style={styles.modalShade} accessibilityRole="button" accessibilityLabel="Close people panel" onPress={() => setPeopleOpen(false)} />
+          <View accessibilityRole="dialog" accessibilityLabel="People panel" accessibilityViewIsModal style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
             <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>People</Text><Pressable accessibilityRole="button" accessibilityLabel="Close people panel" onPress={() => setPeopleOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>HOSTS & SPEAKERS</Text>
@@ -421,8 +421,8 @@ export default function CurrentEventRoomScreen() {
 
       <Modal visible={chatOpen} animationType="slide" transparent onRequestClose={() => setChatOpen(false)}>
         <KeyboardAvoidingView behavior="padding" style={styles.modalRoot}>
-          <View style={styles.modalShade} />
-          <View accessibilityRole="dialog" accessibilityLabel="Access chat panel" style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
+          <Pressable style={styles.modalShade} accessibilityRole="button" accessibilityLabel="Close chat panel" onPress={() => setChatOpen(false)} />
+          <View accessibilityRole="dialog" accessibilityLabel="Access chat panel" accessibilityViewIsModal style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
             <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Access chat</Text><Pressable accessibilityRole="button" accessibilityLabel="Close chat panel" onPress={() => setChatOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
             <FlatList
               data={[...messages].reverse()}

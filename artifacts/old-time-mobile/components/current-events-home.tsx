@@ -61,10 +61,10 @@ function parseRoomMeta(room: CurrentEventRoom): { roomType: RoomType; coins: num
   const clubName = room.clubName ?? '';
   const payload = clubName.startsWith(ACCESS_META_PREFIX) ? clubName.slice(ACCESS_META_PREFIX.length) : '';
   const segments = payload.split('|').filter(Boolean);
-  const rawRoomType = segments.find((item) => item.startsWith('TYPE='))?.replace('TYPE=', '') ?? (room.isOpen ? 'public' : 'private');
+  const rawRoomType = decodeURIComponent(segments.find((item) => item.startsWith('TYPE='))?.replace('TYPE=', '') ?? (room.isOpen ? 'public' : 'private'));
   const roomType: RoomType = rawRoomType === 'friends' || rawRoomType === 'friends-of-friends' || rawRoomType === 'private' || rawRoomType === 'community' ? rawRoomType : 'public';
   const coins = Number(segments.find((item) => item.startsWith('COINS='))?.replace('COINS=', '') ?? 0);
-  const duration = segments.find((item) => item.startsWith('DUR='))?.replace('DUR=', '') ?? '';
+  const duration = decodeURIComponent(segments.find((item) => item.startsWith('DUR='))?.replace('DUR=', '') ?? '');
   return {
     roomType,
     coins: Number.isFinite(coins) && coins > 0 ? coins : 0,
@@ -73,11 +73,11 @@ function parseRoomMeta(room: CurrentEventRoom): { roomType: RoomType; coins: num
 }
 
 function encodeRoomMeta(roomType: RoomType, paid: boolean, coins: string, duration: string) {
-  const parts = [`TYPE=${roomType}`];
+  const parts = [`TYPE=${encodeURIComponent(roomType)}`];
   if (paid) {
     const value = Number(coins);
     if (Number.isFinite(value) && value > 0) parts.push(`COINS=${Math.floor(value)}`);
-    if (duration.trim()) parts.push(`DUR=${duration.trim().replace(/\|/g, '-')}`);
+    if (duration.trim()) parts.push(`DUR=${encodeURIComponent(duration.trim())}`);
   }
   return `${ACCESS_META_PREFIX}${parts.join('|')}`;
 }
