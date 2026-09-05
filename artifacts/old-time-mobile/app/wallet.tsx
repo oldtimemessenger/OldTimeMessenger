@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { getCurrentEventWallet, getGetCurrentEventWalletQueryKey, type CurrentEventWallet, useGetCurrentEventWallet } from '@workspace/api-client-react';
+import { getGetCurrentEventWalletQueryOptions, type CurrentEventWallet, useGetCurrentEventWallet } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -70,8 +70,7 @@ export default function WalletScreen() {
       };
     }
     try {
-      const nextWallet = await getCurrentEventWallet();
-      queryClient.setQueryData(getGetCurrentEventWalletQueryKey(), nextWallet);
+      const nextWallet = await queryClient.fetchQuery(getGetCurrentEventWalletQueryOptions());
       return {
         ok: true as const,
         data: nextWallet,
@@ -148,7 +147,7 @@ export default function WalletScreen() {
         </Pressable>
       )}
       right={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing || purchaseInFlight || restoring || !session?.authToken} onPress={() => { void handleRefresh(); }} style={({ pressed }) => [{ opacity: loading || refreshing || purchaseInFlight || restoring || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" accessibilityState={{ disabled: loading || refreshing || purchaseInFlight || restoring || !session?.authToken }} disabled={loading || refreshing || purchaseInFlight || restoring || !session?.authToken} onPress={() => { void handleRefresh(); }} style={({ pressed }) => [{ opacity: loading || refreshing || purchaseInFlight || restoring || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
           <Text style={[styles.refreshText, { color: colors.primary }]}>{refreshing ? 'Refreshing…' : 'Refresh'}</Text>
         </Pressable>
       )}
