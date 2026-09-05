@@ -40,12 +40,18 @@
         "NSCameraUsageDescription": "Old Time uses your camera to share photos, video, and your status.",
         "NSPhotoLibraryUsageDescription": "Old Time uses your photo library to share images in chats.",
         "NSContactsUsageDescription": "Old Time uses your contacts to help you find friends who already use the app.",
-        "NSLocationWhenInUseUsageDescription": "Old Time uses your location to suggest nearby routes and record a Pace route only when you choose to start tracking."
+        "NSLocationWhenInUseUsageDescription": "Old Time uses your location to suggest nearby routes and record a Pace route only when you choose to start tracking.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Old Time uses your location in the background only while you are actively recording a Pace route."
       }
     },
     "android": {
       "package": "com.oldtime.messenger",
       "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
       ],
       "adaptiveIcon": {
@@ -75,6 +81,12 @@
         }
       ],
       "expo-contacts",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Old Time to record your Pace route when the screen is locked, only while you are actively tracking."
+        }
+      ],
        "expo-notifications",
         [
           "@livekit/react-native-expo-plugin",

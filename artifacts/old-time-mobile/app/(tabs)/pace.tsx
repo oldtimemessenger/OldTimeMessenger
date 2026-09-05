@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 import { Avatar, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
-import { appendTrackedPoint, clearPaceRecording, getStoredPaceRecording, savePaceRecording, type PaceRecording } from '@/lib/pace-recorder';
+import { appendTrackedPoint, clearPaceRecording, getStoredPaceRecording, savePaceRecording, startPaceLocationUpdates, stopPaceLocationUpdates, type PaceRecording } from '@/lib/pace-recorder';
 import {
   createPaceComment,
   createPaceRoute,
@@ -72,6 +72,7 @@ export default function PaceScreen() {
   const [giftRoute, setGiftRoute] = useState<PaceRoute | null>(null);
   const [recording, setRecording] = useState<PaceRecording | null>(null);
   const [recordingLoading, setRecordingLoading] = useState(true);
+  const [backgroundTrackingEnabled, setBackgroundTrackingEnabled] = useState(false);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
 
   const load = useCallback(async (showRefresh = false) => {
@@ -104,16 +105,49 @@ export default function PaceScreen() {
 
   useEffect(() => {
     void getStoredPaceRecording()
-      .then((stored) => setRecording(stored))
+      .then(async (stored) => {
+        setRecording(stored);
+        if (Platform.OS !== 'web') {
+          if (stored?.status === 'recording') {
+            try {
+              setBackgroundTrackingEnabled(await startPaceLocationUpdates());
+            } catch {
+              setBackgroundTrackingEnabled(false);
+            }
+          } else {
+            await stopPaceLocationUpdates().catch(() => undefined);
+          }
+        }
+      })
       .finally(() => setRecordingLoading(false));
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void getStoredPaceRecording().then((stored) => setRecording(stored));
+      }
+    });
+    return () => subscription.remove();
   }, []);
 
   useEffect(() => {
-    if (recording?.status !== 'recording') {
+    if (recording?.status !== 'recording' || (Platform.OS !== 'web' && backgroundTrackingEnabled)) {
       watchRef.current?.remove();
       watchRef.current = null;
-      return;
+      if (recording?.status !== 'recording') return;
     }
+
+    if (Platform.OS !== 'web' && backgroundTrackingEnabled) {
+      void startPaceLocationUpdates().catch(() => {
+        setBackgroundTrackingEnabled(false);
+      });
+      const interval = setInterval(() => {
+        void getStoredPaceRecording().then((stored) => {
+          if (stored?.status === 'recording') setRecording(stored);
+        });
+      }, 2_000);
+      return () => clearInterval(interval);
+    }
+
     let cancelled = false;
     void Location.watchPositionAsync(
       { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 10, timeInterval: 5_000 },
@@ -135,7 +169,7 @@ export default function PaceScreen() {
       watchRef.current?.remove();
       watchRef.current = null;
     };
-  }, [recording?.status]);
+  }, [backgroundTrackingEnabled, recording?.status]);
 
   useEffect(() => {
     if (recording?.status !== 'recording') return;
@@ -171,6 +205,12 @@ export default function PaceScreen() {
       return;
     }
     try {
+      let canTrackInBackground = false;
+      if (Platform.OS !== 'web') {
+        const backgroundPermission = await Location.getBackgroundPermissionsAsync();
+        const backgroundResult = backgroundPermission.granted ? backgroundPermission : await Location.requestBackgroundPermissionsAsync();
+        canTrackInBackground = backgroundResult.granted;
+      }
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
       const now = Date.now();
       const next: PaceRecording = {
@@ -183,7 +223,11 @@ export default function PaceScreen() {
       };
       setLocation({ latitude: current.coords.latitude, longitude: current.coords.longitude });
       await savePaceRecording(next);
+      setBackgroundTrackingEnabled(canTrackInBackground);
       setRecording(next);
+      if (Platform.OS !== 'web' && !canTrackInBackground) {
+        Alert.alert('Background tracking is off', 'Pace will keep recording while Old Time is open. Allow background location in Settings to keep recording when your screen is locked.');
+      }
     } catch {
       Alert.alert('Could not start tracking', 'Old Time could not get a reliable GPS fix. Try again outside with location services enabled.');
     }
@@ -193,20 +237,30 @@ export default function PaceScreen() {
     if (!recording || recording.status !== 'recording') return;
     const paused = { ...recording, status: 'paused' as const, elapsedSeconds: Math.max(recording.elapsedSeconds, Math.floor((Date.now() - recording.startedAt) / 1_000)) };
     await savePaceRecording(paused);
+    await stopPaceLocationUpdates().catch(() => undefined);
     setRecording(paused);
   }
 
   async function resumeRecording() {
     if (!recording || recording.status !== 'paused') return;
+    let canTrackInBackground = false;
+    if (Platform.OS !== 'web') {
+      canTrackInBackground = (await Location.getBackgroundPermissionsAsync()).granted;
+    }
     const resumed = { ...recording, status: 'recording' as const, startedAt: Date.now() - recording.elapsedSeconds * 1_000 };
     await savePaceRecording(resumed);
+    setBackgroundTrackingEnabled(canTrackInBackground);
     setRecording(resumed);
+    if (Platform.OS !== 'web' && !canTrackInBackground) {
+      Alert.alert('Background tracking is off', 'Pace will keep recording while Old Time is open. Allow background location in Settings to keep recording when your screen is locked.');
+    }
   }
 
   async function finishRecording() {
     if (!recording || recording.status === 'finished') return;
     const finished = { ...recording, status: 'finished' as const, elapsedSeconds: recording.status === 'recording' ? Math.max(recording.elapsedSeconds, Math.floor((Date.now() - recording.startedAt) / 1_000)) : recording.elapsedSeconds };
     await savePaceRecording(finished);
+    await stopPaceLocationUpdates().catch(() => undefined);
     setRecording(finished);
     if (finished.points.length < 2 || finished.distanceKm < 0.01) {
       Alert.alert('Route is too short', 'Keep moving a little longer so Pace can create a useful route shape.');
@@ -216,6 +270,10 @@ export default function PaceScreen() {
   }
 
   async function discardRecording() {
+    if (recording) {
+      await savePaceRecording({ ...recording, status: 'paused' });
+    }
+    await stopPaceLocationUpdates().catch(() => undefined);
     await clearPaceRecording();
     setRecording(null);
   }
@@ -266,7 +324,7 @@ export default function PaceScreen() {
               </View>
               <View style={styles.heroMark}><Ionicons name="footsteps-outline" size={30} color={colors.primaryForeground} /></View>
             </View>
-            {!recordingLoading ? <PaceRecorderCard recording={recording} colors={colors} onStart={() => void startRecording()} onPause={() => void pauseRecording()} onResume={() => void resumeRecording()} onFinish={() => void finishRecording()} onShare={() => recording && setComposer(recordingAsSuggestion(recording))} onDiscard={() => void discardRecording()} /> : null}
+            {!recordingLoading ? <PaceRecorderCard recording={recording} backgroundTrackingEnabled={backgroundTrackingEnabled} colors={colors} onStart={() => void startRecording()} onPause={() => void pauseRecording()} onResume={() => void resumeRecording()} onFinish={() => void finishRecording()} onShare={() => recording && setComposer(recordingAsSuggestion(recording))} onDiscard={() => void discardRecording()} /> : null}
 
             <View style={styles.sectionHeading}>
               <View>
@@ -390,7 +448,7 @@ function SuggestedRouteCard({ suggestion, colors, onShare }: { suggestion: PaceS
   );
 }
 
-function PaceRecorderCard({ recording, colors, onStart, onPause, onResume, onFinish, onShare, onDiscard }: { recording: PaceRecording | null; colors: any; onStart: () => void; onPause: () => void; onResume: () => void; onFinish: () => void; onShare: () => void; onDiscard: () => void }) {
+function PaceRecorderCard({ recording, backgroundTrackingEnabled, colors, onStart, onPause, onResume, onFinish, onShare, onDiscard }: { recording: PaceRecording | null; backgroundTrackingEnabled: boolean; colors: any; onStart: () => void; onPause: () => void; onResume: () => void; onFinish: () => void; onShare: () => void; onDiscard: () => void }) {
   const isActive = recording?.status === 'recording';
   const isPaused = recording?.status === 'paused';
   const isFinished = recording?.status === 'finished';
@@ -403,7 +461,7 @@ function PaceRecorderCard({ recording, colors, onStart, onPause, onResume, onFin
         <View style={[styles.recorderIcon, { backgroundColor: colors.primary }]}><Ionicons name={isActive ? 'radio-outline' : isFinished ? 'checkmark' : 'locate-outline'} size={19} color={colors.primaryForeground} /></View>
         <View style={styles.flex}>
           <Text style={[styles.recorderTitle, { color: colors.foreground }]}>{isFinished ? 'Route ready to share' : isPaused ? 'Route paused' : isActive ? 'Recording your route' : 'Record a route'}</Text>
-          <Text style={[styles.recorderText, { color: colors.mutedForeground }]}>{isFinished ? 'Review the route and choose who can see it.' : 'GPS stays on this device until you choose Share.'}</Text>
+          <Text style={[styles.recorderText, { color: colors.mutedForeground }]}>{isFinished ? 'Review the route and choose who can see it.' : isActive && Platform.OS !== 'web' && backgroundTrackingEnabled ? 'Recording continues if your screen locks. GPS stays on this device until you choose Share.' : 'GPS stays on this device until you choose Share.'}</Text>
         </View>
         {isActive ? <View style={[styles.liveDot, { backgroundColor: colors.destructive }]} /> : null}
       </View>

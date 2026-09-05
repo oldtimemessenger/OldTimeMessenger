@@ -85,6 +85,7 @@
     "expo-device": "~8.0.10",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.24",
+    "expo-task-manager": "~14.0.9",
     "expo-updates": "~29.0.20",
     "expo-video": "~3.0.16",
     "firebase": "^12.18.0",
