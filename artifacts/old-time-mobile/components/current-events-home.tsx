@@ -168,13 +168,11 @@ export default function CurrentEventsHome({
 
   const flatRooms = useMemo(() => {
     const rows: Array<{ type: 'section'; key: string; title: string } | { type: 'room'; key: string; room: CurrentEventRoom }> = [];
-    const seen = new Set<number>();
     for (const section of sections) {
-      const uniqueRooms = section.items.filter((room) => !seen.has(room.id));
-      if (uniqueRooms.length === 0) continue;
+      const uniqueRooms = section.items.filter((room, index, items) => items.findIndex((entry) => entry.id === room.id) === index);
+      if (!uniqueRooms.length) continue;
       rows.push({ type: 'section', key: `section-${section.key}`, title: section.title });
       for (const room of uniqueRooms) {
-        seen.add(room.id);
         rows.push({ type: 'room', key: `${section.key}-${room.id}`, room });
       }
     }

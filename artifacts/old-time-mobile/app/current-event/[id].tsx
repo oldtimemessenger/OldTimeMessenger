@@ -52,6 +52,13 @@ function mergeMessages(current: CurrentEventMessage[], incoming: CurrentEventMes
   return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt || left.id - right.id);
 }
 
+function roleLabel(role: CurrentEventParticipant['role']) {
+  if (role === 'host') return 'Host';
+  if (role === 'moderator') return 'Moderator';
+  if (role === 'speaker') return 'Speaker';
+  return 'Listener';
+}
+
 export default function CurrentEventRoomScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -361,27 +368,27 @@ export default function CurrentEventRoomScreen() {
         </View>
 
         <View style={styles.roomActions}>
-          {['host', 'moderator', 'speaker'].includes(room.viewer.role ?? '') ? <Pressable onPress={() => { const next = !audioMuted; setAudioMuted(next); void audioService.setMuted(next); }} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {['host', 'moderator', 'speaker'].includes(room.viewer.role ?? '') ? <Pressable accessibilityRole="button" accessibilityLabel={audioMuted ? 'Unmute microphone in Access room' : 'Mute microphone in Access room'} onPress={() => { const next = !audioMuted; setAudioMuted(next); void audioService.setMuted(next); }} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name={audioMuted ? 'mic-off-outline' : 'mic-outline'} size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>{audioMuted ? 'unmute' : 'mute'}</Text>
           </Pressable> : null}
-          <Pressable onPress={() => setChatOpen(true)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open Access chat" onPress={() => setChatOpen(true)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="chatbubble-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>chat</Text>
           </Pressable>
-          <Pressable onPress={() => setReactionCount((count) => count + 1)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Send reaction in Access room" onPress={() => setReactionCount((count) => count + 1)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="heart-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>{reactionCount || 'react'}</Text>
           </Pressable>
-          <Pressable onPress={() => setGiftOpen(true)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open supporter gifts in Access room" onPress={() => setGiftOpen(true)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="gift-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>support</Text>
           </Pressable>
-          <Pressable onPress={() => setPeopleOpen(true)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open people in Access room" onPress={() => setPeopleOpen(true)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="people-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>people</Text>
           </Pressable>
-          <Pressable onPress={() => void shareRoom()} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Share Access room" onPress={() => void shareRoom()} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="share-social-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>share</Text>
           </Pressable>
@@ -402,7 +409,7 @@ export default function CurrentEventRoomScreen() {
               {speakers.map((participant) => (
                 <View key={participant.id} style={styles.controlRow}>
                   <Avatar name={participant.user.name} size={30} color={colors.primary} />
-                  <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name} · {participant.role}</Text>
+                  <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name} · {roleLabel(participant.role)}</Text>
                   {canModerate && participant.id !== room.viewer.participantId && participant.role !== 'host' ? <Pressable onPress={() => void moderate(participant, participant.muted ? 'unmute' : 'mute')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>{participant.muted ? 'Unmute' : 'Mute'}</Text></Pressable> : null}
                 </View>
               ))}
