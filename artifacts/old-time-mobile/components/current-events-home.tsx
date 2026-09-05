@@ -39,8 +39,6 @@ const roomTypes = [
   { key: 'community', label: 'Space Room', supported: false },
 ] as const;
 
-const accessDurations = ['15 min', '30 min', '1 hour', '2 hours', '4 hours', 'Custom'] as const;
-
 type Colors = {
   background: string;
   foreground: string;
@@ -82,9 +80,6 @@ export default function CurrentEventsHome({
   const [title, setTitle] = useState('');
   const [hostTopic, setHostTopic] = useState<CurrentEventTopic>('for-you');
   const [roomType, setRoomType] = useState<RoomType>('public');
-  const [paidRoom, setPaidRoom] = useState(false);
-  const [entryCoins, setEntryCoins] = useState('1200');
-  const [duration, setDuration] = useState<(typeof accessDurations)[number]>('2 hours');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -288,37 +283,9 @@ export default function CurrentEventsHome({
             <View style={styles.featureList}>
               <Text style={[styles.featureItem, { color: colors.mutedForeground }]}>Chat, reactions, gifting, and people controls are available once the room is live.</Text>
             </View>
-            <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Room pricing</Text>
-            <View style={styles.roomTypeRail}>
-              <Pressable onPress={() => setPaidRoom(false)} style={[styles.roomTypeChip, { borderColor: paidRoom ? colors.border : colors.primary, backgroundColor: paidRoom ? 'transparent' : `${colors.primary}16` }]}>
-                <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>Free room</Text>
-              </Pressable>
-              <Pressable onPress={() => setPaidRoom(true)} style={[styles.roomTypeChip, { borderColor: paidRoom ? colors.primary : colors.border, backgroundColor: paidRoom ? `${colors.primary}16` : 'transparent' }]}>
-                <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>Paid room</Text>
-              </Pressable>
+            <View style={styles.featureList}>
+              <Text style={[styles.featureItem, { color: colors.mutedForeground }]}>Paid room pricing controls are coming soon to Access.</Text>
             </View>
-            {paidRoom ? (
-              <View style={[styles.paidPanel, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                <Text style={[styles.fieldLabel, { color: colors.foreground, marginTop: 0 }]}>Entry price (coins)</Text>
-                <TextInput
-                  keyboardType="number-pad"
-                  value={entryCoins}
-                  onChangeText={setEntryCoins}
-                  placeholder="1200"
-                  placeholderTextColor={colors.mutedForeground}
-                  style={[styles.priceInput, { backgroundColor: colors.card, color: colors.foreground, borderColor: colors.border }]}
-                />
-                <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Access duration</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sheetTopics}>
-                  {accessDurations.map((item) => (
-                    <Pressable key={item} onPress={() => setDuration(item)} style={[styles.sheetChip, { borderColor: duration === item ? colors.primary : colors.border, backgroundColor: duration === item ? `${colors.primary}15` : 'transparent' }]}>
-                      <Text style={{ color: colors.foreground, fontWeight: '500' }}>{item}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-                <Text style={[styles.summaryText, { color: colors.mutedForeground }]}>Listeners pay ◈ {Number(entryCoins || '0').toLocaleString()} to enter. Estimated proceeds: 75%.</Text>
-              </View>
-            ) : null}
             <View style={styles.sheetActions}>
               <Pressable onPress={() => setHostOpen(false)}><Text style={{ color: colors.mutedForeground, fontWeight: '700' }}>Cancel</Text></Pressable>
               <Pressable disabled={!title.trim() || saving} onPress={() => void hostRoom()} style={[styles.startButton, { backgroundColor: colors.primary, opacity: !title.trim() || saving ? 0.45 : 1 }]}>
@@ -377,9 +344,6 @@ const styles = StyleSheet.create({
   roomTypeChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
   featureList: { marginTop: 14, borderRadius: 12, padding: 12 },
   featureItem: { fontSize: 12, lineHeight: 17 },
-  paidPanel: { marginTop: 14, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 12 },
-  priceInput: { marginTop: 9, minHeight: 44, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, fontSize: 16 },
-  summaryText: { marginTop: 9, fontSize: 12, lineHeight: 17 },
   sheetActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 25 },
   startButton: { minHeight: 44, minWidth: 120, borderRadius: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 17 },
   startButtonText: { fontWeight: '600' },

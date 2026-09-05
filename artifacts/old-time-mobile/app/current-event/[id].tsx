@@ -8,6 +8,7 @@ import {
   joinCurrentEventRoom,
   leaveCurrentEventRoom,
   sendCurrentEventGift,
+  setCurrentEventHand,
   updateCurrentEventParticipant,
   type CurrentEventMessage,
   type CurrentEventParticipant,
@@ -271,6 +272,16 @@ export default function CurrentEventRoomScreen() {
     setPeopleOpen(false);
   }
 
+  async function raiseHand() {
+    if (!room || room.viewer.role !== 'listener') return;
+    try {
+      const nextRoom = await setCurrentEventHand(room.id, { raised: !room.viewer.handRaised });
+      setRoom(nextRoom);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Could not update hand raise.');
+    }
+  }
+
   if (loading || (!room && !roomUnavailable)) {
     return <View style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
   }
@@ -376,6 +387,10 @@ export default function CurrentEventRoomScreen() {
             <Ionicons name="chatbubble-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>chat</Text>
           </Pressable>
+          {room.viewer.role === 'listener' ? <Pressable accessibilityRole="button" accessibilityLabel={room.viewer.handRaised ? 'Lower your hand' : 'Raise your hand to speak'} onPress={() => void raiseHand()} style={[styles.actionButton, { backgroundColor: room.viewer.handRaised ? colors.primary : colors.card, borderColor: colors.border }]}>
+            <Ionicons name="hand-left-outline" size={20} color={room.viewer.handRaised ? colors.primaryForeground : colors.foreground} />
+            <Text style={[styles.actionText, { color: room.viewer.handRaised ? colors.primaryForeground : colors.foreground }]}>{room.viewer.handRaised ? 'hand up' : 'raise hand'}</Text>
+          </Pressable> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Send reaction in Access room" onPress={() => setReactionCount((count) => count + 1)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="heart-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>{reactionCount || 'react'}</Text>
@@ -493,7 +508,7 @@ export default function CurrentEventRoomScreen() {
         <View style={styles.verifyShade}>
           <View accessibilityRole="alert" accessibilityLabel="Verification prompt" style={[styles.verifyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.verifyTitle, { color: colors.foreground }]}>Stay live longer</Text>
-            <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to unlock longer Access hosting sessions.</Text>
+            <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to unlock Access host perks.</Text>
             <View style={styles.verifyActions}>
               <Pressable accessibilityRole="button" accessibilityLabel="Dismiss verification prompt" onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); }}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel="Open settings to get verified" onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
