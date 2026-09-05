@@ -42,7 +42,7 @@ export default function SettingsScreen() {
       enabled: Boolean(session?.authToken),
       retry: 1,
       staleTime: 30_000,
-      select: (wallet) => wallet.coins,
+      select: (wallet: { coins: number }) => wallet.coins,
     },
   }).data;
 
