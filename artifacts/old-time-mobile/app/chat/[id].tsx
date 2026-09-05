@@ -10,6 +10,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  ActivityIndicator,
   AppState,
   Dimensions,
   FlatList,
@@ -49,7 +50,7 @@ import {
   useSaveMessage,
   type Attachment,
 } from '@workspace/api-client-react';
-import { Avatar, IconButton, LoadingState } from '@/components/ui';
+import { Avatar, IconButton } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -965,23 +966,23 @@ export default function ChatDetailScreen() {
     }
   }
 
-  if (!session || messages.isLoading) {
-    return <View style={[styles.center, { backgroundColor: colors.background }]}><LoadingState /></View>;
+  if (!session) {
+    return <View style={[styles.center, { backgroundColor: colors.background }]} />;
   }
 
-  if (messages.isError) {
+  if (!Number.isInteger(chatId) || chatId <= 0) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background, paddingHorizontal: 28 }]}>
         <Ionicons name="chatbubble-ellipses-outline" size={42} color={colors.mutedForeground} />
-        <Text style={[styles.emptyMessageTitle, { color: colors.foreground }]}>Conversation could not load</Text>
-        <Text style={[styles.emptyMessageText, { color: colors.mutedForeground }]}>Check your connection and try again.</Text>
+        <Text style={[styles.emptyMessageTitle, { color: colors.foreground }]}>Conversation unavailable</Text>
+        <Text style={[styles.emptyMessageText, { color: colors.mutedForeground }]}>Go back and choose the person again.</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Retry loading conversation"
-          onPress={() => void messages.refetch()}
+          accessibilityLabel="Go back"
+          onPress={() => router.back()}
           style={[styles.retryButton, { backgroundColor: colors.primary }]}
         >
-          <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>Try again</Text>
+          <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>Go back</Text>
         </Pressable>
       </View>
     );
@@ -1048,9 +1049,33 @@ export default function ChatDetailScreen() {
         scrollEventThrottle={16}
          ListEmptyComponent={
            <View style={styles.emptyMessageState}>
-             <Ionicons name="chatbubble-outline" size={34} color={colors.mutedForeground} />
-             <Text style={[styles.emptyMessageTitle, { color: colors.foreground }]}>No messages yet</Text>
-             <Text style={[styles.emptyMessageText, { color: colors.mutedForeground }]}>Send a message to start the conversation.</Text>
+             {messages.isLoading ? (
+               <>
+                 <ActivityIndicator size="large" color={colors.primary} />
+                 <Text style={[styles.emptyMessageTitle, { color: colors.foreground }]}>Opening conversation…</Text>
+                 <Text style={[styles.emptyMessageText, { color: colors.mutedForeground }]}>Your photo is ready below while messages load.</Text>
+               </>
+             ) : messages.isError ? (
+               <>
+                 <Ionicons name="cloud-offline-outline" size={34} color={colors.mutedForeground} />
+                 <Text style={[styles.emptyMessageTitle, { color: colors.foreground }]}>Messages could not load</Text>
+                 <Text style={[styles.emptyMessageText, { color: colors.mutedForeground }]}>You can still send your photo, or retry loading the conversation.</Text>
+                 <Pressable
+                   accessibilityRole="button"
+                   accessibilityLabel="Retry loading conversation"
+                   onPress={() => void messages.refetch()}
+                   style={[styles.retryButton, { backgroundColor: colors.primary }]}
+                 >
+                   <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>Try again</Text>
+                 </Pressable>
+               </>
+             ) : (
+               <>
+                 <Ionicons name="chatbubble-outline" size={34} color={colors.mutedForeground} />
+                 <Text style={[styles.emptyMessageTitle, { color: colors.foreground }]}>No messages yet</Text>
+                 <Text style={[styles.emptyMessageText, { color: colors.mutedForeground }]}>Send a message to start the conversation.</Text>
+               </>
+             )}
            </View>
          }
         renderItem={({ item }) => {

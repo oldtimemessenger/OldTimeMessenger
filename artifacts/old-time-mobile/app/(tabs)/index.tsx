@@ -76,20 +76,31 @@ export default function ChatsScreen() {
 
   function startChat(user: User) {
     if (!session) return;
+    const media = pendingMedia;
+    const openChat = (chatId: number) => {
+      setShowNew(false);
+      setPendingMedia(null);
+      setNewMessageSearch('');
+      router.push(media
+        ? {
+            pathname: '/chat/[id]',
+            params: {
+              id: String(chatId),
+              mediaUri: media.uri,
+              mediaType: media.type,
+              mediaFit: media.fit,
+            },
+          }
+        : `/chat/${chatId}`);
+    };
     const existing = inbox.data?.find((item) => item.contact.id === user.id);
     if (existing) {
-      setShowNew(false);
-      router.push(`/chat/${existing.chat.id}`);
+      openChat(existing.chat.id);
       return;
     }
     createChat.mutate({ data: { userIds: [session.id, user.id] } }, {
       onSuccess: (chat) => {
-        setShowNew(false);
-        const media = pendingMedia;
-        setPendingMedia(null);
-        router.push(media
-          ? { pathname: '/chat/[id]', params: { id: String(chat.id), mediaUri: media.uri, mediaType: media.type, mediaFit: media.fit } }
-          : `/chat/${chat.id}`);
+        openChat(chat.id);
       },
       onError: (error) => {
         Alert.alert('Chat unavailable', error instanceof Error ? error.message : `You cannot start a chat with ${user.name} yet.`);
