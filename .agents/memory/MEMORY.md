@@ -15,6 +15,7 @@
 - [Customer-facing product copy](customer-facing-product-copy.md) — Old Time UI must describe outcomes in plain language, never expose implementation terminology.
 - [External discovery embeds](external-discovery-embeds.md) — third-party discovery uses official embeds only; native Old Time content gains priority as supply grows.
 - [EAS pnpm compatibility](eas-pnpm-compatibility.md) — EAS may run an older pnpm than packageManager declares; avoid catalog dependency specs in build workspaces.
+- [EAS update setup](eas-update-setup.md) — first OTA publish needs expo-updates plus the project URL/runtime config; verify CLI-generated config before committing.
 - [EAS to TestFlight handoff](eas-testflight-handoff.md) — preflight the exact paid-build profile; EAS completion and TestFlight availability are separate.
 - [Phone identity boundaries](phone-identity-boundaries.md) — phone discovery stays optional, separate from Firebase login and message permissions.
 - [Mobile advertising boundaries](mobile-advertising-boundaries.md) — central policy governs public placements; private communication surfaces stay permanently ad-free.
