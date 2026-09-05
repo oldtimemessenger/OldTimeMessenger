@@ -76,7 +76,7 @@ export default function CallScreen() {
   const isCallee = call?.calleeId === session?.id;
   const connected = call?.status === 'accepted';
   const controlsEnabled = connected && (call?.type !== 'video' || videoConnected);
-  const screenShareAvailable = Platform.OS === 'android' && call?.type === 'video';
+  const screenShareAvailable = (Platform.OS === 'android' || Platform.OS === 'ios') && call?.type === 'video';
   const tone = toneForCall(call, Boolean(isCallee), elapsed);
 
   const refresh = useCallback(async () => {
@@ -320,7 +320,7 @@ export default function CallScreen() {
           </Pressable>
         ) : (
           <View style={[styles.screenShareNotice, { backgroundColor: colors.card }]}>
-            <Text style={[styles.controlLabel, { color: colors.mutedForeground }]}>{Platform.OS === 'ios' ? 'Screen sharing needs the iOS broadcast extension, which is not included in this app yet.' : 'Screen sharing is available during video calls.'}</Text>
+            <Text style={[styles.controlLabel, { color: colors.mutedForeground }]}>Screen sharing is available during video calls.</Text>
           </View>
         )}
       </View>
