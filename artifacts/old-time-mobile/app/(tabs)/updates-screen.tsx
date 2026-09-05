@@ -24,6 +24,7 @@ import { VideoSurface } from '@/components/video-surface';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
+import PaceSheet from '@/components/pace-sheet';
 import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
 import { AdMobBanner } from '@/components/admob-banner';
 import { ChatComposer } from '@/components/chat-composer';
@@ -110,6 +111,7 @@ function MediaFeedFloatingHeader({
   onSelectTab,
   onOpenHub,
   onOpenCommunity,
+  onOpenPace,
   onOpenSearch,
   onOpenMessages,
   onOpenProfile,
@@ -121,6 +123,7 @@ function MediaFeedFloatingHeader({
   onSelectTab: (tab: FeedTab) => void;
   onOpenHub: () => void;
   onOpenCommunity: () => void;
+  onOpenPace: () => void;
   onOpenSearch: () => void;
   onOpenMessages: () => void;
   onOpenProfile: () => void;
@@ -149,6 +152,14 @@ function MediaFeedFloatingHeader({
             style={styles.floatingIconButton}
           >
             <Ionicons name="albums" size={21} color="#fff" />
+          </Pressable>
+          <Pressable
+            onPress={onOpenPace}
+            accessibilityRole="button"
+            accessibilityLabel="Open PACE"
+            style={styles.floatingIconButton}
+          >
+            <Ionicons name="fitness" size={21} color="#fff" />
           </Pressable>
         </View>
         <View style={styles.mediaFeedHeaderGroup}>
@@ -191,6 +202,7 @@ export default function UpdatesScreen() {
 
   const [viewMode, setViewMode] = useState<'media-feed' | 'landing' | 'feed' | 'creator-feed' | 'status'>('media-feed');
   const [showCommunity, setShowCommunity] = useState(false);
+  const [showPace, setShowPace] = useState(false);
   const [communityFilter, setCommunityFilter] = useState<CommunityFilter>('friends');
   const [tab, setTab] = useState<FeedTab>('for-you');
   const [feedIndex, setFeedIndex] = useState(0);
@@ -532,6 +544,7 @@ export default function UpdatesScreen() {
              onSelectTab={selectFeedTab}
              onOpenHub={() => setViewMode('landing')}
              onOpenCommunity={openCommunity}
+             onOpenPace={() => setShowPace(true)}
              onOpenSearch={() => setShowPeopleSearch(true)}
              onOpenMessages={openMessagesInbox}
              onOpenProfile={() => setProfileUserId(session?.id ?? 0)}
@@ -561,6 +574,7 @@ export default function UpdatesScreen() {
                  {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
                </View>
                <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
+               <IconButton name="fitness-outline" label="Open PACE" onPress={() => setShowPace(true)} />
                <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
                   <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} uri={socialAvatarUrl(ownCard?.avatarObjectPath ?? session?.avatarObjectPath)} />
                </Pressable>
@@ -637,6 +651,7 @@ export default function UpdatesScreen() {
                      if (item.starterAction === 'map') router.push('/(tabs)/map');
                      else if (item.starterAction === 'story') setCompose('status');
                      else if (item.starterAction === 'interests') setTab('interests');
+                     else if (item.starterAction === 'pace') setShowPace(true);
                      else openCommunity();
                      return;
                    }
@@ -707,6 +722,8 @@ export default function UpdatesScreen() {
            </Screen>
          </View>
        </Modal>
+
+      <PaceSheet visible={showPace} token={session?.authToken ?? ''} colors={colors} onClose={() => setShowPace(false)} />
 
       <Modal visible={viewMode === 'feed'} transparent animationType="slide" onRequestClose={() => setViewMode('landing')}>
         {viewMode === 'feed' ? (
@@ -1074,7 +1091,7 @@ export default function UpdatesScreen() {
 
 type StarterCard = {
   id: string;
-  starterAction: 'map' | 'story' | 'interests' | 'community';
+  starterAction: 'map' | 'story' | 'interests' | 'community' | 'pace';
   eyebrow: string;
   title: string;
   detail: string;
@@ -1087,6 +1104,7 @@ const FOR_YOU_STARTERS: StarterCard[] = [
   { id: 'create-story', starterAction: 'story', eyebrow: 'YOUR MOMENT', title: 'Share your first Story', detail: 'Post a photo or video that disappears after 24 hours.', icon: 'camera', colors: ['#4C1D95', '#C026D3'] },
   { id: 'choose-interests', starterAction: 'interests', eyebrow: 'FOR YOU', title: 'Choose what you enjoy', detail: 'Pick topics so Old Time can personalize your feed.', icon: 'options', colors: ['#7C2D12', '#F97316'] },
   { id: 'open-community', starterAction: 'community', eyebrow: 'COMMUNITY', title: 'Join the conversation', detail: 'Find posts from friends, people you follow, and shared interests.', icon: 'people', colors: ['#064E3B', '#10B981'] },
+  { id: 'start-pace', starterAction: 'pace', eyebrow: 'PACE', title: 'Track your activity', detail: 'Start running, walking, cycling, and share your activity story.', icon: 'fitness', colors: ['#1E3A8A', '#4F46E5'] },
 ];
 
 type CreatorGridItem = SocialPost | DiscoveryItem | StarterCard;

@@ -5,6 +5,7 @@ export * from "./current-events";
 export * from "./discovery";
 export * from "./push-notifications";
 export * from "./calls";
+export * from "./pace";
 //
 // Each model/table should ideally be split into different files.
 // Each model/table should define a Drizzle table, insert schema, and types:
