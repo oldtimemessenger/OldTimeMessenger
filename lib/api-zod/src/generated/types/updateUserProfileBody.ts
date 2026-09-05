@@ -22,6 +22,8 @@ export type UpdateUserProfileBody = {
   username?: string;
   /** @maxLength 150 */
   bio?: string;
+  /** Object path returned by the authenticated upload flow for the user's profile image */
+  avatarObjectPath?: string;
   /** Private date of birth; only returned to the signed-in user */
   birthday?: Date;
   contactPermission?: UpdateUserProfileBodyContactPermission;
