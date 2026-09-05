@@ -215,7 +215,7 @@ export default function CallScreen() {
           <View style={[styles.statusDot, { backgroundColor: tone.accent }]} />
           <Text style={[styles.callTypeText, { color: colors.foreground }]}>{call?.type === 'video' ? 'Video call' : 'Voice call'}</Text>
         </View>
-        <Pressable onPress={startScreenShare} style={[styles.topButton, { backgroundColor: colors.card }]}>
+        <Pressable accessibilityLabel="Share screen" onPress={startScreenShare} style={[styles.topButton, { backgroundColor: colors.card }]}>
           <Ionicons name="phone-portrait-outline" size={18} color={colors.foreground} />
         </Pressable>
       </View>

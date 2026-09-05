@@ -1017,7 +1017,7 @@ export default function ChatDetailScreen() {
             : null;
           const status = bubbleStatus(message, mine);
           const domain = message.content ? linkPreviewLabel(message.content) : null;
-          const galleryIndex = mediaItems.findIndex((entry) => entry.id === message.id);
+          const galleryIndex = mediaItems.findIndex((entry) => entry.id === message.id || (entry.clientId && entry.clientId === message.clientId));
           const attachmentPlayed = Boolean(message.playedAt || message.openedAt);
           const showUnreadAudioDot = message.attachment?.type === 'audio' && !mine && !attachmentPlayed;
           return (
@@ -1280,7 +1280,7 @@ export default function ChatDetailScreen() {
             <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onMomentumScrollEnd={(event) => setDraftIndex(Math.round(event.nativeEvent.contentOffset.x / windowWidth))}>
               {draftAssets.map((asset, index) => (
                 <View key={`${asset.name}-${index}`} style={{ width: windowWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, minHeight: windowHeight * 0.48 }}>
-                  {asset.type === 'video' ? <VideoSurface source={asset.uri} style={styles.fullscreenPreview} controls loop={false} /> : asset.type === 'image' ? <Image source={{ uri: asset.uri }} style={styles.fullscreenPreview} contentFit="contain" /> : asset.type === 'location' ? <View style={[styles.locationDraftCard, { backgroundColor: colors.card }]}><Ionicons name="location" size={34} color={colors.primary} /><Text style={[styles.locationDraftTitle, { color: colors.foreground }]}>{asset.label ?? 'Current location'}</Text><Text style={{ color: colors.mutedForeground }}>Latitude {asset.latitude?.toFixed(4)} · Longitude {asset.longitude?.toFixed(4)}</Text></View> : <View style={[styles.locationDraftCard, { backgroundColor: colors.card }]}><Ionicons name="document-text" size={34} color={colors.primary} /><Text style={[styles.locationDraftTitle, { color: colors.foreground }]}>{asset.name}</Text></View>}
+                  {asset.type === 'video' ? <VideoSurface source={{ uri: asset.uri }} style={styles.fullscreenPreview} controls loop={false} /> : asset.type === 'image' ? <Image source={{ uri: asset.uri }} style={styles.fullscreenPreview} contentFit="contain" /> : asset.type === 'location' ? <View style={[styles.locationDraftCard, { backgroundColor: colors.card }]}><Ionicons name="location" size={34} color={colors.primary} /><Text style={[styles.locationDraftTitle, { color: colors.foreground }]}>{asset.label ?? 'Current location'}</Text><Text style={{ color: colors.mutedForeground }}>Latitude {asset.latitude?.toFixed(4)} · Longitude {asset.longitude?.toFixed(4)}</Text></View> : <View style={[styles.locationDraftCard, { backgroundColor: colors.card }]}><Ionicons name="document-text" size={34} color={colors.primary} /><Text style={[styles.locationDraftTitle, { color: colors.foreground }]}>{asset.name}</Text></View>}
                 </View>
               ))}
             </ScrollView>
@@ -1314,7 +1314,7 @@ export default function ChatDetailScreen() {
             <View style={styles.forwardHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Forward message</Text><IconButton name="close" onPress={() => { setForwardMessage(null); setForwardTargets([]); }} /></View>
             <ScrollView>{(inbox.data ?? []).filter((item) => item.chat.id !== chatId).map((item) => {
               const selected = forwardTargets.includes(item.chat.id);
-              return <Pressable key={item.chat.id} onPress={() => setForwardTargets((current) => selected ? current.filter((value) => value !== item.chat.id) : [...current, item.chat.id])} style={[styles.forwardRow, { borderBottomColor: colors.border }]}><Avatar name={item.contact.name} size={42} /><View style={{ flex: 1 }}><Text style={[styles.forwardName, { color: colors.foreground }]}>{item.contact.name}</Text><Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{item.lastMessage?.content ?? 'Start a conversation'}</Text></View><Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selected ? colors.primary : colors.mutedForeground} /></Pressable>;
+              return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} key={item.chat.id} onPress={() => setForwardTargets((current) => selected ? current.filter((value) => value !== item.chat.id) : [...current, item.chat.id])} style={[styles.forwardRow, { borderBottomColor: colors.border }]}><Avatar name={item.contact.name} size={42} /><View style={{ flex: 1 }}><Text style={[styles.forwardName, { color: colors.foreground }]}>{item.contact.name}</Text><Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{item.lastMessage?.content ?? 'Start a conversation'}</Text></View><Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selected ? colors.primary : colors.mutedForeground} /></Pressable>;
             })}</ScrollView>
             <Pressable onPress={() => void forwardSelectedMessage()} disabled={!forwardTargets.length} style={[styles.forwardSend, { backgroundColor: colors.primary, opacity: forwardTargets.length ? 1 : 0.45 }]}><Text style={{ color: '#fff', fontWeight: '700' }}>Forward</Text></Pressable>
           </View>

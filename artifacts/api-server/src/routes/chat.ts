@@ -1658,7 +1658,6 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
       res.status(400).json({ error: "This message cannot be edited." });
       return;
     }
-    const [sender] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     const editTime = now();
     const [updated] = await db.update(messagesTable).set({ content, editedAt: editTime })
       .where(eq(messagesTable.id, message.id)).returning();
@@ -1667,7 +1666,19 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
       return;
     }
     await db.update(messagesTable).set({
-      replyPreview: serializeReplyPreview(updated, sender?.name ?? "Unknown"),
+      replyPreview: sql`jsonb_set(
+        jsonb_set(
+          jsonb_set(
+            coalesce(${messagesTable.replyPreview}, '{}'::jsonb),
+            '{content}',
+            ${JSON.stringify(updated.content)}::jsonb
+          ),
+          '{attachmentType}',
+          '"text"'::jsonb
+        ),
+        '{deleted}',
+        'false'::jsonb
+      )`,
     }).where(and(
       eq(messagesTable.chatId, message.chatId),
       eq(messagesTable.replyToMessageId, message.id),
@@ -1696,8 +1707,6 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
     const [updated] = await db.update(messagesTable).set({
       content: "",
       attachment: null,
-      replyToMessageId: null,
-      replyPreview: null,
       editedAt: null,
       deletedAt: now(),
       deletedForEveryone: true,
