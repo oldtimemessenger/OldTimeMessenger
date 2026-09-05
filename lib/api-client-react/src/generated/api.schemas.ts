@@ -1186,6 +1186,7 @@ export const CurrentEventGiftInputGift = {
   heart: 'heart',
   gem: 'gem',
   studio: 'studio',
+  time_is_up: 'time_is_up',
 } as const;
 
 export interface CurrentEventGiftInput {

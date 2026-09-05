@@ -3331,7 +3331,7 @@ export const SendCurrentEventGiftParams = zod.object({
 
 
 export const SendCurrentEventGiftBody = zod.object({
-  "gift": zod.enum(['coffee', 'idea', 'heart', 'gem', 'studio']),
+  "gift": zod.enum(['coffee', 'idea', 'heart', 'gem', 'studio', 'time_is_up']),
   "recipientId": zod.number().min(1)
 })
 

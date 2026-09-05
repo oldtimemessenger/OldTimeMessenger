@@ -2858,7 +2858,7 @@ components:
     CurrentEventGiftInput:
       type: object
       properties:
-        gift: { type: string, enum: [coffee, idea, heart, gem, studio] }
+        gift: { type: string, enum: [coffee, idea, heart, gem, studio, time_is_up] }
         recipientId: { type: number, minimum: 1 }
       required: [gift, recipientId]
     CurrentEventGiftResult:

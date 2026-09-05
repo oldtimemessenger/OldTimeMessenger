@@ -43,7 +43,7 @@ const messageInput = z.object({ content: z.string().trim().min(1).max(1000) });
 const handInput = z.object({ raised: z.boolean() });
 const participantAction = z.object({ action: z.enum(["promote", "demote", "mute", "unmute", "remove"]) });
 const giftInput = z.object({
-  gift: z.enum(["coffee", "idea", "heart", "gem", "studio"]),
+  gift: z.enum(["coffee", "idea", "heart", "gem", "studio", "time_is_up"]),
   recipientId: z.coerce.number().int().positive(),
 });
 const withdrawalInput = z.object({ gold: z.coerce.number().int().min(900).max(9_000_000) });
@@ -57,6 +57,7 @@ const giftPrices = {
   heart: 200,
   gem: 500,
   studio: 1000,
+  time_is_up: 10000,
 } as const;
 
 type Room = typeof currentEventRoomsTable.$inferSelect;

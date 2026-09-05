@@ -35,6 +35,7 @@ import {
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/ui';
+import { VideoSurface } from '@/components/video-surface';
 import { currentEventGifts } from '@/constants/current-event-gifts';
 import { useColors } from '@/hooks/useColors';
 import { useRevenueCat } from '@/lib/revenuecat';
@@ -90,13 +91,15 @@ export default function CurrentEventRoomScreen() {
   const revenueCat = useRevenueCat();
   const [message, setMessage] = useState('');
   const [giftRecipientId, setGiftRecipientId] = useState<number | null>(null);
+  const [sendingGiftKey, setSendingGiftKey] = useState<(typeof gifts)[number]['key'] | null>(null);
   const [reactionCount, setReactionCount] = useState(0);
   const [floatingHearts, setFloatingHearts] = useState<Array<{ id: number; progress: Animated.Value; drift: number }>>([]);
-  const [giftBursts, setGiftBursts] = useState<Array<{ id: number; progress: Animated.Value; gift: (typeof gifts)[number]; recipientName: string }>>([]);
+  const [giftBursts, setGiftBursts] = useState<Array<{ id: number; progress: Animated.Value; gift: (typeof gifts)[number]; senderName: string; recipientName: string }>>([]);
   const [recentGifts, setRecentGifts] = useState<Array<{ id: number; gift: (typeof gifts)[number]; senderName: string; recipientName: string }>>([]);
   const nextHeartId = useRef(0);
   const seenGiftIds = useRef(new Set<number>());
   const currentEventSocketRef = useRef<ReturnType<typeof io> | null>(null);
+  const giftSendPendingRef = useRef(false);
   const [roomUnavailable, setRoomUnavailable] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [audioState, setAudioState] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
@@ -135,11 +138,15 @@ export default function CurrentEventRoomScreen() {
     if (!gift) return;
     seenGiftIds.current.add(incoming.id);
     const progress = new Animated.Value(0);
-    setGiftBursts((current) => [...current, { id: incoming.id, progress, gift, recipientName: incoming.recipientName }]);
+    setGiftBursts((current) => [...current, { id: incoming.id, progress, gift, senderName: incoming.senderName, recipientName: incoming.recipientName }]);
     if (incoming.senderId === session?.id || incoming.recipientId === session?.id) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-    Animated.sequence([
+    Animated.sequence(gift.video ? [
+      Animated.timing(progress, { toValue: 0.18, duration: 260, useNativeDriver: true }),
+      Animated.delay(3_520),
+      Animated.timing(progress, { toValue: 1, duration: 520, useNativeDriver: true }),
+    ] : [
       Animated.timing(progress, { toValue: 0.28, duration: 260, useNativeDriver: true }),
       Animated.delay(300),
       Animated.timing(progress, { toValue: 1, duration: 720, useNativeDriver: true }),
@@ -325,12 +332,14 @@ export default function CurrentEventRoomScreen() {
   }
 
   async function sendGift(gift: (typeof gifts)[number]) {
-    if (!room || !activeRecipientId) return;
+    if (!room || !activeRecipientId || giftSendPendingRef.current) return;
     if (wallet.coins < gift.cost) {
       setGiftOpen(false);
       setStoreOpen(true);
       return;
     }
+    giftSendPendingRef.current = true;
+    setSendingGiftKey(gift.key);
     try {
       const result = await sendCurrentEventGift(room.id, { gift: gift.key, recipientId: activeRecipientId });
       setWallet((current) => ({ ...current, coins: result.coinsRemaining }));
@@ -338,6 +347,9 @@ export default function CurrentEventRoomScreen() {
       setFeedback('Gift sent.');
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Gift not sent.');
+    } finally {
+      giftSendPendingRef.current = false;
+      setSendingGiftKey(null);
     }
   }
 
@@ -522,15 +534,29 @@ export default function CurrentEventRoomScreen() {
           <Animated.View
             key={burst.id}
             accessibilityLabel={`${burst.gift.label} gift sent to ${burst.recipientName}`}
-            style={{
-              opacity: burst.progress.interpolate({ inputRange: [0, 0.18, 0.72, 1], outputRange: [0, 1, 1, 0] }),
-              transform: [
-                { translateY: burst.progress.interpolate({ inputRange: [0, 0.72, 1], outputRange: [0, 0, 245] }) },
-                { scale: burst.progress.interpolate({ inputRange: [0, 0.18, 0.72, 1], outputRange: [0.35, 1.14, 1, 0.35] }) },
-              ],
-            }}
+            style={[
+              burst.gift.video ? styles.premiumGiftAnimatedContainer : null,
+              {
+                opacity: burst.progress.interpolate({ inputRange: [0, 0.18, 0.72, 1], outputRange: [0, 1, 1, 0] }),
+                transform: [
+                  { translateY: burst.progress.interpolate({ inputRange: [0, 0.72, 1], outputRange: [0, 0, 245] }) },
+                  { scale: burst.progress.interpolate({ inputRange: [0, 0.18, 0.72, 1], outputRange: [0.35, 1.14, 1, 0.35] }) },
+                ],
+              },
+            ]}
           >
-            <Image source={burst.gift.image} resizeMode="contain" style={styles.giftBurstImage} />
+            {burst.gift.video ? (
+              <View style={styles.premiumGiftBurst}>
+                <VideoSurface source={burst.gift.video} style={styles.premiumGiftVideo} loop={false} contentFit="cover" />
+                <View style={styles.premiumGiftScrim} />
+                <View style={styles.premiumGiftCopy}>
+                  <Text style={styles.premiumGiftTitle}>TIME IS UP</Text>
+                  <Text style={styles.premiumGiftRoute}>{burst.senderName} sent it to {burst.recipientName}</Text>
+                </View>
+              </View>
+            ) : (
+              <Image source={burst.gift.image} resizeMode="contain" style={styles.giftBurstImage} />
+            )}
           </Animated.View>
         ))}
       </View>
@@ -603,10 +629,22 @@ export default function CurrentEventRoomScreen() {
         <View style={styles.modalShadeRoot}><View style={styles.modalShade} /><View style={[styles.giftSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20 }]}>
           <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Send a gift</Text><Pressable onPress={() => setGiftOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
           <Text style={[styles.sheetHint, { color: colors.mutedForeground }]}>{activeRecipientId ? 'Choose a gift.' : 'Choose a speaker.'}</Text>
-          <View style={styles.giftGrid}>{gifts.map((gift) => <Pressable key={gift.key} accessibilityRole="button" accessibilityLabel={`Send ${gift.label} gift for ${gift.cost} coins`} disabled={!activeRecipientId} onPress={() => void sendGift(gift)} style={[styles.giftItem, { backgroundColor: colors.muted }, !activeRecipientId && { opacity: 0.45 }]}>
-            <Image source={gift.image} resizeMode="contain" style={styles.giftItemImage} />
-            <Text style={[styles.giftLabel, { color: colors.foreground }]}>{gift.label}</Text>
-            <View style={styles.giftCostRow}><Image source={coinLogo} resizeMode="contain" style={styles.coinLogoTiny} /><Text style={[styles.giftCost, { color: colors.mutedForeground }]}>{gift.cost}</Text></View>
+          <View style={styles.giftGrid}>{gifts.map((gift) => <Pressable key={gift.key} accessibilityRole="button" accessibilityLabel={`Send ${gift.label} gift for ${gift.cost} coins`} disabled={!activeRecipientId || sendingGiftKey !== null} onPress={() => void sendGift(gift)} style={[styles.giftItem, { backgroundColor: colors.muted }, gift.premium && [styles.premiumGiftItem, { borderColor: colors.primary }], (!activeRecipientId || (sendingGiftKey !== null && sendingGiftKey !== gift.key)) && { opacity: 0.45 }]}>
+            <Image source={gift.image} resizeMode="contain" style={[styles.giftItemImage, gift.premium && styles.premiumGiftItemImage]} />
+            {gift.premium ? (
+              <>
+                <View style={styles.premiumGiftItemCopy}>
+                  <Text style={[styles.premiumGiftItemTitle, { color: colors.foreground }]}>{gift.label}</Text>
+                  <Text style={[styles.premiumGiftItemHint, { color: colors.mutedForeground }]}>Full-screen lion animation</Text>
+                </View>
+                <View style={styles.premiumGiftCost}>{sendingGiftKey === gift.key ? <ActivityIndicator size="small" color={colors.primary} /> : <><Image source={coinLogo} resizeMode="contain" style={styles.coinLogoTiny} /><Text style={[styles.giftCost, { color: colors.foreground }]}>{gift.cost.toLocaleString()}</Text></>}</View>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.giftLabel, { color: colors.foreground }]}>{gift.label}</Text>
+                <View style={styles.giftCostRow}><Image source={coinLogo} resizeMode="contain" style={styles.coinLogoTiny} /><Text style={[styles.giftCost, { color: colors.mutedForeground }]}>{gift.cost}</Text></View>
+              </>
+            )}
           </Pressable>)}</View>
             <View style={styles.walletBalanceRow}><Image source={coinLogo} resizeMode="contain" style={styles.coinLogoTiny} /><Text style={[styles.walletBalance, { color: colors.mutedForeground }]}>Balance {wallet.coins}</Text></View>
         </View></View>
@@ -737,6 +775,13 @@ const styles = StyleSheet.create({
   floatingHeartLayer: { position: 'absolute', right: 22, bottom: 124, width: 90, height: 270, alignItems: 'center', justifyContent: 'flex-end' },
   giftBurstLayer: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingBottom: 82 },
   giftBurstImage: { width: 220, height: 220 },
+  premiumGiftAnimatedContainer: { ...StyleSheet.absoluteFillObject },
+  premiumGiftBurst: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
+  premiumGiftVideo: { ...StyleSheet.absoluteFillObject },
+  premiumGiftScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.24)' },
+  premiumGiftCopy: { position: 'absolute', left: 18, right: 18, bottom: 116, alignItems: 'center' },
+  premiumGiftTitle: { color: '#fff', fontSize: 34, lineHeight: 40, fontWeight: '900', letterSpacing: 2.6, textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 },
+  premiumGiftRoute: { color: '#fff', fontSize: 13, lineHeight: 18, fontWeight: '700', marginTop: 6, textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.75)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 },
   recentGiftTray: { position: 'absolute', left: 12, right: 12, minHeight: 52, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
   recentGiftChip: { minWidth: 54, maxWidth: 76, minHeight: 52, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 3 },
   recentGiftImage: { width: 32, height: 32 },
@@ -762,6 +807,12 @@ const styles = StyleSheet.create({
   giftGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   giftItem: { width: '18%', minWidth: 62, alignItems: 'center', paddingVertical: 8, borderRadius: 13 },
   giftItemImage: { width: 52, height: 52 },
+  premiumGiftItem: { width: '100%', minHeight: 78, flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12 },
+  premiumGiftItemImage: { width: 64, height: 64 },
+  premiumGiftItemCopy: { flex: 1, marginLeft: 10 },
+  premiumGiftItemTitle: { fontSize: 15, lineHeight: 20, fontWeight: '800' },
+  premiumGiftItemHint: { fontSize: 11, lineHeight: 15, marginTop: 2 },
+  premiumGiftCost: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 8 },
   giftLabel: { fontSize: 10, fontWeight: '600', marginTop: 5 },
   giftCostRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 3 },
   coinLogoTiny: { width: 12, height: 12, borderRadius: 6 },
