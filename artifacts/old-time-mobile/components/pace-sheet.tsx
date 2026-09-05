@@ -372,15 +372,16 @@ export default function PaceSheet({
 
   async function toggleManualPause() {
     if (!session || !token || !session.activityId) return;
+    const activityId = session.activityId;
     if (session.manualPaused || session.autoPaused) {
       const resumed = resumeSession(session);
       commitSession(resumed);
-      await resumePaceActivity(token, resumed.activityId!, resumed.syncStatus).catch(() => undefined);
+      await resumePaceActivity(token, activityId, resumed.syncStatus).catch(() => undefined);
       return;
     }
     const paused = pauseSession(session, false);
     commitSession(paused);
-    await pausePaceActivity(token, paused.activityId!, paused.syncStatus).catch(() => undefined);
+    await pausePaceActivity(token, activityId, paused.syncStatus).catch(() => undefined);
   }
 
   async function finishTracking() {
