@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PrimaryButton, Screen } from '@/components/ui';
+import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useRevenueCat } from '@/lib/revenuecat';
 
@@ -30,10 +31,13 @@ function revenueCatErrorDetails(error: unknown) {
 export default function WalletScreen() {
   const colors = useColors();
   const router = useRouter();
+  const { session } = useApp();
   const revenueCat = useRevenueCat();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const walletQuery = useGetCurrentEventWallet({
     query: {
+      enabled: Boolean(session?.authToken),
       retry: 1,
     },
   });
@@ -73,6 +77,8 @@ export default function WalletScreen() {
   }
 
   async function handleRestore() {
+    if (restoring) return;
+    setRestoring(true);
     try {
       const credited = await revenueCat.restore();
       await refreshWallet({ clearFeedback: true });
@@ -80,6 +86,8 @@ export default function WalletScreen() {
     } catch (error) {
       const details = revenueCatErrorDetails(error);
       setFeedback(details.message ?? 'Restore unavailable.');
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -106,19 +114,19 @@ export default function WalletScreen() {
             <>
               <Text style={[styles.balanceCoins, { color: colors.foreground }]}>◈ {wallet.coins}</Text>
               <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>Use coins in Access rooms to support speakers and unlock gifts.</Text>
+              <View style={styles.summaryRow}>
+                <View style={[styles.summaryChip, { backgroundColor: colors.muted }]}>
+                  <Text style={[styles.summaryValue, { color: colors.foreground }]}>{wallet.gold}</Text>
+                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Gold</Text>
+                </View>
+                <View style={[styles.summaryChip, { backgroundColor: colors.muted }]}>
+                  <Text style={[styles.summaryValue, { color: colors.foreground }]}>{wallet.pendingGold}</Text>
+                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending gold</Text>
+                </View>
+              </View>
+              <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.purchasing || restoring || loading} />
             </>
           )}
-          <View style={styles.summaryRow}>
-            <View style={[styles.summaryChip, { backgroundColor: colors.muted }]}>
-              <Text style={[styles.summaryValue, { color: colors.foreground }]}>{wallet.gold}</Text>
-              <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Gold</Text>
-            </View>
-            <View style={[styles.summaryChip, { backgroundColor: colors.muted }]}>
-              <Text style={[styles.summaryValue, { color: colors.foreground }]}>{wallet.pendingGold}</Text>
-              <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending gold</Text>
-            </View>
-          </View>
-          <PrimaryButton label="Restore purchases" onPress={() => void handleRestore()} disabled={revenueCat.purchasing || loading} />
         </View>
 
         {feedback ? (
