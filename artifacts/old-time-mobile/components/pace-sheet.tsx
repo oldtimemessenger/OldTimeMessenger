@@ -152,6 +152,7 @@ export default function PaceSheet({
     averagePaceSecPerKm: 0,
     currentSpeedMps: 0,
   }), [session]);
+  const displayPaceSecPerKm = metrics.currentSpeedMps > 0 ? 1000 / metrics.currentSpeedMps : metrics.averagePaceSecPerKm;
 
   const commitSession = useCallback((next: PaceTrackingSession | null) => {
     setSession(next);
@@ -284,16 +285,17 @@ export default function PaceSheet({
             if (current.manualPaused) return current;
             const speed = typeof point.speed === "number" ? point.speed : 0;
             const now = Date.now();
+            let working = current;
             if (speed > 0.75) {
               movingRef.current = now;
-              if (current.autoPaused && current.autoPauseEnabled) {
-                const resumed = resumeSession(current);
+              if (working.autoPaused && working.autoPauseEnabled) {
+                const resumed = resumeSession(working);
                 void resumePaceActivity(token, resumed.activityId!, resumed.syncStatus).catch(() => undefined);
                 void saveActiveTrackingSession(resumed);
-                return resumed;
+                working = resumed;
               }
             }
-            let next = updateSessionWithPoint(current, point);
+            let next = updateSessionWithPoint(working, point);
             if (next.autoPauseEnabled && !next.autoPaused && now - movingRef.current > 30000) {
               next = pauseSession(next, true);
               void pausePaceActivity(token, next.activityId!, next.syncStatus).catch(() => undefined);
@@ -490,7 +492,7 @@ export default function PaceSheet({
           {screen === "live" && session ? (
             <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 18 }}>
               <Text style={[styles.liveType, { color: colors.foreground }]}>{session.activityType.toUpperCase()}</Text>
-              <Text style={[styles.paceValue, { color: colors.foreground }]}>{formatPaceSecPerKm(metrics.averagePaceSecPerKm || metrics.currentSpeedMps ? (metrics.currentSpeedMps > 0 ? 1000 / metrics.currentSpeedMps : metrics.averagePaceSecPerKm) : 0)}</Text>
+              <Text style={[styles.paceValue, { color: colors.foreground }]}>{formatPaceSecPerKm(displayPaceSecPerKm)}</Text>
               <View style={styles.metricRow}>
                 <Metric label="Distance" value={formatMiles(metrics.distanceMeters)} />
                 <Metric label="Time" value={formatDuration(metrics.elapsedTimeSec)} />

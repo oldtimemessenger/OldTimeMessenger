@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS "pace_activities" (
   "id" serial PRIMARY KEY NOT NULL,
   "activity_uuid" text NOT NULL,
-  "user_id" integer NOT NULL,
+  "user_id" integer NOT NULL REFERENCES "chat_users"("id") ON DELETE CASCADE,
   "activity_type" text DEFAULT 'running' NOT NULL,
   "title" text DEFAULT '' NOT NULL,
   "description" text DEFAULT '' NOT NULL,
@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS "pace_activities_lifecycle_status_idx"
 
 CREATE TABLE IF NOT EXISTS "pace_activity_points" (
   "id" serial PRIMARY KEY NOT NULL,
-  "activity_id" integer NOT NULL,
+  "activity_id" integer NOT NULL REFERENCES "pace_activities"("id") ON DELETE CASCADE,
   "sequence" integer NOT NULL,
   "latitude" double precision NOT NULL,
   "longitude" double precision NOT NULL,
@@ -65,8 +65,8 @@ CREATE INDEX IF NOT EXISTS "pace_activity_points_activity_timestamp_idx"
   ON "pace_activity_points" ("activity_id", "timestamp");
 
 CREATE TABLE IF NOT EXISTS "pace_activity_likes" (
-  "activity_id" integer NOT NULL,
-  "user_id" integer NOT NULL,
+  "activity_id" integer NOT NULL REFERENCES "pace_activities"("id") ON DELETE CASCADE,
+  "user_id" integer NOT NULL REFERENCES "chat_users"("id") ON DELETE CASCADE,
   "created_at" bigint NOT NULL,
   CONSTRAINT "pace_activity_likes_pk" PRIMARY KEY ("activity_id", "user_id")
 );
@@ -76,9 +76,9 @@ CREATE INDEX IF NOT EXISTS "pace_activity_likes_user_idx"
 
 CREATE TABLE IF NOT EXISTS "pace_activity_comments" (
   "id" serial PRIMARY KEY NOT NULL,
-  "activity_id" integer NOT NULL,
-  "author_id" integer NOT NULL,
-  "parent_id" integer,
+  "activity_id" integer NOT NULL REFERENCES "pace_activities"("id") ON DELETE CASCADE,
+  "author_id" integer NOT NULL REFERENCES "chat_users"("id") ON DELETE CASCADE,
+  "parent_id" integer REFERENCES "pace_activity_comments"("id") ON DELETE CASCADE,
   "content" text NOT NULL,
   "created_at" bigint NOT NULL,
   "deleted" boolean DEFAULT false NOT NULL
@@ -111,9 +111,9 @@ CREATE INDEX IF NOT EXISTS "pace_segments_visibility_idx"
 
 CREATE TABLE IF NOT EXISTS "pace_segment_efforts" (
   "id" serial PRIMARY KEY NOT NULL,
-  "segment_id" integer NOT NULL,
-  "activity_id" integer NOT NULL,
-  "user_id" integer NOT NULL,
+  "segment_id" integer NOT NULL REFERENCES "pace_segments"("id") ON DELETE CASCADE,
+  "activity_id" integer NOT NULL REFERENCES "pace_activities"("id") ON DELETE CASCADE,
+  "user_id" integer NOT NULL REFERENCES "chat_users"("id") ON DELETE CASCADE,
   "elapsed_ms" integer NOT NULL,
   "suspicious" boolean DEFAULT false NOT NULL,
   "created_at" bigint NOT NULL
@@ -145,8 +145,8 @@ CREATE INDEX IF NOT EXISTS "pace_challenges_visibility_idx"
   ON "pace_challenges" ("visibility");
 
 CREATE TABLE IF NOT EXISTS "pace_challenge_participants" (
-  "challenge_id" integer NOT NULL,
-  "user_id" integer NOT NULL,
+  "challenge_id" integer NOT NULL REFERENCES "pace_challenges"("id") ON DELETE CASCADE,
+  "user_id" integer NOT NULL REFERENCES "chat_users"("id") ON DELETE CASCADE,
   "progress_distance_meters" double precision DEFAULT 0 NOT NULL,
   "progress_count" integer DEFAULT 0 NOT NULL,
   "completed_at" bigint,

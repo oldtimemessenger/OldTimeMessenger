@@ -1140,12 +1140,29 @@ router.get("/pace/nearby", async (req, res): Promise<void> => {
   const longitude = parseGeo(req.query.longitude);
   const radiusKm = Math.min(100, Math.max(0.2, parseGeo(req.query.radiusKm) ?? 5));
   const center = latitude !== null && longitude !== null ? { latitude, longitude } : null;
-  const activities = await db
+  const latestSequence = db
     .select({
-      id: paceActivitiesTable.id,
+      activityId: paceActivityPointsTable.activityId,
+      maxSequence: sql<number>`max(${paceActivityPointsTable.sequence})::int`,
+    })
+    .from(paceActivityPointsTable)
+    .groupBy(paceActivityPointsTable.activityId)
+    .as("latest_sequence");
+  const points = await db
+    .select({
       activityType: paceActivitiesTable.activityType,
+      latitude: paceActivityPointsTable.latitude,
+      longitude: paceActivityPointsTable.longitude,
     })
     .from(paceActivitiesTable)
+    .innerJoin(latestSequence, eq(latestSequence.activityId, paceActivitiesTable.id))
+    .innerJoin(
+      paceActivityPointsTable,
+      and(
+        eq(paceActivityPointsTable.activityId, latestSequence.activityId),
+        eq(paceActivityPointsTable.sequence, latestSequence.maxSequence),
+      ),
+    )
     .where(
       and(
         ne(paceActivitiesTable.userId, userId),
@@ -1154,24 +1171,12 @@ router.get("/pace/nearby", async (req, res): Promise<void> => {
       ),
     );
   const counts = new Map<string, number>();
-  // eslint-disable-next-line no-restricted-syntax
-  for (const activity of activities) {
-    // eslint-disable-next-line no-await-in-loop
-    const [latest] = await db
-      .select({
-        latitude: paceActivityPointsTable.latitude,
-        longitude: paceActivityPointsTable.longitude,
-      })
-      .from(paceActivityPointsTable)
-      .where(eq(paceActivityPointsTable.activityId, activity.id))
-      .orderBy(desc(paceActivityPointsTable.sequence))
-      .limit(1);
-    if (!latest) continue;
+  for (const point of points) {
     if (center) {
-      const km = distanceMeters(center, { latitude: latest.latitude, longitude: latest.longitude }) / 1000;
+      const km = distanceMeters(center, { latitude: point.latitude, longitude: point.longitude }) / 1000;
       if (km > radiusKm) continue;
     }
-    counts.set(activity.activityType, (counts.get(activity.activityType) ?? 0) + 1);
+    counts.set(point.activityType, (counts.get(point.activityType) ?? 0) + 1);
   }
   res.json({
     items: [...counts.entries()].map(([activityType, count]) => ({ activityType, count })),

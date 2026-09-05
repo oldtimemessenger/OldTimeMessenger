@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { usersTable } from "./chat";
 
 export const paceActivityTypeSchema = z.enum([
   "running",
@@ -31,7 +32,7 @@ export const paceActivitiesTable = pgTable(
   {
     id: serial("id").primaryKey(),
     activityUuid: text("activity_uuid").notNull(),
-    userId: integer("user_id").notNull(),
+    userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
     activityType: text("activity_type").notNull().default("running"),
     title: text("title").notNull().default(""),
     description: text("description").notNull().default(""),
@@ -85,7 +86,7 @@ export const paceActivityPointsTable = pgTable(
   "pace_activity_points",
   {
     id: serial("id").primaryKey(),
-    activityId: integer("activity_id").notNull(),
+    activityId: integer("activity_id").notNull().references(() => paceActivitiesTable.id, { onDelete: "cascade" }),
     sequence: integer("sequence").notNull(),
     latitude: doublePrecision("latitude").notNull(),
     longitude: doublePrecision("longitude").notNull(),
@@ -105,8 +106,8 @@ export const paceActivityPointsTable = pgTable(
 export const paceActivityLikesTable = pgTable(
   "pace_activity_likes",
   {
-    activityId: integer("activity_id").notNull(),
-    userId: integer("user_id").notNull(),
+    activityId: integer("activity_id").notNull().references(() => paceActivitiesTable.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
   },
   (table) => ({
@@ -119,9 +120,9 @@ export const paceActivityCommentsTable = pgTable(
   "pace_activity_comments",
   {
     id: serial("id").primaryKey(),
-    activityId: integer("activity_id").notNull(),
-    authorId: integer("author_id").notNull(),
-    parentId: integer("parent_id"),
+    activityId: integer("activity_id").notNull().references(() => paceActivitiesTable.id, { onDelete: "cascade" }),
+    authorId: integer("author_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    parentId: integer("parent_id").references(() => paceActivityCommentsTable.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
     deleted: boolean("deleted").notNull().default(false),
@@ -158,9 +159,9 @@ export const paceSegmentEffortsTable = pgTable(
   "pace_segment_efforts",
   {
     id: serial("id").primaryKey(),
-    segmentId: integer("segment_id").notNull(),
-    activityId: integer("activity_id").notNull(),
-    userId: integer("user_id").notNull(),
+    segmentId: integer("segment_id").notNull().references(() => paceSegmentsTable.id, { onDelete: "cascade" }),
+    activityId: integer("activity_id").notNull().references(() => paceActivitiesTable.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
     elapsedMs: integer("elapsed_ms").notNull(),
     suspicious: boolean("suspicious").notNull().default(false),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
@@ -196,8 +197,8 @@ export const paceChallengesTable = pgTable(
 export const paceChallengeParticipantsTable = pgTable(
   "pace_challenge_participants",
   {
-    challengeId: integer("challenge_id").notNull(),
-    userId: integer("user_id").notNull(),
+    challengeId: integer("challenge_id").notNull().references(() => paceChallengesTable.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
     progressDistanceMeters: doublePrecision("progress_distance_meters").notNull().default(0),
     progressCount: integer("progress_count").notNull().default(0),
     completedAt: pgBigint("completed_at", { mode: "number" }),
