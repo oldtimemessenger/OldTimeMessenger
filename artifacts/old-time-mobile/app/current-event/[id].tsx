@@ -32,6 +32,7 @@ import {
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/ui';
+import { currentEventGifts } from '@/constants/current-event-gifts';
 import { useColors } from '@/hooks/useColors';
 import { useRevenueCat } from '@/lib/revenuecat';
 import { audioService } from '@/lib/audio-service';
@@ -39,13 +40,7 @@ import { useApp } from '@/context/app-state';
 import { apiBaseUrl } from '@/lib/api-base-url';
 import { io } from 'socket.io-client';
 
-const gifts = [
-  { key: 'coffee' as const, label: 'Coffee', icon: 'cafe-outline' as const, cost: 25 },
-  { key: 'idea' as const, label: 'Idea', icon: 'bulb-outline' as const, cost: 100 },
-  { key: 'heart' as const, label: 'Heart', icon: 'heart-outline' as const, cost: 200 },
-  { key: 'gem' as const, label: 'Gem', icon: 'diamond-outline' as const, cost: 500 },
-  { key: 'studio' as const, label: 'Studio', icon: 'radio-outline' as const, cost: 1000 },
-];
+const gifts = currentEventGifts;
 
 function mergeMessages(current: CurrentEventMessage[], incoming: CurrentEventMessage[]) {
   const byId = new Map(current.map((item) => [item.id, item]));
@@ -503,6 +498,9 @@ export default function CurrentEventRoomScreen() {
               setFeedback(error?.message ?? 'Restore unavailable.');
             }
           }} style={styles.walletLink}><Text style={[styles.walletLinkText, { color: colors.primary }]}>Restore purchases</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open wallet" onPress={() => { setStoreOpen(false); router.push('/wallet'); }} style={styles.walletLink}>
+            <Text style={[styles.walletLinkText, { color: colors.primary }]}>Open wallet</Text>
+          </Pressable>
         </View></View>
       </Modal>
 
