@@ -140,7 +140,12 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM social_hubs_refresh_counts(COALESCE(NEW.hub_id, OLD.hub_id));
+  IF TG_OP = 'UPDATE' AND NEW.hub_id IS DISTINCT FROM OLD.hub_id THEN
+    PERFORM social_hubs_refresh_counts(OLD.hub_id);
+    PERFORM social_hubs_refresh_counts(NEW.hub_id);
+  ELSE
+    PERFORM social_hubs_refresh_counts(COALESCE(NEW.hub_id, OLD.hub_id));
+  END IF;
   RETURN COALESCE(NEW, OLD);
 END;
 $$;
@@ -156,7 +161,12 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM social_hubs_refresh_counts(COALESCE(NEW.hub_id, OLD.hub_id));
+  IF TG_OP = 'UPDATE' AND NEW.hub_id IS DISTINCT FROM OLD.hub_id THEN
+    PERFORM social_hubs_refresh_counts(OLD.hub_id);
+    PERFORM social_hubs_refresh_counts(NEW.hub_id);
+  ELSE
+    PERFORM social_hubs_refresh_counts(COALESCE(NEW.hub_id, OLD.hub_id));
+  END IF;
   RETURN COALESCE(NEW, OLD);
 END;
 $$;

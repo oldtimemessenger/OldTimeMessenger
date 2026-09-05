@@ -376,7 +376,7 @@ export const socialHubsTable = pgTable(
     icon: text("icon"),
     coverImage: text("cover_image"),
     category: text("category"),
-    parentHubId: integer("parent_hub_id"),
+    parentHubId: integer("parent_hub_id").references(() => socialHubsTable.id, { onDelete: "set null" }),
     createdBy: integer("created_by").notNull(),
     status: text("status").notNull().default("active"),
     privacy: text("privacy").notNull().default("public"),
@@ -398,7 +398,7 @@ export const socialHubAliasesTable = pgTable(
   "social_hub_aliases",
   {
     id: serial("id").primaryKey(),
-    hubId: integer("hub_id").notNull(),
+    hubId: integer("hub_id").notNull().references(() => socialHubsTable.id, { onDelete: "cascade" }),
     alias: text("alias").notNull(),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
   },
@@ -412,7 +412,7 @@ export const socialHubMembersTable = pgTable(
   "social_hub_members",
   {
     id: serial("id").primaryKey(),
-    hubId: integer("hub_id").notNull(),
+    hubId: integer("hub_id").notNull().references(() => socialHubsTable.id, { onDelete: "cascade" }),
     userId: integer("user_id").notNull(),
     role: text("role").notNull().default("member"),
     joinedAt: pgBigint("joined_at", { mode: "number" }).notNull(),
@@ -429,7 +429,7 @@ export const socialHubPostsTable = pgTable(
   {
     id: serial("id").primaryKey(),
     hubId: integer("hub_id").notNull(),
-    postId: integer("post_id").notNull(),
+    postId: integer("post_id").notNull().references(() => socialPostsTable.id, { onDelete: "cascade" }),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
   },
   (table) => ({
