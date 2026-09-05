@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { getCurrentEventWallet, type CurrentEventWallet } from '@workspace/api-client-react';
+import { type CurrentEventWallet, useGetCurrentEventWallet } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PrimaryButton, Screen } from '@/components/ui';
 import { useColors } from '@/hooks/useColors';
@@ -21,34 +21,38 @@ export default function WalletScreen() {
   const colors = useColors();
   const router = useRouter();
   const revenueCat = useRevenueCat();
-  const [wallet, setWallet] = useState<CurrentEventWallet>(emptyWallet);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-
-  const loadWallet = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
-    if (mode === 'refresh') setRefreshing(true);
-    else setLoading(true);
-    try {
-      setWallet(await getCurrentEventWallet());
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Wallet unavailable.';
-      if (mode === 'initial') setFeedback(message);
-      else Alert.alert('Wallet not updated', message);
-    } finally {
-      if (mode === 'refresh') setRefreshing(false);
-      else setLoading(false);
-    }
-  }, []);
+  const walletQuery = useGetCurrentEventWallet({
+    query: {
+      retry: 1,
+    },
+  });
+  const wallet = walletQuery.data ?? emptyWallet;
+  const loading = walletQuery.isLoading;
+  const refreshing = walletQuery.isFetching && !walletQuery.isLoading;
 
   useEffect(() => {
-    void loadWallet();
-  }, [loadWallet]);
+    if (walletQuery.error && !walletQuery.data) {
+      setFeedback(walletQuery.error instanceof Error ? walletQuery.error.message : 'Wallet unavailable.');
+    }
+  }, [walletQuery.data, walletQuery.error]);
+
+  async function refreshWallet(options?: { clearFeedback?: boolean; alertOnError?: boolean }) {
+    const result = await walletQuery.refetch();
+    if (result.data) {
+      if (options?.clearFeedback) setFeedback(null);
+      return result.data;
+    }
+    const message = result.error instanceof Error ? result.error.message : 'Wallet unavailable.';
+    if (options?.alertOnError) Alert.alert('Wallet not updated', message);
+    else setFeedback(message);
+    return null;
+  }
 
   async function handlePurchase(item: (typeof revenueCat.packages)[number]) {
     try {
       const credited = await revenueCat.purchase(item);
-      await loadWallet('refresh');
+      await refreshWallet({ clearFeedback: true });
       setFeedback(`${credited} coins added.`);
     } catch (error: any) {
       if (!error?.userCancelled) setFeedback(error?.message ?? 'Purchase unavailable.');
@@ -58,7 +62,7 @@ export default function WalletScreen() {
   async function handleRestore() {
     try {
       const credited = await revenueCat.restore();
-      await loadWallet('refresh');
+      await refreshWallet({ clearFeedback: true });
       setFeedback(credited ? `${credited} coins restored.` : 'Wallet is up to date.');
     } catch (error: any) {
       setFeedback(error?.message ?? 'Restore unavailable.');
@@ -74,7 +78,7 @@ export default function WalletScreen() {
         </Pressable>
       )}
       right={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing} onPress={() => void loadWallet('refresh')} style={({ pressed }) => [{ opacity: loading || refreshing ? 0.45 : pressed ? 0.65 : 1 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing} onPress={() => void refreshWallet({ clearFeedback: true, alertOnError: true })} style={({ pressed }) => [{ opacity: loading || refreshing ? 0.45 : pressed ? 0.65 : 1 }]}>
           <Text style={[styles.refreshText, { color: colors.primary }]}>{refreshing ? 'Refreshing…' : 'Refresh'}</Text>
         </Pressable>
       )}

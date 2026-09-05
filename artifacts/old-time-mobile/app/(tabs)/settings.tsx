@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { getCurrentEventWallet } from '@workspace/api-client-react';
+import { useDeleteAccount, useGetCurrentEventWallet, useLogout } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -11,7 +11,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, PrimaryButton, Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
-import { useDeleteAccount, useLogout } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { auth } from '@/firebaseConfig';
 import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib/social-api';
@@ -38,10 +37,17 @@ export default function SettingsScreen() {
   const deleteAccount = useDeleteAccount();
   const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, removeSavedMessage, setSession, resetLocalData } = useApp();
   const translate = (key: Parameters<typeof t>[1]) => t(settings.language, key);
+  const walletCoins = useGetCurrentEventWallet({
+    query: {
+      enabled: Boolean(session?.authToken),
+      retry: 1,
+      staleTime: 30_000,
+      select: (wallet) => wallet.coins,
+    },
+  }).data;
 
   const [panel, setPanel] = useState<Panel>(null);
   const [query, setQuery] = useState('');
-  const [walletCoins, setWalletCoins] = useState<number | null>(null);
   const [cacheStatus, setCacheStatus] = useState<'idle' | 'clearing' | 'cleared' | 'error'>('idle');
   const [signingOut, setSigningOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -62,16 +68,6 @@ export default function SettingsScreen() {
   const [faqOpen, setFaqOpen] = useState(-1);
 
   const [savedInput, setSavedInput] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    void getCurrentEventWallet().then((wallet) => {
-      if (!cancelled) setWalletCoins(wallet.coins);
-    }).catch(() => {
-      if (!cancelled) setWalletCoins(null);
-    });
-    return () => { cancelled = true; };
-  }, [session?.id]);
 
   function toggle(key: keyof typeof settings) {
     updateSettings({ [key]: !settings[key] } as Partial<typeof settings>);
@@ -265,7 +261,7 @@ export default function SettingsScreen() {
       { items: [
       { key: "profile", icon: "person", bg: colors.settingsRed, label: translate('myProfile'), value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
       { key: "phone", icon: "call", bg: colors.settingsGreen, label: 'Phone Number', value: session?.hasRegisteredPhone ? (session.phoneVerified ? 'Verified' : 'Registered') : 'Not registered', onPress: () => { setDraftPhone(session?.phone ?? ''); setPhonePermission(session?.phoneDiscoveryPermission ?? 'contacts'); setPanel('phone'); } },
-    { key: "wallet", icon: "wallet", bg: colors.settingsViolet, label: 'Wallet', value: walletCoins === null ? undefined : `◈ ${walletCoins}`, onPress: () => router.push('/wallet') },
+    { key: "wallet", icon: "wallet", bg: colors.settingsViolet, label: 'Wallet', value: walletCoins === undefined ? undefined : `◈ ${walletCoins}`, onPress: () => router.push('/wallet') },
     { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
   ]},
     { items: [
