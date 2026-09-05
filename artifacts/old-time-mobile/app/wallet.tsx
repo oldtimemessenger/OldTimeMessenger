@@ -42,6 +42,7 @@ export default function WalletScreen() {
   const wallet = walletQuery.data ?? emptyWallet;
   const loading = walletQuery.isLoading;
   const refreshing = walletQuery.isFetching && !walletQuery.isLoading;
+  const purchaseInFlight = revenueCat.purchasing || purchasingIdentifier !== null;
 
   useEffect(() => {
     if (walletQuery.error && !walletQuery.data) {
@@ -143,7 +144,7 @@ export default function WalletScreen() {
         </Pressable>
       )}
       right={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing || revenueCat.purchasing || restoring || !session?.authToken} onPress={() => { void handleRefresh(); }} style={({ pressed }) => [{ opacity: loading || refreshing || revenueCat.purchasing || restoring || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" disabled={loading || refreshing || purchaseInFlight || restoring || !session?.authToken} onPress={() => { void handleRefresh(); }} style={({ pressed }) => [{ opacity: loading || refreshing || purchaseInFlight || restoring || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
           <Text style={[styles.refreshText, { color: colors.primary }]}>{refreshing ? 'Refreshing…' : 'Refresh'}</Text>
         </Pressable>
       )}
@@ -168,7 +169,7 @@ export default function WalletScreen() {
                 </View>
               </View>
               <View style={styles.restoreButtonWrap}>
-                <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.loading || revenueCat.purchasing || restoring || !session?.authToken} />
+                <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.loading || purchaseInFlight || restoring || !session?.authToken} />
               </View>
               {!session?.authToken ? <Text style={[styles.authHint, { color: colors.mutedForeground }]}>Sign in again to restore purchases and refresh this wallet.</Text> : null}
             </>
@@ -192,15 +193,15 @@ export default function WalletScreen() {
               key={item.identifier}
               accessibilityRole="button"
               accessibilityLabel={`Buy ${item.product.title}`}
-              accessibilityState={{ disabled: revenueCat.purchasing || !session?.authToken, busy: purchasingIdentifier === item.identifier }}
-              disabled={revenueCat.purchasing || !session?.authToken}
+              accessibilityState={{ disabled: purchaseInFlight || !session?.authToken, busy: purchasingIdentifier === item.identifier }}
+              disabled={purchaseInFlight || !session?.authToken}
               onPress={() => void handlePurchase(item)}
               style={({ pressed }) => [
                 styles.packageRow,
                 {
                   backgroundColor: pressed ? colors.muted : 'transparent',
                   borderBottomColor: index === revenueCat.packages.length - 1 ? 'transparent' : colors.border,
-                  opacity: revenueCat.purchasing ? 0.55 : 1,
+                  opacity: purchaseInFlight ? 0.55 : 1,
                 },
               ]}
             >
