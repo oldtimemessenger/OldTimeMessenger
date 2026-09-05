@@ -217,12 +217,32 @@ export default function PaceSheet({
     if (!visible) return;
     void loadHome();
     void loadActiveTrackingSession().then((saved) => {
-      if (saved) {
-        setSession(saved);
+      if (!saved) return;
+      void (async () => {
+        let recovered = saved;
+        if (!recovered.activityId && token) {
+          try {
+            const created = await createPaceActivity(token, {
+              activityUuid: recovered.activityUuid,
+              activityType: recovered.activityType,
+              visibility: recovered.visibility,
+              autoPauseEnabled: recovered.autoPauseEnabled,
+              voiceAnnouncementsEnabled: recovered.voiceAnnouncementsEnabled,
+              hideStartEnd: recovered.hideStartEnd,
+              privacyRadiusMeters: recovered.privacyRadiusMeters,
+              startedAt: recovered.startedAt,
+            });
+            recovered = { ...recovered, activityId: created.id };
+            await saveActiveTrackingSession(recovered);
+          } catch {
+            // Keep local session; user can still avoid data loss even if sync is unavailable.
+          }
+        }
+        setSession(recovered);
         setScreen("live");
-      }
+      })();
     });
-  }, [visible, loadHome]);
+  }, [visible, loadHome, token]);
 
   const handleIncomingPoint = useCallback((point: Omit<PacePoint, "sequence">) => {
     setSession((current) => {

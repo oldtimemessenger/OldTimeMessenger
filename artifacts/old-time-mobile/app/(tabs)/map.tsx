@@ -16,7 +16,7 @@ import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { createMapPin, createMapPinComment, deleteMapPin, discoveryEmbedUrl, getMapPinComments, getNearbyDiscoveryItems, getNearbyPins, getNearbyPlaces, reportMapPin, setMapPinRelation, type DiscoveryItem, type MapComment, type MapPin, type MapVisibility, type NearbyPlace } from '@/lib/map-api';
 import { getNearbyStories, setUserBlocked, type Story } from '@/lib/social-api';
-import { getPaceNearby } from '@/lib/pace-api';
+import { getPaceLiveNow } from '@/lib/pace-api';
 import CurrentEventsHome from '@/components/current-events-home';
 import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
 import { adManager } from '@/lib/ad-manager';
@@ -172,7 +172,7 @@ export default function MapScreen() {
       return;
     }
     let active = true;
-    void getPaceNearby(session.authToken)
+    void getPaceLiveNow(session.authToken)
       .then((result) => {
         if (active) setPaceNearby(result.items);
       })
@@ -507,7 +507,7 @@ export default function MapScreen() {
         {error ? <Pressable onPress={() => void loadRegion(region, true)} style={[styles.errorPill, { top: insets.top + 10, backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name="cloud-offline-outline" size={17} color={colors.destructive} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Retry area</Text></Pressable> : null}
         {paceLayerEnabled ? (
           <View style={[styles.paceLayerPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.paceLayerTitle, { color: colors.foreground }]}>PACE nearby</Text>
+            <Text style={[styles.paceLayerTitle, { color: colors.foreground }]}>PACE live now</Text>
             {paceNearby.length === 0 ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>No public live activity nearby yet.</Text> : paceNearby.map((item) => (
               <Text key={item.activityType} style={{ color: colors.foreground, fontSize: 12 }}>
                 {item.count} {item.activityType}

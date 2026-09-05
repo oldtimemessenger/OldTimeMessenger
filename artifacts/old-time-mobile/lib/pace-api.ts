@@ -186,6 +186,6 @@ export function getPaceProfile(token: string, userId?: number) {
   }>(token, userId ? `/api/pace/profile/${userId}` : "/api/pace/profile");
 }
 
-export function getPaceNearby(token: string) {
-  return request<{ items: Array<{ activityType: string; count: number }> }>(token, "/api/pace/nearby");
+export function getPaceLiveNow(token: string) {
+  return request<{ items: Array<{ activityType: string; count: number }> }>(token, "/api/pace/live-now");
 }

@@ -1137,7 +1137,7 @@ router.get("/pace/challenges/:challengeId/leaderboard", async (req, res): Promis
   });
 });
 
-router.get("/pace/nearby", async (req, res): Promise<void> => {
+async function liveNowAggregates(req: Request, res: Response): Promise<void> {
   const userId = await requireChatAuth(req, res);
   if (userId === null) return;
   const latestSequence = db
@@ -1168,6 +1168,9 @@ router.get("/pace/nearby", async (req, res): Promise<void> => {
   res.json({
     items: [...counts.entries()].map(([activityType, count]) => ({ activityType, count })),
   });
-});
+}
+
+router.get("/pace/live-now", liveNowAggregates);
+router.get("/pace/nearby", liveNowAggregates);
 
 export default router;
