@@ -2,11 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { getGetInboxQueryKey, useGetInbox } from '@workspace/api-client-react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { io } from 'socket.io-client';
 import { Avatar } from '@/components/ui';
-import { CallVideoSurface } from '@/components/call-video-surface';
+import { CallVideoSurface, type CallVideoSurfaceHandle } from '@/components/call-video-surface';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { apiBaseUrl } from '@/lib/api-base-url';
@@ -56,10 +56,13 @@ export default function CallScreen() {
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [videoConnected, setVideoConnected] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
   const [callCredentials, setCallCredentials] = useState<{ token: string; url: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const connectStarted = useRef(false);
   const connectedCallId = useRef<number | null>(null);
+  const videoSurface = useRef<CallVideoSurfaceHandle>(null);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session?.id), queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
 
   const otherUserId = call
@@ -72,6 +75,8 @@ export default function CallScreen() {
   const name = contact?.name ?? 'Old Time';
   const isCallee = call?.calleeId === session?.id;
   const connected = call?.status === 'accepted';
+  const controlsEnabled = connected && (call?.type !== 'video' || videoConnected);
+  const screenShareAvailable = Platform.OS === 'android' && call?.type === 'video';
   const tone = toneForCall(call, Boolean(isCallee), elapsed);
 
   const refresh = useCallback(async () => {
@@ -139,6 +144,8 @@ export default function CallScreen() {
     if (call && ['declined', 'missed', 'ended'].includes(call.status)) {
       connectedCallId.current = null;
       setCallCredentials(null);
+      setVideoConnected(false);
+      setScreenSharing(false);
       void audioService.leave();
     }
   }, [call, connectAudio]);
@@ -166,6 +173,8 @@ export default function CallScreen() {
       if (call.status === 'ringing' && isCallee) await declineManagedCall(session.authToken, call.id);
       else await endManagedCall(session.authToken, call.id);
       setCallCredentials(null);
+      setVideoConnected(false);
+      setScreenSharing(false);
       connectedCallId.current = null;
       await audioService.leave();
       router.back();
@@ -178,38 +187,55 @@ export default function CallScreen() {
 
   async function toggleMute() {
     const nextMuted = !muted;
-    setMuted(nextMuted);
-    if (call?.type === 'video') return;
-    await audioService.setMuted(nextMuted).catch(() => {
-      setMuted(!nextMuted);
+    try {
+      if (call?.type === 'video') await videoSurface.current?.setMuted(nextMuted);
+      else await audioService.setMuted(nextMuted);
+      setMuted(nextMuted);
+    } catch {
       Alert.alert('Microphone unavailable', 'Microphone state could not be changed.');
-    });
+    }
   }
 
   async function toggleSpeaker() {
     const nextSpeaker = !speaker;
-    const applySpeakerRoute = audioService.setSpeaker;
-    if (!applySpeakerRoute) {
+    try {
+      if (call?.type === 'video') await videoSurface.current?.setSpeaker(nextSpeaker);
+      else if (audioService.setSpeaker) await audioService.setSpeaker(nextSpeaker);
+      else throw new Error('Audio output selection is unavailable.');
+      setSpeaker(nextSpeaker);
+    } catch {
       Alert.alert('Audio route unavailable', 'Speaker output could not be changed on this device.');
-      return;
     }
-    setSpeaker(nextSpeaker);
-    await applySpeakerRoute(nextSpeaker).catch(() => {
-      setSpeaker(!nextSpeaker);
-      Alert.alert('Audio route unavailable', 'Speaker output could not be changed on this device.');
-    });
   }
 
-  function toggleCamera() {
-    setCameraEnabled((current) => !current);
+  async function toggleCamera() {
+    const nextCameraEnabled = !cameraEnabled;
+    try {
+      await videoSurface.current?.setCameraEnabled(nextCameraEnabled);
+      setCameraEnabled(nextCameraEnabled);
+    } catch {
+      Alert.alert('Camera unavailable', 'Camera state could not be changed.');
+    }
   }
 
-  function swapCamera() {
-    Alert.alert('Camera switch unavailable', 'Front and back camera switching is not available in the current calling provider yet.');
+  async function swapCamera() {
+    try {
+      await videoSurface.current?.switchCamera();
+    } catch (nextError) {
+      Alert.alert('Camera switch unavailable', nextError instanceof Error ? nextError.message : 'The camera could not be switched.');
+    }
   }
 
-  function startScreenShare() {
-    Alert.alert('Screen sharing unavailable', 'The current in-app calling provider does not support screen sharing in this build yet.');
+  async function startScreenShare() {
+    if (!screenShareAvailable) return;
+    try {
+      if (!videoSurface.current) throw new Error('Video is still connecting.');
+      const nextScreenSharing = !screenSharing;
+      await videoSurface.current.setScreenShareEnabled(nextScreenSharing);
+      setScreenSharing(nextScreenSharing);
+    } catch (nextError) {
+      Alert.alert('Screen sharing unavailable', nextError instanceof Error ? nextError.message : 'Screen sharing permission was not granted.');
+    }
   }
 
   if (!session) {
@@ -230,9 +256,11 @@ export default function CallScreen() {
           <View style={[styles.statusDot, { backgroundColor: tone.accent }]} />
           <Text style={[styles.callTypeText, { color: colors.foreground }]}>{call?.type === 'video' ? 'Video call' : 'Voice call'}</Text>
         </View>
-        <Pressable accessibilityLabel="Share screen" onPress={startScreenShare} style={[styles.topButton, { backgroundColor: colors.card }]}>
-          <Ionicons name="desktop-outline" size={18} color={colors.foreground} />
-        </Pressable>
+        {screenShareAvailable ? (
+          <Pressable accessibilityLabel="Share screen" onPress={() => void startScreenShare()} disabled={!controlsEnabled} style={[styles.topButton, { backgroundColor: colors.card, opacity: controlsEnabled ? 1 : 0.5 }]}>
+            <Ionicons name={screenSharing ? 'stop-circle-outline' : 'desktop-outline'} size={18} color={colors.foreground} />
+          </Pressable>
+        ) : <View style={styles.topButton} />}
       </View>
 
       <View style={styles.hero}>
@@ -244,11 +272,13 @@ export default function CallScreen() {
 
       {call?.type === 'video' && callCredentials ? (
         <CallVideoSurface
+            ref={videoSurface}
           serverUrl={callCredentials.url}
           token={callCredentials.token}
           muted={muted}
           cameraEnabled={cameraEnabled}
           onError={setError}
+            onConnectionChange={setVideoConnected}
         />
       ) : (
         <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -267,26 +297,32 @@ export default function CallScreen() {
       )}
 
       <View style={styles.controlsGrid}>
-        <Pressable onPress={() => void toggleMute()} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
+        <Pressable onPress={() => void toggleMute()} disabled={!controlsEnabled} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled ? 1 : 0.5 }]}>
           <Ionicons name={muted ? 'mic-off' : 'mic'} size={22} color={colors.foreground} />
           <Text style={[styles.controlLabel, { color: colors.foreground }]}>{muted ? 'Unmute' : 'Mute'}</Text>
         </Pressable>
-        <Pressable onPress={() => void toggleSpeaker()} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
+        <Pressable onPress={() => void toggleSpeaker()} disabled={!controlsEnabled} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled ? 1 : 0.5 }]}>
           <Ionicons name={speaker ? 'volume-high' : 'volume-mute'} size={22} color={colors.foreground} />
           <Text style={[styles.controlLabel, { color: colors.foreground }]}>{speaker ? 'Speaker' : 'Earpiece'}</Text>
         </Pressable>
-        <Pressable onPress={toggleCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
+        <Pressable onPress={() => void toggleCamera()} disabled={!controlsEnabled || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled && call?.type === 'video' ? 1 : 0.5 }]}>
           <Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={22} color={colors.foreground} />
           <Text style={[styles.controlLabel, { color: colors.foreground }]}>{cameraEnabled ? 'Camera' : 'Camera off'}</Text>
         </Pressable>
-        <Pressable onPress={swapCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
+        <Pressable onPress={() => void swapCamera()} disabled={!controlsEnabled || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled && call?.type === 'video' ? 1 : 0.5 }]}>
           <Ionicons name="camera-reverse" size={22} color={colors.foreground} />
           <Text style={[styles.controlLabel, { color: colors.foreground }]}>Switch</Text>
         </Pressable>
-        <Pressable onPress={startScreenShare} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
-          <Ionicons name="desktop-outline" size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Share screen</Text>
-        </Pressable>
+        {screenShareAvailable ? (
+          <Pressable onPress={() => void startScreenShare()} disabled={!controlsEnabled} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled ? 1 : 0.5 }]}>
+            <Ionicons name={screenSharing ? 'stop-circle-outline' : 'desktop-outline'} size={22} color={colors.foreground} />
+            <Text style={[styles.controlLabel, { color: colors.foreground }]}>{screenSharing ? 'Stop sharing' : 'Share screen'}</Text>
+          </Pressable>
+        ) : (
+          <View style={[styles.screenShareNotice, { backgroundColor: colors.card }]}>
+            <Text style={[styles.controlLabel, { color: colors.mutedForeground }]}>{Platform.OS === 'ios' ? 'Screen sharing needs the iOS broadcast extension, which is not included in this app yet.' : 'Screen sharing is available during video calls.'}</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.bottomActions}>
@@ -323,6 +359,7 @@ const styles = StyleSheet.create({
   previewMeta: { fontSize: 12.5, marginTop: 2 },
   controlsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', marginBottom: 28 },
   controlButton: { width: '31%', minHeight: 92, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 8 },
+  screenShareNotice: { width: '31%', minHeight: 92, borderRadius: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   controlLabel: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
   bottomActions: { flexDirection: 'row', justifyContent: 'center', gap: 14 },
   answerButton: { minWidth: 132, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
