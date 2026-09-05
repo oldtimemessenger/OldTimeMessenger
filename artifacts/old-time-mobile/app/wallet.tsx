@@ -4,17 +4,10 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PrimaryButton, Screen } from '@/components/ui';
+import { currentEventGifts } from '@/constants/current-event-gifts';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useRevenueCat } from '@/lib/revenuecat';
-
-const giftCatalog = [
-  { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' as const, cost: 25 },
-  { key: 'idea', label: 'Idea', icon: 'bulb-outline' as const, cost: 100 },
-  { key: 'heart', label: 'Heart', icon: 'heart-outline' as const, cost: 200 },
-  { key: 'gem', label: 'Gem', icon: 'diamond-outline' as const, cost: 500 },
-  { key: 'studio', label: 'Studio', icon: 'radio-outline' as const, cost: 1000 },
-];
 
 const emptyWallet: CurrentEventWallet = { coins: 0, gold: 0, pendingGold: 0 };
 
@@ -38,6 +31,7 @@ export default function WalletScreen() {
   const revenueCat = useRevenueCat();
   const [feedback, setFeedback] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [purchasingIdentifier, setPurchasingIdentifier] = useState<string | null>(null);
   const loadFailureMessageRef = useRef<string | null>(null);
   const walletQuery = useGetCurrentEventWallet({
     query: {
@@ -90,6 +84,7 @@ export default function WalletScreen() {
       setFeedback('Sign in again to buy coin packs and refresh this wallet.');
       return;
     }
+    setPurchasingIdentifier(item.identifier);
     try {
       const credited = await revenueCat.purchase(item);
       const refreshed = await refreshWallet();
@@ -103,6 +98,8 @@ export default function WalletScreen() {
     } catch (error) {
       const details = revenueCatErrorDetails(error);
       if (!details.userCancelled) setFeedback(details.message ?? 'Purchase unavailable.');
+    } finally {
+      setPurchasingIdentifier(null);
     }
   }
 
@@ -195,7 +192,7 @@ export default function WalletScreen() {
               key={item.identifier}
               accessibilityRole="button"
               accessibilityLabel={`Buy ${item.product.title}`}
-              accessibilityState={{ disabled: revenueCat.purchasing || !session?.authToken }}
+              accessibilityState={{ disabled: revenueCat.purchasing || !session?.authToken, busy: purchasingIdentifier === item.identifier }}
               disabled={revenueCat.purchasing || !session?.authToken}
               onPress={() => void handlePurchase(item)}
               style={({ pressed }) => [
@@ -209,9 +206,15 @@ export default function WalletScreen() {
             >
               <View style={{ flex: 1 }}>
                 <Text style={[styles.packageTitle, { color: colors.foreground }]}>{item.product.title}</Text>
-                <Text style={[styles.packageSubtitle, { color: colors.mutedForeground }]}>{item.product.description || 'Access coins'}</Text>
+                <Text style={[styles.packageSubtitle, { color: colors.mutedForeground }]}>
+                  {purchasingIdentifier === item.identifier ? 'Processing purchase…' : item.product.description || 'Access coins'}
+                </Text>
               </View>
-              <Text style={[styles.packagePrice, { color: colors.primary }]}>{item.product.priceString}</Text>
+              {purchasingIdentifier === item.identifier ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <Text style={[styles.packagePrice, { color: colors.primary }]}>{item.product.priceString}</Text>
+              )}
             </Pressable>
           )) : (
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Coin packs are not available from this store yet.</Text>
@@ -220,8 +223,8 @@ export default function WalletScreen() {
 
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>HOW COINS WORK</Text>
         <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {giftCatalog.map((gift, index) => (
-            <View key={gift.key} style={[styles.giftRow, { borderBottomColor: index === giftCatalog.length - 1 ? 'transparent' : colors.border }]}>
+          {currentEventGifts.map((gift, index) => (
+            <View key={gift.key} style={[styles.giftRow, { borderBottomColor: index === currentEventGifts.length - 1 ? 'transparent' : colors.border }]}>
               <View style={[styles.giftIcon, { backgroundColor: colors.muted }]}>
                 <Ionicons name={gift.icon} size={18} color={colors.primary} />
               </View>
