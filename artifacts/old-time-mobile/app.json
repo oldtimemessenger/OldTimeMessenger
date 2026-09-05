@@ -65,7 +65,15 @@
       ],
       "expo-contacts",
        "expo-notifications",
-       "@livekit/react-native-expo-plugin",
+        [
+          "@livekit/react-native-expo-plugin",
+          {
+            "android": {
+              "audioType": "communication",
+              "enableScreenShareService": true
+            }
+          }
+        ],
        "@config-plugins/react-native-webrtc",
       "expo-video",
       [
