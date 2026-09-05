@@ -19,11 +19,14 @@ const giftCatalog = [
 const emptyWallet: CurrentEventWallet = { coins: 0, gold: 0, pendingGold: 0 };
 
 function revenueCatErrorDetails(error: unknown) {
-  if (error instanceof Error) return { message: error.message, userCancelled: false };
-  if (!error || typeof error !== 'object') return { message: null, userCancelled: false };
+  if (!error || typeof error !== 'object') {
+    return { message: error instanceof Error ? error.message : null, userCancelled: false };
+  }
   const candidate = error as { message?: unknown; userCancelled?: unknown };
   return {
-    message: typeof candidate.message === 'string' ? candidate.message : null,
+    message: typeof candidate.message === 'string'
+      ? candidate.message
+      : error instanceof Error ? error.message : null,
     userCancelled: candidate.userCancelled === true,
   };
 }
