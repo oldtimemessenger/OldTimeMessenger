@@ -148,6 +148,7 @@ export const messageHiddenTable = pgTable(
   (table) => ({
     primaryKey: primaryKey({ columns: [table.messageId, table.userId] }),
     userIndex: index("chat_message_hidden_user_idx").on(table.userId, table.hiddenAt),
+    userMessageIndex: index("chat_message_hidden_user_message_idx").on(table.userId, table.messageId),
   }),
 );
 

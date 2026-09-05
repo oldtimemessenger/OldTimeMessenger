@@ -977,7 +977,7 @@ export default function ChatDetailScreen() {
               ))}
             </ScrollView>
           ) : null}
-          {chatNotesError ? <Pressable onPress={() => void loadChatNotes()}><Text style={{ color: colors.destructive, fontSize: 12 }}>{chatNotesError} Retry</Text></Pressable> : null}
+          {chatNotesError ? <Pressable accessibilityRole="button" accessibilityLabel="Retry loading chat notes" onPress={() => void loadChatNotes()}><Text style={{ color: colors.destructive, fontSize: 12 }}>{chatNotesError} Retry</Text></Pressable> : null}
         </View>
       ) : null}
 
@@ -1259,7 +1259,8 @@ export default function ChatDetailScreen() {
       </View>
 
       <Modal transparent visible={attachmentMenu} animationType="fade" onRequestClose={() => setAttachmentMenu(false)}>
-        <Pressable style={styles.scrim} onPress={() => setAttachmentMenu(false)}>
+        <View style={styles.scrim}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setAttachmentMenu(false)} />
           <View style={[styles.attachmentSheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 14) }]}>
             <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Share in chat</Text>
             <View style={styles.attachmentActions}>
@@ -1269,7 +1270,7 @@ export default function ChatDetailScreen() {
               <AttachmentAction icon="location" label="Location" color="#F97316" onPress={() => void shareLocation()} />
             </View>
           </View>
-        </Pressable>
+        </View>
       </Modal>
 
       <Modal visible={Boolean(draftAssets.length)} transparent animationType="slide" onRequestClose={() => setDraftAssets([])}>
@@ -1323,7 +1324,7 @@ export default function ChatDetailScreen() {
       <Modal visible={mediaViewerIndex !== null} transparent animationType="fade" onRequestClose={() => setMediaViewerIndex(null)}>
         <View style={styles.viewerOverlay}>
           <View style={[styles.viewerHeader, { paddingTop: insets.top + 6 }]}><IconButton name="close" onPress={() => setMediaViewerIndex(null)} /><Text style={{ color: '#fff', fontWeight: '700' }}>{mediaViewerIndex !== null ? `${mediaViewerIndex + 1} / ${mediaItems.length}` : ''}</Text></View>
-          <ScrollView horizontal pagingEnabled contentOffset={{ x: Math.max(0, mediaViewerIndex ?? 0) * windowWidth, y: 0 }} showsHorizontalScrollIndicator={false}>
+          <ScrollView key={`viewer-${mediaViewerIndex ?? 'closed'}`} horizontal pagingEnabled contentOffset={{ x: Math.max(0, mediaViewerIndex ?? 0) * windowWidth, y: 0 }} showsHorizontalScrollIndicator={false}>
             {mediaItems.map((message) => {
               const source = message.attachment ? { uri: storageUrl(message.attachment.objectPath), headers: { Authorization: 'Bearer ' + session.authToken } } : null;
               return <View key={message.id} style={{ width: windowWidth, height: windowHeight * 0.78, justifyContent: 'center', alignItems: 'center' }}>{message.attachment?.type === 'video' && source ? <VideoSurface source={source} style={{ width: windowWidth, height: windowHeight * 0.7 }} controls loop={false} /> : source ? <Image source={source} style={{ width: windowWidth, height: windowHeight * 0.7 }} contentFit="contain" /> : null}<Text style={{ color: '#fff', marginTop: 12, paddingHorizontal: 18 }}>{message.content}</Text></View>;
