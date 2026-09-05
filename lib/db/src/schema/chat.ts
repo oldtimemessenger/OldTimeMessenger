@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -119,7 +120,7 @@ export const messagesTable = pgTable("chat_messages", {
   expiresAt: pgBigint("expires_at", { mode: "number" }),
   saved: boolean("saved").notNull().default(false),
 }, (table) => ({
-  clientIdIndex: uniqueIndex("chat_messages_client_id_idx").on(table.chatId, table.clientId),
+  clientIdIndex: uniqueIndex("chat_messages_client_id_idx").on(table.chatId, table.clientId).where(sql`${table.clientId} is not null`),
   deliveredIndex: index("chat_messages_chat_delivered_idx").on(table.chatId, table.deliveredAt),
 }));
 

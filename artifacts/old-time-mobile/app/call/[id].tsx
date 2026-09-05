@@ -172,8 +172,13 @@ export default function CallScreen() {
 
   async function toggleSpeaker() {
     const nextSpeaker = !speaker;
+    const applySpeakerRoute = audioService.setSpeaker;
+    if (!applySpeakerRoute) {
+      Alert.alert('Audio route unavailable', 'Speaker output could not be changed on this device.');
+      return;
+    }
     setSpeaker(nextSpeaker);
-    await audioService.setSpeaker?.(nextSpeaker).catch(() => {
+    await applySpeakerRoute(nextSpeaker).catch(() => {
       setSpeaker(!nextSpeaker);
       Alert.alert('Audio route unavailable', 'Speaker output could not be changed on this device.');
     });

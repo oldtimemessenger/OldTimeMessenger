@@ -1668,7 +1668,11 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
     }
     await db.update(messagesTable).set({
       replyPreview: serializeReplyPreview(updated, sender?.name ?? "Unknown"),
-    }).where(and(eq(messagesTable.replyToMessageId, message.id), eq(messagesTable.deletedForEveryone, false)));
+    }).where(and(
+      eq(messagesTable.chatId, message.chatId),
+      eq(messagesTable.replyToMessageId, message.id),
+      eq(messagesTable.deletedForEveryone, false),
+    ));
     const response = (await serializeMessages([updated], userId))[0];
     emitToChat(message.chatId, "message-updated", response);
     for (const participantId of participants) emitToUser(participantId, "inbox-updated", response);
@@ -1692,17 +1696,23 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
     const [updated] = await db.update(messagesTable).set({
       content: "",
       attachment: null,
+      replyToMessageId: null,
+      replyPreview: null,
       editedAt: null,
       deletedAt: now(),
       deletedForEveryone: true,
-      replyPreview: message.replyPreview,
     }).where(eq(messagesTable.id, message.id)).returning();
     if (!updated) {
       res.status(404).json({ error: "Message not found." });
       return;
     }
     await db.delete(messageReactionsTable).where(eq(messageReactionsTable.messageId, message.id));
-    const response = (await serializeMessages([updated], userId))[0];
+    const [latest] = await db.select().from(messagesTable).where(eq(messagesTable.id, message.id)).limit(1);
+    if (!latest) {
+      res.status(404).json({ error: "Message not found." });
+      return;
+    }
+    const response = (await serializeMessages([latest], userId))[0];
     emitToChat(message.chatId, "message-updated", response);
     for (const participantId of participants) emitToUser(participantId, "inbox-updated", response);
     res.json(response);
@@ -1731,16 +1741,20 @@ router.put("/messages/:messageId/reaction", async (req, res): Promise<void> => {
     res.status(403).json({ error: "This conversation is unavailable." });
     return;
   }
-  const existing = await db.select().from(messageReactionsTable)
-    .where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.userId, userId))).limit(1);
-  if (existing[0]?.emoji === emoji) {
-    await db.delete(messageReactionsTable).where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.userId, userId)));
-  } else if (existing[0]) {
-    await db.update(messageReactionsTable).set({ emoji, createdAt: now() })
-      .where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.userId, userId)));
-  } else {
-    await db.insert(messageReactionsTable).values({ messageId, userId, emoji, createdAt: now() });
-  }
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${messageId}, ${userId})`);
+    const existing = await tx.select().from(messageReactionsTable)
+      .where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.userId, userId))).limit(1);
+    if (existing[0]?.emoji === emoji) {
+      await tx.delete(messageReactionsTable).where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.userId, userId)));
+      return;
+    }
+    await tx.insert(messageReactionsTable).values({ messageId, userId, emoji, createdAt: now() })
+      .onConflictDoUpdate({
+        target: [messageReactionsTable.messageId, messageReactionsTable.userId],
+        set: { emoji, createdAt: now() },
+      });
+  });
   const [latest] = await db.select().from(messagesTable).where(eq(messagesTable.id, messageId)).limit(1);
   if (!latest) {
     res.status(404).json({ error: "Message not found." });
@@ -1762,6 +1776,11 @@ router.post("/messages/:messageId/play", async (req, res): Promise<void> => {
   const [message] = await db.select().from(messagesTable).where(eq(messagesTable.id, messageId)).limit(1);
   if (!message) {
     res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const participants = await getChatParticipants(message.chatId);
+  if (!participants.includes(userId) || await chatIsBlockedForUser(message.chatId, userId)) {
+    res.status(403).json({ error: "This conversation is unavailable." });
     return;
   }
   if (message.senderId === userId || message.attachment?.type !== "audio") {

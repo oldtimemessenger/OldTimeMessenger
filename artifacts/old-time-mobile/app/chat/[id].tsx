@@ -16,6 +16,7 @@ import {
   Linking,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -857,7 +858,10 @@ export default function ChatDetailScreen() {
   async function openLocation(message: UiMessage) {
     if (message.attachment?.type !== 'location') return;
     const { latitude, longitude } = message.attachment;
-    const url = `https://maps.apple.com/?ll=${latitude},${longitude}`;
+    const url = Platform.select({
+      ios: `https://maps.apple.com/?ll=${latitude},${longitude}`,
+      default: `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`,
+    }) ?? `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
     await Linking.openURL(url).catch(() => Alert.alert('Location unavailable', 'Maps could not be opened.'));
   }
 
@@ -899,6 +903,7 @@ export default function ChatDetailScreen() {
         senderId: session.id,
         clientId: `${session.id}-${targetId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         content: forwardMessage.content || (forwardMessage.attachment?.type === 'location' ? `Location: ${forwardMessage.attachment.label ?? 'Shared location'}` : 'Forwarded message'),
+        attachment: forwardMessage.attachment ?? undefined,
       })));
       setForwardMessage(null);
       setForwardTargets([]);

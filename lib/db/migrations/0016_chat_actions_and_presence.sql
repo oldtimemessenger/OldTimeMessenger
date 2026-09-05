@@ -12,7 +12,8 @@ ALTER TABLE "chat_messages"
   ADD COLUMN IF NOT EXISTS "deleted_for_everyone" boolean NOT NULL DEFAULT false;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "chat_messages_client_id_idx"
-  ON "chat_messages" ("chat_id", "client_id");
+  ON "chat_messages" ("chat_id", "client_id")
+  WHERE "client_id" IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS "chat_messages_chat_delivered_idx"
   ON "chat_messages" ("chat_id", "delivered_at");
@@ -37,6 +38,9 @@ CREATE TABLE IF NOT EXISTS "chat_message_hidden" (
 
 CREATE INDEX IF NOT EXISTS "chat_message_hidden_user_idx"
   ON "chat_message_hidden" ("user_id", "hidden_at");
+
+CREATE INDEX IF NOT EXISTS "chat_message_hidden_user_message_idx"
+  ON "chat_message_hidden" ("user_id", "message_id");
 
 ALTER TABLE "calls"
   ADD COLUMN IF NOT EXISTS "type" text NOT NULL DEFAULT 'voice';
