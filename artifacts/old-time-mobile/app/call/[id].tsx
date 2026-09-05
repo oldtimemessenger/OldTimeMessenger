@@ -237,7 +237,6 @@ export default function CallScreen() {
       Alert.alert('Screen sharing unavailable', nextError instanceof Error ? nextError.message : 'Screen sharing permission was not granted.');
     }
   }
-
   if (!session) {
     return <View style={[styles.center, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
   }
