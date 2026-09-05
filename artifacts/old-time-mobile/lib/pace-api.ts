@@ -89,7 +89,7 @@ export function startPaceActivity(token: string, activityId: number) {
 }
 
 export function appendPacePoints(token: string, activityId: number, points: PacePoint[], syncStatus?: PaceSyncStatus) {
-  return request<{ success: boolean; accepted: number; activity: PaceActivity }>(token, `/api/pace/activities/${activityId}/points`, {
+  return request<{ success: boolean; accepted: number; acceptedSequences: number[]; activity: PaceActivity }>(token, `/api/pace/activities/${activityId}/points`, {
     method: "POST",
     body: JSON.stringify({ points, syncStatus }),
   });
@@ -111,6 +111,7 @@ export function resumePaceActivity(token: string, activityId: number, syncStatus
 
 export function finishPaceActivity(token: string, activityId: number, input: {
   endedAt?: number;
+  elapsedTimeSec?: number;
   caption?: string;
   photos?: Array<{ objectPath: string; mimeType: string }>;
   visibility?: PaceVisibility;
@@ -185,6 +186,9 @@ export function getPaceProfile(token: string, userId?: number) {
   }>(token, userId ? `/api/pace/profile/${userId}` : "/api/pace/profile");
 }
 
-export function getPaceNearby(token: string) {
-  return request<{ items: Array<{ activityType: string; count: number }> }>(token, "/api/pace/nearby");
+export function getPaceNearby(token: string, latitude: number, longitude: number, radiusKm = 5) {
+  return request<{ items: Array<{ activityType: string; count: number }> }>(
+    token,
+    `/api/pace/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=${encodeURIComponent(radiusKm)}`,
+  );
 }

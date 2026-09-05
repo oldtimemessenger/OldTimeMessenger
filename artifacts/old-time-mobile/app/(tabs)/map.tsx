@@ -172,7 +172,7 @@ export default function MapScreen() {
       return;
     }
     let active = true;
-    void getPaceNearby(session.authToken)
+    void getPaceNearby(session.authToken, region.latitude, region.longitude, radiusForRegion(region))
       .then((result) => {
         if (active) setPaceNearby(result.items);
       })

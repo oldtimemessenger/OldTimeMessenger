@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
+import * as Crypto from "expo-crypto";
 import type { PaceActivityType, PacePoint, PaceVisibility } from "@/lib/pace-api";
 
 const ACTIVE_SESSION_KEY = "pace-active-session-v1";
@@ -36,7 +37,11 @@ export type PaceLiveMetrics = {
 };
 
 function randomId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  try {
+    return Crypto.randomUUID();
+  } catch {
+    return `pace-${Date.now()}`;
+  }
 }
 
 function toRadians(value: number): number {
@@ -168,10 +173,11 @@ export function updateSessionWithPoint(session: PaceTrackingSession, point: Omit
 
 export function consumeUploadBatch(session: PaceTrackingSession, acceptedSequences: number[]): PaceTrackingSession {
   const accepted = new Set(acceptedSequences);
+  const pendingPoints = session.pendingPoints.filter((point) => !accepted.has(point.sequence));
   return {
     ...session,
-    pendingPoints: session.pendingPoints.filter((point) => !accepted.has(point.sequence)),
-    syncStatus: session.pendingPoints.length === accepted.size ? "synced" : "pending",
+    pendingPoints,
+    syncStatus: pendingPoints.length === 0 ? "synced" : "pending",
   };
 }
 

@@ -58,6 +58,7 @@ const pointsBatchInput = z.object({
 
 const finishInput = z.object({
   endedAt: z.number().int().positive().optional(),
+  elapsedTimeSec: z.number().int().nonnegative().optional(),
   caption: z.string().trim().max(2_000).optional(),
   photos: z
     .array(
@@ -93,6 +94,11 @@ function parseLimit(value: unknown, fallback = 20, cap = 50): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return fallback;
   return Math.max(1, Math.min(cap, parsed));
+}
+
+function parseGeo(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function toRadians(value: number): number {
@@ -489,10 +495,11 @@ router.post("/pace/activities/:activityId/points", async (req, res): Promise<voi
     heading: point.heading,
     createdAt: now,
   }));
-  await db
+  const inserted = await db
     .insert(paceActivityPointsTable)
     .values(pointRows)
-    .onConflictDoNothing({ target: [paceActivityPointsTable.activityId, paceActivityPointsTable.sequence] });
+    .onConflictDoNothing({ target: [paceActivityPointsTable.activityId, paceActivityPointsTable.sequence] })
+    .returning({ sequence: paceActivityPointsTable.sequence });
   const [updated] = await db
     .update(paceActivitiesTable)
     .set({
@@ -503,7 +510,8 @@ router.post("/pace/activities/:activityId/points", async (req, res): Promise<voi
     .returning();
   res.json({
     success: true,
-    accepted: pointRows.length,
+    accepted: inserted.length,
+    acceptedSequences: inserted.map((row) => row.sequence),
     activity: await serializeActivity(userId, updated),
   });
 });
@@ -589,7 +597,7 @@ router.put("/pace/activities/:activityId/finish", async (req, res): Promise<void
     return;
   }
   const endedAt = parsed.data.endedAt ?? Date.now();
-  const elapsedTimeSec = Math.max(0, Math.round((endedAt - activity.startedAt) / 1000));
+  const elapsedTimeSec = parsed.data.elapsedTimeSec ?? Math.max(0, Math.round((endedAt - activity.startedAt) / 1000));
   const metrics = await computeMetrics(activityId, activity.activityType);
   const [updated] = await db
     .update(paceActivitiesTable)
@@ -1124,10 +1132,14 @@ router.get("/pace/challenges/:challengeId/leaderboard", async (req, res): Promis
 router.get("/pace/nearby", async (req, res): Promise<void> => {
   const userId = await requireChatAuth(req, res);
   if (userId === null) return;
-  const aggregates = await db
+  const latitude = parseGeo(req.query.latitude);
+  const longitude = parseGeo(req.query.longitude);
+  const radiusKm = Math.min(100, Math.max(0.2, parseGeo(req.query.radiusKm) ?? 5));
+  const center = latitude !== null && longitude !== null ? { latitude, longitude } : null;
+  const activities = await db
     .select({
+      id: paceActivitiesTable.id,
       activityType: paceActivitiesTable.activityType,
-      count: sql<number>`count(*)::int`,
     })
     .from(paceActivitiesTable)
     .where(
@@ -1136,9 +1148,30 @@ router.get("/pace/nearby", async (req, res): Promise<void> => {
         eq(paceActivitiesTable.visibility, "public"),
         eq(paceActivitiesTable.lifecycleStatus, "active"),
       ),
-    )
-    .groupBy(paceActivitiesTable.activityType);
-  res.json({ items: aggregates });
+    );
+  const counts = new Map<string, number>();
+  // eslint-disable-next-line no-restricted-syntax
+  for (const activity of activities) {
+    // eslint-disable-next-line no-await-in-loop
+    const [latest] = await db
+      .select({
+        latitude: paceActivityPointsTable.latitude,
+        longitude: paceActivityPointsTable.longitude,
+      })
+      .from(paceActivityPointsTable)
+      .where(eq(paceActivityPointsTable.activityId, activity.id))
+      .orderBy(desc(paceActivityPointsTable.sequence))
+      .limit(1);
+    if (!latest) continue;
+    if (center) {
+      const km = distanceMeters(center, { latitude: latest.latitude, longitude: latest.longitude }) / 1000;
+      if (km > radiusKm) continue;
+    }
+    counts.set(activity.activityType, (counts.get(activity.activityType) ?? 0) + 1);
+  }
+  res.json({
+    items: [...counts.entries()].map(([activityType, count]) => ({ activityType, count })),
+  });
 });
 
 export default router;

@@ -18,6 +18,7 @@ import * as Location from "expo-location";
 import {
   appendPacePoints,
   createPaceActivity,
+  discardPaceActivity,
   finishPaceActivity,
   getPaceHistory,
   getPaceHome,
@@ -169,8 +170,11 @@ export default function PaceSheet({
     let nextSession = sessionState;
     for (const batch of takePendingPointBatches(nextSession, 80)) {
       try {
-        await appendPacePoints(token, sessionState.activityId, batch, "uploading");
-        nextSession = consumeUploadBatch(nextSession, batch.map((point) => point.sequence));
+        const result = await appendPacePoints(token, sessionState.activityId, batch, "uploading");
+        nextSession = consumeUploadBatch(
+          nextSession,
+          result.acceptedSequences.length ? result.acceptedSequences : batch.map((point) => point.sequence),
+        );
         setOfflineWarning(null);
       } catch {
         setOfflineWarning("You’re offline. Your activity is being saved on this device.");
@@ -213,7 +217,7 @@ export default function PaceSheet({
     void loadActiveTrackingSession().then((saved) => {
       if (saved) {
         setSession(saved);
-        setScreen(saved.manualPaused || saved.autoPaused ? "pre" : "live");
+        setScreen("live");
       }
     });
   }, [visible, loadHome]);
@@ -276,7 +280,8 @@ export default function PaceSheet({
       watchRef.current = await startLocationWatch(
         (point) => {
           setSession((current) => {
-            if (!current || current.manualPaused || current.autoPaused) return current;
+            if (!current) return current;
+            if (current.manualPaused) return current;
             const speed = typeof point.speed === "number" ? point.speed : 0;
             const now = Date.now();
             if (speed > 0.75) {
@@ -344,6 +349,7 @@ export default function PaceSheet({
             try {
               const finished = await finishPaceActivity(token, session.activityId!, {
                 endedAt: Date.now(),
+                elapsedTimeSec: metrics.elapsedTimeSec,
                 caption: caption.trim() || undefined,
                 visibility,
               });
@@ -376,11 +382,20 @@ export default function PaceSheet({
         style: "destructive",
         onPress: () => {
           stopWatch();
-          void appendCompletedLocalActivity({ ...session, syncStatus: "failed", warning: "discarded_by_user" });
-          commitSession(null);
-          setCurrentActivity(null);
-          setCaption("");
-          setScreen("home");
+          void (async () => {
+            if (token && session.activityId) {
+              try {
+                await discardPaceActivity(token, session.activityId);
+              } catch {
+                // Keep local recovery copy if network is unavailable.
+              }
+            }
+            await appendCompletedLocalActivity({ ...session, syncStatus: "failed", warning: "discarded_by_user" });
+            commitSession(null);
+            setCurrentActivity(null);
+            setCaption("");
+            setScreen("home");
+          })();
         },
       },
     ]);
