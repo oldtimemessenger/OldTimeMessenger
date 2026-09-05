@@ -1,4 +1,5 @@
 name: codeql-scoped-analysis
+# Exclude non-production prototype/asset directories to keep analysis within runtime limits.
 paths-ignore:
   - artifacts/mockup-sandbox
   - artifacts/old-time-chat
