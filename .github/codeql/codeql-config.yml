@@ -1,10 +1,7 @@
 name: codeql-scoped-analysis
-paths:
-  - artifacts/api-server
-  - artifacts/old-time-mobile
-  - lib
-  - scripts
 paths-ignore:
+  - artifacts/mockup-sandbox
+  - artifacts/old-time-chat
   - attached_assets
   - screenshots
   - docs
