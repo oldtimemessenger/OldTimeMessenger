@@ -2932,4 +2932,3 @@ components:
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/CreatorWithdrawal" } }
       required: [items]
-
