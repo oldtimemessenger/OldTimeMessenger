@@ -20,6 +20,7 @@ import { INTEREST_OPTIONS, INTEREST_ROOTS, rankForYou, type InterestNode } from 
 import { useColors } from '@/hooks/useColors';
 import { apiBaseUrl } from '@/lib/api-base-url';
 import { discoveryEmbedUrl, getDiscoveryFeed, type DiscoveryItem } from '@/lib/map-api';
+import { getAtmosphereFeed, trackAtmosphereInteraction, type AtmosphereFeed, type AtmosphereItem } from '@/lib/atmosphere-api';
 import { VideoSurface } from '@/components/video-surface';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
@@ -222,6 +223,8 @@ export default function UpdatesScreen() {
   } | null>(null);
   const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
   const [discoveryItems, setDiscoveryItems] = useState<DiscoveryItem[]>([]);
+  const [atmosphereFeed, setAtmosphereFeed] = useState<AtmosphereFeed | null>(null);
+  const [dismissedAtmosphereIds, setDismissedAtmosphereIds] = useState<string[]>([]);
   const [socialStories, setSocialStories] = useState<Story[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [socialLoading, setSocialLoading] = useState(true);
@@ -255,6 +258,7 @@ export default function UpdatesScreen() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const promptedContent = useRef(new Set<string>());
+  const atmosphereSessionId = useRef(`atmosphere-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
 
   const showFeedback = useCallback((message: string) => {
     setFeedback(message);
@@ -293,19 +297,30 @@ export default function UpdatesScreen() {
       if (mode === 'community') {
         setDiscoveryItems([]);
       } else {
-        const [noteResult, discoveryResult] = await Promise.allSettled([
+        const [noteResult, discoveryResult, atmosphereResult] = await Promise.allSettled([
           getNotes(session.authToken),
           mode === 'for-you'
             ? getDiscoveryFeed(session.authToken)
             : Promise.resolve({ items: [] as DiscoveryItem[] }),
+          mode === 'for-you'
+            ? (async () => {
+              const lastLocation = await Location.getLastKnownPositionAsync().catch(() => null);
+              return getAtmosphereFeed(session.authToken!, {
+                limit: 8,
+                interests,
+                latitude: lastLocation?.coords.latitude,
+                longitude: lastLocation?.coords.longitude,
+                sessionId: atmosphereSessionId.current,
+                language: settings.language,
+              });
+            })()
+            : Promise.resolve(null),
         ]);
         if (noteResult.status === 'fulfilled') setNotes(noteResult.value.items);
         if (discoveryResult.status === 'fulfilled') setDiscoveryItems(discoveryResult.value.items);
-        const optionalFailure = noteResult.status === 'rejected'
-          ? noteResult.reason
-          : discoveryResult.status === 'rejected'
-            ? discoveryResult.reason
-            : null;
+        if (atmosphereResult.status === 'fulfilled') setAtmosphereFeed(atmosphereResult.value);
+        // Discovery surfaces are supplementary: a failure never turns a healthy social feed into an error.
+        const optionalFailure = noteResult.status === 'rejected' ? noteResult.reason : null;
         if (optionalFailure) {
           setSocialError(optionalFailure instanceof Error
             ? optionalFailure.message
@@ -317,7 +332,7 @@ export default function UpdatesScreen() {
     } finally {
       setSocialLoading(false);
     }
-  }, [communityFilter, interests, session?.authToken, session?.id]);
+  }, [communityFilter, interests, session?.authToken, session?.id, settings.language]);
 
   const loadMoreCommunity = useCallback(async () => {
     if (!session?.authToken || !communityCursor || communityLoadingMore) return;
@@ -496,6 +511,14 @@ export default function UpdatesScreen() {
     () => blendCreatorDiscovery(creatorPosts, discoveryItems),
     [creatorPosts, discoveryItems],
   );
+  const currentMediaPosts = useMemo(
+    () => socialPosts.filter((post) => post.media.some((media) => media.type === 'image' || media.type === 'video')),
+    [socialPosts],
+  );
+  const currentFeedItems = useMemo(
+    () => blendAtmosphere(currentMediaPosts, tab === 'for-you' && atmosphereFeed?.enabled ? atmosphereFeed.items.filter((item) => !dismissedAtmosphereIds.includes(item.id)) : [], atmosphereFeed?.mix),
+    [atmosphereFeed, currentMediaPosts, dismissedAtmosphereIds, tab],
+  );
 
   async function openDiscoveryItem(item: DiscoveryItem) {
     await WebBrowser.openBrowserAsync(discoveryEmbedUrl(item.id), {
@@ -561,9 +584,9 @@ export default function UpdatesScreen() {
     }
   }, [hubFeedTab, session?.authToken]);
 
-  function openCommunity() {
+  function openCommunity(query = '') {
     setShowCommunity(true);
-    setHubQuery('');
+    setHubQuery(query);
     setActiveHub(null);
     setHubFeed([]);
     setHubFeedCursor(null);
@@ -699,8 +722,8 @@ export default function UpdatesScreen() {
             }>
              <FlatList
                 testID="updates-feed"
-                data={socialPosts.filter((post) => post.media.some((media) => media.type === 'image' || media.type === 'video'))}
-                keyExtractor={(item) => String(item.id)}
+                data={currentFeedItems}
+                keyExtractor={(item) => 'atmosphere' in item ? `atmosphere-${item.item.id}` : String(item.id)}
                 contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 100 }}
                showsVerticalScrollIndicator={false}
                ListHeaderComponent={<>
@@ -741,7 +764,18 @@ export default function UpdatesScreen() {
                    <AdMobBanner />
                  </View>
                </>}
-               renderItem={({ item, index }) => (
+                renderItem={({ item, index }) => 'atmosphere' in item ? (
+                  <AtmosphereCard
+                    item={item.item}
+                    colors={colors}
+                    token={session?.authToken ?? ''}
+                    sessionId={atmosphereSessionId.current}
+                    onDismiss={() => setDismissedAtmosphereIds((ids) => ids.includes(item.item.id) ? ids : [...ids, item.item.id])}
+                    onMap={() => router.navigate('/(tabs)/map')}
+                    onPace={() => router.navigate('/(tabs)/pace')}
+                    onHub={(query) => openCommunity(query)}
+                  />
+                ) : (
                   <SocialPostCard
                     post={item}
                     colors={colors}
@@ -756,7 +790,7 @@ export default function UpdatesScreen() {
                       if (media?.type === 'video') setSocialVideoOpen({ uri: socialMediaUrl(media.objectPath), title: post.author.name });
                     }}
                   />
-               )}
+                 )}
                 ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
                 ListEmptyComponent={
                   socialLoading ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 42 }} /> :
@@ -1309,6 +1343,117 @@ const FOR_YOU_STARTERS: StarterCard[] = [
 ];
 
 type CreatorGridItem = SocialPost | DiscoveryItem | StarterCard;
+
+type CurrentFeedItem = SocialPost | { atmosphere: true; item: AtmosphereItem };
+
+function blendAtmosphere(
+  realPosts: SocialPost[],
+  atmosphereItems: AtmosphereItem[],
+  mix?: AtmosphereFeed['mix'],
+): CurrentFeedItem[] {
+  if (!atmosphereItems.length) return realPosts;
+  const discoveries = atmosphereItems.slice(0, Math.max(0, mix?.discoveryCount ?? atmosphereItems.length));
+  if (!realPosts.length) return discoveries.map((item) => ({ atmosphere: true, item }));
+  if (!discoveries.length) return realPosts;
+
+  const blended: CurrentFeedItem[] = [];
+  const interval = Math.max(1, Math.ceil(realPosts.length / discoveries.length));
+  let discoveryIndex = 0;
+  realPosts.forEach((post, index) => {
+    blended.push(post);
+    if ((index + 1) % interval === 0 && discoveryIndex < discoveries.length) {
+      blended.push({ atmosphere: true, item: discoveries[discoveryIndex++] });
+    }
+  });
+  while (discoveryIndex < discoveries.length) blended.push({ atmosphere: true, item: discoveries[discoveryIndex++] });
+  return blended;
+}
+
+function atmosphereLabel(item: AtmosphereItem) {
+  if (item.kind === 'route') return 'Route Discovery';
+  if (item.kind === 'world') return 'World Discovery';
+  if (item.kind === 'hub') return 'Hub Discovery';
+  if (item.kind === 'pace') return 'Pace Idea';
+  return item.kind === 'map' ? 'Route Pulse' : item.label || 'Discovery';
+}
+
+function AtmosphereCard({
+  item,
+  colors,
+  token,
+  sessionId,
+  onDismiss,
+  onMap,
+  onPace,
+  onHub,
+}: {
+  item: AtmosphereItem;
+  colors: any;
+  token: string;
+  sessionId: string;
+  onDismiss: () => void;
+  onMap: () => void;
+  onPace: () => void;
+  onHub: (query: string) => void;
+}) {
+  const track = useCallback((interaction: 'impression' | 'open' | 'dismiss') => {
+    if (!token) return;
+    void trackAtmosphereInteraction(token, {
+      itemId: item.id,
+      itemKind: item.kind,
+      interaction,
+      sessionId,
+    }).catch(() => undefined);
+  }, [item.id, item.kind, sessionId, token]);
+
+  useEffect(() => {
+    track('impression');
+  }, [track]);
+
+  const dismiss = () => {
+    track('dismiss');
+    onDismiss();
+  };
+  const handleCta = () => {
+    if (!item.cta || item.cta.action === 'none') return;
+    track('open');
+    if (item.cta.action === 'map') onMap();
+    if (item.cta.action === 'pace') onPace();
+    if (item.cta.action === 'hub') onHub(item.cta.value ?? '');
+    if (item.cta.action === 'external' && item.cta.value) {
+      try {
+        const url = new URL(item.cta.value);
+        if (url.protocol === 'https:') void Linking.openURL(url.toString());
+      } catch {
+        // Untrusted links are intentionally ignored.
+      }
+    }
+  };
+  const hasCta = Boolean(item.cta && item.cta.action !== 'none');
+
+  return (
+    <View style={[styles.atmosphereCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.atmosphereTopRow}>
+        <View style={[styles.atmosphereBadge, { backgroundColor: colors.muted }]}>
+          <Ionicons name={item.kind === 'hub' ? 'people-outline' : item.kind === 'pace' ? 'walk-outline' : 'compass-outline'} size={14} color={colors.primary} />
+          <Text style={[styles.atmosphereEyebrow, { color: colors.foreground }]}>{atmosphereLabel(item)}</Text>
+        </View>
+        <Pressable onPress={dismiss} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Dismiss ${atmosphereLabel(item)}`}>
+          <Ionicons name="close" size={19} color={colors.mutedForeground} />
+        </Pressable>
+      </View>
+      <Text style={[styles.atmosphereTitle, { color: colors.foreground }]}>{item.title}</Text>
+      <Text style={[styles.atmosphereDescription, { color: colors.mutedForeground }]}>{item.description}</Text>
+      {item.locationLabel ? <Text style={[styles.atmosphereLocation, { color: colors.mutedForeground }]}><Ionicons name="location-outline" size={13} /> {item.locationLabel}</Text> : null}
+      {hasCta ? (
+        <Pressable onPress={handleCta} accessibilityRole="button" accessibilityLabel={item.cta?.label ?? 'Open discovery'} style={[styles.atmosphereCta, { backgroundColor: colors.primary }]}>
+          <Text style={{ color: colors.primaryForeground, fontWeight: '800', fontSize: 13 }}>{item.cta?.label}</Text>
+          <Ionicons name="arrow-forward" size={15} color={colors.primaryForeground} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
 
 function blendCreatorDiscovery(nativePosts: SocialPost[], externalItems: DiscoveryItem[]): CreatorGridItem[] {
   if (!externalItems.length) return nativePosts.length ? nativePosts : FOR_YOU_STARTERS;
@@ -4043,6 +4188,39 @@ function InterestPanel({ interests, onToggle, languages, onToggleLanguage, onBac
 }
 
 const styles = StyleSheet.create({
+  atmosphereCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 18,
+    padding: 16,
+    gap: 9,
+  },
+  atmosphereTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  atmosphereBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  atmosphereEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 0.35 },
+  atmosphereTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800' },
+  atmosphereDescription: { fontSize: 14, lineHeight: 20 },
+  atmosphereLocation: { fontSize: 12, fontWeight: '600' },
+  atmosphereCta: {
+    minHeight: 38,
+    borderRadius: 11,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    justifyContent: 'center',
+  },
   mediaFeedHeader: {
     position: 'absolute',
     left: 0,
