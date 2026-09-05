@@ -167,7 +167,7 @@ export default function PaceSheet({
     }
   }, []);
 
-  const flushPending = useCallback(async (sessionState: PaceTrackingSession) => {
+  const flushPending = useCallback(async (sessionState: PaceTrackingSession): Promise<PaceTrackingSession> => {
     if (!token || !sessionState.activityId || sessionState.pendingPoints.length === 0) return sessionState;
     let nextSession = sessionState;
     for (const batch of takePendingPointBatches(nextSession, 80)) {
@@ -180,7 +180,7 @@ export default function PaceSheet({
         setOfflineWarning(null);
       } catch {
         setOfflineWarning("You’re offline. Your activity is being saved on this device.");
-        return { ...nextSession, syncStatus: "failed" };
+        return { ...nextSession, syncStatus: "failed" as const };
       }
     }
     return nextSession;
@@ -375,12 +375,12 @@ export default function PaceSheet({
     if (session.manualPaused || session.autoPaused) {
       const resumed = resumeSession(session);
       commitSession(resumed);
-      await resumePaceActivity(token, resumed.activityId, resumed.syncStatus).catch(() => undefined);
+      await resumePaceActivity(token, resumed.activityId!, resumed.syncStatus).catch(() => undefined);
       return;
     }
     const paused = pauseSession(session, false);
     commitSession(paused);
-    await pausePaceActivity(token, paused.activityId, paused.syncStatus).catch(() => undefined);
+    await pausePaceActivity(token, paused.activityId!, paused.syncStatus).catch(() => undefined);
   }
 
   async function finishTracking() {
