@@ -1,7 +1,8 @@
 import { AndroidAudioTypePresets, AudioSession, LiveKitRoom, useLocalParticipant, useTracks, VideoTrack } from '@livekit/react-native';
+import { ScreenCapturePickerView } from '@livekit/react-native-webrtc';
 import { Track } from 'livekit-client';
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { findNodeHandle, NativeModules, Platform, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import type { CallVideoSurfaceHandle, CallVideoSurfaceProps } from './call-video-surface';
 
@@ -12,6 +13,7 @@ type VideoStageProps = Omit<CallVideoSurfaceProps, 'serverUrl' | 'token' | 'onCo
 const VideoStage = forwardRef<CallVideoSurfaceHandle, VideoStageProps>(function VideoStage({ muted, cameraEnabled, onError }, ref) {
   const colors = useColors();
   const { localParticipant } = useLocalParticipant();
+  const screenCapturePicker = useRef<React.ElementRef<typeof ScreenCapturePickerView>>(null);
   const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
   const screenShareTracks = useTracks([Track.Source.ScreenShare], { onlySubscribed: false });
   const remoteScreenShare = screenShareTracks.find((track) => !track.participant.isLocal);
@@ -42,6 +44,13 @@ const VideoStage = forwardRef<CallVideoSurfaceHandle, VideoStageProps>(function 
       });
     },
     async setScreenShareEnabled(enabled) {
+      if (enabled && Platform.OS === 'ios') {
+        const reactTag = findNodeHandle(screenCapturePicker.current);
+        if (reactTag == null) throw new Error('The iPhone screen sharing picker is not ready.');
+        const pickerManager = NativeModules.ScreenCapturePickerViewManager as { show?: (tag: number) => Promise<void> };
+        if (!pickerManager?.show) throw new Error('The iPhone screen sharing extension is unavailable in this build.');
+        await pickerManager.show(reactTag);
+      }
       await localParticipant.setScreenShareEnabled(enabled);
     },
   }), [localParticipant]);
@@ -60,6 +69,11 @@ const VideoStage = forwardRef<CallVideoSurfaceHandle, VideoStageProps>(function 
 
   return (
     <View style={styles.stage}>
+      {Platform.OS === 'ios' ? (
+        <View style={styles.screenCapturePicker}>
+          <ScreenCapturePickerView ref={screenCapturePicker} />
+        </View>
+      ) : null}
       {remoteScreenShare || localScreenShare || remoteCamera ? (
         <VideoTrack trackRef={remoteScreenShare ?? localScreenShare ?? remoteCamera!} style={{ ...StyleSheet.absoluteFillObject }} objectFit="cover" />
       ) : (
@@ -126,4 +140,5 @@ const styles = StyleSheet.create({
   waitingTitle: { fontSize: 18, fontWeight: '800' },
   waitingText: { fontSize: 13, lineHeight: 18, textAlign: 'center', marginTop: 6 },
   localPreview: { position: 'absolute', top: 14, right: 14, width: 104, height: 148, overflow: 'hidden', borderRadius: 16, borderWidth: 2, borderColor: '#fff' },
+  screenCapturePicker: { position: 'absolute', width: 1, height: 1, opacity: 0 },
 });
