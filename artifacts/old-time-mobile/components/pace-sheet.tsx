@@ -395,6 +395,8 @@ export default function PaceSheet({
             setBusy(true);
             stopWatch();
             const resumed = resumeSession(session);
+            commitSession(resumed);
+            await saveActiveTrackingSession(resumed);
             const flushed = await flushPending(resumed);
             const finishedLocal = { ...flushed, manualPaused: false, autoPaused: false };
             const finishMetrics = deriveLiveMetrics(finishedLocal);

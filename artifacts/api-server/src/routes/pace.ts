@@ -727,7 +727,15 @@ router.get("/pace/history", async (req, res): Promise<void> => {
   const userId = await requireChatAuth(req, res);
   if (userId === null) return;
   const limit = parseLimit(req.query.limit, 30, 100);
-  const activityType = typeof req.query.activityType === "string" ? req.query.activityType : null;
+  let activityType: string | null = null;
+  if (typeof req.query.activityType === "string") {
+    const parsedType = activityTypes.safeParse(req.query.activityType);
+    if (!parsedType.success) {
+      res.status(400).json({ error: "Invalid activity type." });
+      return;
+    }
+    activityType = parsedType.data;
+  }
   const query = db
     .select()
     .from(paceActivitiesTable)
@@ -832,6 +840,11 @@ router.delete("/pace/activities/:activityId/like", async (req, res): Promise<voi
   const activityId = parseId(req.params.activityId);
   if (!activityId) {
     res.status(400).json({ error: "Invalid activity id." });
+    return;
+  }
+  const [activity] = await db.select().from(paceActivitiesTable).where(eq(paceActivitiesTable.id, activityId)).limit(1);
+  if (!activity || !(await canViewActivity(userId, activity))) {
+    res.status(404).json({ error: "Activity not found." });
     return;
   }
   await db
