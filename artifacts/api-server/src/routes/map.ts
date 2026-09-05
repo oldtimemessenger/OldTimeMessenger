@@ -92,7 +92,7 @@ router.get("/map/pins/nearby", async (req, res): Promise<void> => {
   const query = z.object({ latitude: z.coerce.number().finite().min(-90).max(90), longitude: z.coerce.number().finite().min(-180).max(180), radiusKm: z.coerce.number().finite().min(0.1).max(50).default(25) }).safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: "Valid latitude, longitude, and a radius no greater than 50 km are required." }); return; }
   const [following, blocked, candidates] = await Promise.all([followingIds(viewerId), blockedIds(viewerId), db.select().from(mapPinsTable).where(and(eq(mapPinsTable.deleted, false), or(isNull(mapPinsTable.expiresAt), gt(mapPinsTable.expiresAt, Date.now())))).limit(1_000)]);
-  const visible = [];
+  const visible: Array<typeof mapPinsTable.$inferSelect> = [];
   for (const pin of candidates) if (haversine(query.data.latitude, query.data.longitude, pin.latitude, pin.longitude) <= query.data.radiusKm && await canSee(viewerId, pin, following, blocked)) visible.push(pin);
   const items = await serialize(visible, viewerId, query.data);
   items.sort((left, right) => left.distanceKm - right.distanceKm);

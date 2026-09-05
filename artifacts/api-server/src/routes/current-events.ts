@@ -188,7 +188,7 @@ router.get("/current-events/rooms", async (req, res): Promise<void> => {
     .limit(100);
   const latitude = parsed.data.latitude;
   const longitude = parsed.data.longitude;
-  const items = [];
+  const items: Array<Awaited<ReturnType<typeof serializeRoom>>> = [];
   for (const room of rooms) {
     if (latitude !== undefined && longitude !== undefined && room.latitude !== null && room.longitude !== null
       && distanceKm({ latitude, longitude }, { latitude: room.latitude, longitude: room.longitude }) > parsed.data.radiusKm) continue;

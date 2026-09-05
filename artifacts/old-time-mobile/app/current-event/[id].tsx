@@ -190,13 +190,12 @@ export default function CurrentEventRoomScreen() {
   const activeRecipientId = giftRecipientId ?? speakers.find((participant) => participant.user.id !== room?.viewer.participantId)?.user.id ?? speakers[0]?.user.id ?? null;
 
   useEffect(() => {
-    const limitWindowReached = room ? Date.now() - room.createdAt >= 15 * 60 * 1000 : false;
-    if (room?.viewer.role === 'host' && !session?.phoneVerified && !verifyPromptDismissed && limitWindowReached) {
+    if (room?.viewer.role === 'host' && !session?.phoneVerified && !verifyPromptDismissed) {
       setVerifyPromptOpen(true);
     } else {
       setVerifyPromptOpen(false);
     }
-  }, [room, session?.phoneVerified, verifyPromptDismissed]);
+  }, [room?.viewer.role, session?.phoneVerified, verifyPromptDismissed]);
 
   async function leaveRoom() {
     if (room?.isLive && room.viewer.participantId !== null) await leaveCurrentEventRoom(room.id).catch(() => undefined);
@@ -390,7 +389,10 @@ export default function CurrentEventRoomScreen() {
           {room.viewer.role === 'listener' ? <Pressable accessibilityRole="button" accessibilityLabel={room.viewer.handRaised ? 'Lower your hand' : 'Raise your hand to speak'} onPress={() => void raiseHand()} style={[styles.actionButton, { backgroundColor: room.viewer.handRaised ? colors.primary : colors.card, borderColor: colors.border }]}>
             <Ionicons name="hand-left-outline" size={20} color={room.viewer.handRaised ? colors.primaryForeground : colors.foreground} />
             <Text style={[styles.actionText, { color: room.viewer.handRaised ? colors.primaryForeground : colors.foreground }]}>{room.viewer.handRaised ? 'hand up' : 'raise hand'}</Text>
-          </Pressable> : null}
+          </Pressable> : room.viewer.handRaised ? <View style={[styles.actionButton, { backgroundColor: colors.muted, borderColor: colors.border, opacity: 0.75 }]}>
+            <Ionicons name="hand-left-outline" size={20} color={colors.mutedForeground} />
+            <Text style={[styles.actionText, { color: colors.mutedForeground }]}>hand up</Text>
+          </View> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Send reaction in Access room" onPress={() => setReactionCount((count) => count + 1)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="heart-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>{reactionCount || 'react'}</Text>
@@ -417,7 +419,7 @@ export default function CurrentEventRoomScreen() {
       <Modal visible={peopleOpen} animationType="slide" transparent onRequestClose={() => setPeopleOpen(false)}>
         <KeyboardAvoidingView behavior="padding" style={styles.modalRoot}>
           <Pressable style={styles.modalShade} accessibilityRole="button" accessibilityLabel="Close people panel" onPress={() => setPeopleOpen(false)} />
-          <View accessibilityRole="dialog" accessibilityLabel="People panel" accessibilityViewIsModal style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
+          <View accessible accessibilityLabel="People panel" accessibilityViewIsModal style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
             <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>People</Text><Pressable accessibilityRole="button" accessibilityLabel="Close people panel" onPress={() => setPeopleOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>HOSTS & SPEAKERS</Text>
@@ -433,7 +435,7 @@ export default function CurrentEventRoomScreen() {
                 <View key={participant.id} style={styles.controlRow}>
                   <Avatar name={participant.user.name} size={30} color={colors.foreground} />
                   <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}{participant.handRaised ? ' · hand raised' : ''}</Text>
-                  {canModerate ? <Pressable onPress={() => void promoteFromPeople(participant)} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite to speak</Text></Pressable> : null}
+                  {canModerate && participant.handRaised ? <Pressable onPress={() => void promoteFromPeople(participant)} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite to speak</Text></Pressable> : null}
                 </View>
               ))}
             </ScrollView>
@@ -444,7 +446,7 @@ export default function CurrentEventRoomScreen() {
       <Modal visible={chatOpen} animationType="slide" transparent onRequestClose={() => setChatOpen(false)}>
         <KeyboardAvoidingView behavior="padding" style={styles.modalRoot}>
           <Pressable style={styles.modalShade} accessibilityRole="button" accessibilityLabel="Close chat panel" onPress={() => setChatOpen(false)} />
-          <View accessibilityRole="dialog" accessibilityLabel="Access chat panel" accessibilityViewIsModal style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
+          <View accessible accessibilityLabel="Access chat panel" accessibilityViewIsModal style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
             <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Access chat</Text><Pressable accessibilityRole="button" accessibilityLabel="Close chat panel" onPress={() => setChatOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
             <FlatList
               data={[...messages].reverse()}
@@ -507,11 +509,11 @@ export default function CurrentEventRoomScreen() {
       <Modal visible={verifyPromptOpen} transparent animationType="fade" onRequestClose={() => setVerifyPromptOpen(false)}>
         <View style={styles.verifyShade}>
           <View accessibilityRole="alert" accessibilityLabel="Verification prompt" style={[styles.verifyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.verifyTitle, { color: colors.foreground }]}>Stay live longer</Text>
+            <Text style={[styles.verifyTitle, { color: colors.foreground }]}>Get verified badge</Text>
             <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to unlock Access host perks.</Text>
             <View style={styles.verifyActions}>
               <Pressable accessibilityRole="button" accessibilityLabel="Dismiss verification prompt" onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); }}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="Open settings to get verified" onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open settings to get verified" onPress={() => { setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
             </View>
           </View>
         </View>

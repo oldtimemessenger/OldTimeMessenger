@@ -105,12 +105,23 @@ export default function CurrentEventsHome({
 
   const sections = useMemo(() => {
     const sorted = [...rooms].sort((left, right) => (right.counts.listeners + right.counts.speakers) - (left.counts.listeners + left.counts.speakers));
+    const assigned = new Set<number>();
+    const take = (predicate: (room: CurrentEventRoom) => boolean, limit: number) => {
+      const picked: CurrentEventRoom[] = [];
+      for (const room of sorted) {
+        if (assigned.has(room.id) || !predicate(room)) continue;
+        picked.push(room);
+        assigned.add(room.id);
+        if (picked.length >= limit) break;
+      }
+      return picked;
+    };
     return [
-      { key: 'live', title: 'LIVE NOW', items: sorted },
-      { key: 'friends', title: 'FRIENDS ARE TALKING', items: sorted.filter((room) => room.counts.speakers >= 2).slice(0, 4) },
-      { key: 'trending', title: 'TRENDING', items: sorted.slice(0, 6) },
-      { key: 'for-you', title: 'FOR YOU', items: sorted.filter((room) => room.topic === topic || topic === 'for-you').slice(0, 6) },
-      { key: 'my-access', title: 'MY ACCESS', items: sorted.filter((room) => room.hostId === currentUserId).slice(0, 4) },
+      { key: 'live', title: 'LIVE NOW', items: take(() => true, 8) },
+      { key: 'friends', title: 'FRIENDS ARE TALKING', items: take((room) => room.counts.speakers >= 2, 4) },
+      { key: 'trending', title: 'TRENDING', items: take(() => true, 6) },
+      { key: 'for-you', title: 'FOR YOU', items: take((room) => topic === 'for-you' || room.topic === topic, 6) },
+      { key: 'my-access', title: 'MY ACCESS', items: take((room) => room.hostId === currentUserId, 4) },
     ].filter((section) => section.items.length > 0);
   }, [currentUserId, rooms, topic]);
 
@@ -137,7 +148,12 @@ export default function CurrentEventsHome({
   const flatRooms = useMemo(() => {
     const rows: Array<{ type: 'section'; key: string; title: string } | { type: 'room'; key: string; room: CurrentEventRoom }> = [];
     for (const section of sections) {
-      const uniqueRooms = section.items.filter((room, index, items) => items.findIndex((entry) => entry.id === room.id) === index);
+      const seenInSection = new Set<number>();
+      const uniqueRooms = section.items.filter((room) => {
+        if (seenInSection.has(room.id)) return false;
+        seenInSection.add(room.id);
+        return true;
+      });
       if (!uniqueRooms.length) continue;
       rows.push({ type: 'section', key: `section-${section.key}`, title: section.title });
       for (const room of uniqueRooms) {

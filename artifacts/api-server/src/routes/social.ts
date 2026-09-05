@@ -1480,7 +1480,7 @@ router.get("/social/users/:userId/posts", async (req, res): Promise<void> => {
     .limit(parseLimit(req.query.limit));
   const following = await followingUserIds(viewerId);
   const blocked = await blockedUserIds(viewerId);
-  const visible = [];
+  const visible: SocialPost[] = [];
   for (const post of candidates) {
     if (await canSeePost(viewerId, post, following, blocked)) visible.push(post);
   }
@@ -1548,7 +1548,9 @@ async function serializeStories(stories: Story[], viewerId: number) {
     db.select({ storyId: socialStoryReactionsTable.storyId, count: sql<number>`count(*)` }).from(socialStoryReactionsTable).where(inArray(socialStoryReactionsTable.storyId, storyIds)).groupBy(socialStoryReactionsTable.storyId),
     db.select({ storyId: socialStoryViewersTable.storyId }).from(socialStoryViewersTable).where(and(eq(socialStoryViewersTable.viewerId, viewerId), inArray(socialStoryViewersTable.storyId, storyIds))),
     db.select({ storyId: socialStoryReactionsTable.storyId }).from(socialStoryReactionsTable).where(and(eq(socialStoryReactionsTable.userId, viewerId), inArray(socialStoryReactionsTable.storyId, storyIds))),
-    taggedIds.length ? db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(inArray(usersTable.id, taggedIds)) : Promise.resolve([]),
+    taggedIds.length
+      ? db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(usersTable).where(inArray(usersTable.id, taggedIds))
+      : Promise.resolve([] as Array<{ id: number; name: string; username: string; bio: string }>),
   ]);
   const authorById = new Map(authors.map((author) => [author.id, author]));
   const viewsById = new Map(views.map((row) => [row.storyId, Number(row.count)]));
@@ -1563,7 +1565,10 @@ async function serializeStories(stories: Story[], viewerId: number) {
       createdAt: story.createdAt, expiresAt: story.expiresAt,
       location: story.latitude !== null && story.longitude !== null ? { latitude: story.latitude, longitude: story.longitude } : null,
       author: author ? publicUser(author) : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}`, bio: "" },
-      taggedUsers: (story.taggedUserIds ?? []).map((id) => taggedById.get(id)).filter(Boolean).map((user) => publicUser(user!)),
+      taggedUsers: (story.taggedUserIds ?? [])
+        .map((id) => taggedById.get(id))
+        .filter((user): user is { id: number; name: string; username: string; bio: string } => Boolean(user))
+        .map((user) => publicUser(user)),
       viewer: { viewed: viewed.has(story.id), isOwner: story.authorId === viewerId, reacted: reacted.has(story.id) },
       counts: { views: viewsById.get(story.id) ?? 0, reactions: reactionsById.get(story.id) ?? 0 },
     };
