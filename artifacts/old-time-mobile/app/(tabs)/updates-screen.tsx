@@ -31,6 +31,7 @@ import { adManager } from '@/lib/ad-manager';
 import { createChat, createMessage, getDirectChat, listUsers, useRequestUploadUrl, type User } from '@workspace/api-client-react';
 import {
   createStory,
+  createHub,
   createNote,
   acceptMessageRequest,
   createMessageRequest,
@@ -40,6 +41,10 @@ import {
   getSocialNotifications,
   getMessageRequests,
   getSharingExclusions,
+  getHub,
+  getHubDiscovery,
+  getHubFeed,
+  getMyHubs,
   getStories,
   getNotes,
   updateNote,
@@ -52,11 +57,15 @@ import {
   reportSocialContent,
   markSocialNotificationRead,
   searchSocial,
+  searchHubs,
   setFollowing,
+  setPostHubs,
   setUserBlocked,
   setCommentLike,
   setPostRelation,
   setSharingExcluded,
+  joinHub,
+  leaveHub,
   socialMediaUrl,
   viewSocialPost,
    socialAvatarUrl,
@@ -71,6 +80,7 @@ import {
   type Note,
   type UserCard,
   type SocialConnection,
+  type SocialHub,
 } from '@/lib/social-api';
 
 const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
@@ -146,7 +156,7 @@ function MediaFeedFloatingHeader({
           <Pressable
             onPress={onOpenCommunity}
             accessibilityRole="button"
-            accessibilityLabel="Open Community"
+            accessibilityLabel="Open Hubs"
             style={styles.floatingIconButton}
           >
             <Ionicons name="albums" size={21} color="#fff" />
@@ -193,6 +203,20 @@ export default function UpdatesScreen() {
   const [viewMode, setViewMode] = useState<'media-feed' | 'landing' | 'feed' | 'creator-feed' | 'status'>('media-feed');
   const [showCommunity, setShowCommunity] = useState(false);
   const [communityFilter, setCommunityFilter] = useState<CommunityFilter>('friends');
+  const [hubQuery, setHubQuery] = useState('');
+  const [hubSearchResults, setHubSearchResults] = useState<SocialHub[]>([]);
+  const [hubDiscovery, setHubDiscovery] = useState<{ myHubs: SocialHub[]; suggestedHubs: SocialHub[]; trendingHubs: SocialHub[]; recentlyActiveHubs: SocialHub[]; categories: string[] } | null>(null);
+  const [hubDiscoveryLoading, setHubDiscoveryLoading] = useState(false);
+  const [hubDiscoveryError, setHubDiscoveryError] = useState<string | null>(null);
+  const [activeHub, setActiveHub] = useState<SocialHub | null>(null);
+  const [activeHubChildren, setActiveHubChildren] = useState<SocialHub[]>([]);
+  const [hubFeed, setHubFeed] = useState<SocialPost[]>([]);
+  const [hubFeedLoading, setHubFeedLoading] = useState(false);
+  const [hubFeedError, setHubFeedError] = useState<string | null>(null);
+  const [hubFeedCursor, setHubFeedCursor] = useState<number | null>(null);
+  const [hubFeedLoadingMore, setHubFeedLoadingMore] = useState(false);
+  const [hubFeedTab, setHubFeedTab] = useState<'for-you' | 'trending' | 'latest'>('for-you');
+  const [hubCreateOpen, setHubCreateOpen] = useState(false);
   const [tab, setTab] = useState<FeedTab>('for-you');
   const [feedIndex, setFeedIndex] = useState(0);
   const [storyGroupOpen, setStoryGroupOpen] = useState<StatusUserGroup | null>(null);
@@ -317,9 +341,41 @@ export default function UpdatesScreen() {
     }
   }, [communityCursor, communityFilter, communityLoadingMore, interests, session?.authToken]);
 
+  const loadMoreHubFeed = useCallback(async () => {
+    if (!session?.authToken || !activeHub?.id || !hubFeedCursor || hubFeedLoadingMore) return;
+    setHubFeedLoadingMore(true);
+    try {
+      const page = await getHubFeed(session.authToken, activeHub.id, hubFeedTab, hubFeedCursor);
+      setHubFeed((items) => {
+        const seen = new Set(items.map((item) => item.id));
+        return [...items, ...page.items.filter((item) => !seen.has(item.id))];
+      });
+      setHubFeedCursor(page.nextCursor);
+    } catch (error) {
+      setHubFeedError(error instanceof Error ? error.message : 'Could not load more hub posts.');
+    } finally {
+      setHubFeedLoadingMore(false);
+    }
+  }, [activeHub?.id, hubFeedCursor, hubFeedLoadingMore, hubFeedTab, session?.authToken]);
+
   useEffect(() => {
     void loadSocial();
   }, [loadSocial]);
+
+  useEffect(() => {
+    if (!showCommunity || !session?.authToken) return;
+    const query = hubQuery.trim();
+    if (query.length < 2) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void searchHubs(session.authToken!, query).then((result) => {
+        if (!cancelled) setHubSearchResults(result.items);
+      }).catch((error) => {
+        if (!cancelled) setHubDiscoveryError(error instanceof Error ? error.message : 'Hub search is unavailable.');
+      });
+    }, 240);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [hubQuery, session?.authToken, showCommunity]);
 
   useEffect(() => {
     const firstPost = socialPosts[0];
@@ -465,22 +521,96 @@ export default function UpdatesScreen() {
     else void loadSocial(nextTab);
   }
 
+  const loadHubDiscovery = useCallback(async (query = '') => {
+    if (!session?.authToken) return;
+    setHubDiscoveryLoading(true);
+    setHubDiscoveryError(null);
+    try {
+      const result = await getHubDiscovery(session.authToken, query.trim() || undefined);
+      setHubDiscovery({
+        myHubs: result.myHubs,
+        suggestedHubs: result.suggestedHubs,
+        trendingHubs: result.trendingHubs,
+        recentlyActiveHubs: result.recentlyActiveHubs,
+        categories: result.categories,
+      });
+      setHubSearchResults(result.searchResults ?? []);
+    } catch (error) {
+      setHubDiscoveryError(error instanceof Error ? error.message : 'Hubs are unavailable right now.');
+    } finally {
+      setHubDiscoveryLoading(false);
+    }
+  }, [session?.authToken]);
+
+  const loadHubDetails = useCallback(async (hubId: number, tabValue: 'for-you' | 'trending' | 'latest' = hubFeedTab) => {
+    if (!session?.authToken) return;
+    setHubFeedLoading(true);
+    setHubFeedError(null);
+    try {
+      const [hubResult, feedResult] = await Promise.all([
+        getHub(session.authToken, hubId),
+        getHubFeed(session.authToken, hubId, tabValue),
+      ]);
+      setActiveHub(hubResult.hub);
+      setActiveHubChildren(hubResult.children);
+      setHubFeed(feedResult.items);
+      setHubFeedCursor(feedResult.nextCursor);
+    } catch (error) {
+      setHubFeedError(error instanceof Error ? error.message : 'This Hub is unavailable right now.');
+    } finally {
+      setHubFeedLoading(false);
+    }
+  }, [hubFeedTab, session?.authToken]);
+
   function openCommunity() {
     setShowCommunity(true);
-    setCommunityCursor(null);
-    void loadSocial('community', communityFilter);
+    setHubQuery('');
+    setActiveHub(null);
+    setHubFeed([]);
+    setHubFeedCursor(null);
+    void loadHubDiscovery();
   }
 
   function closeCommunity() {
     setShowCommunity(false);
-    setCommunityCursor(null);
-    void loadSocial(tab === 'following' ? 'following' : 'for-you');
+    setActiveHub(null);
+    setHubQuery('');
+    setHubSearchResults([]);
   }
 
-  function changeCommunityFilter(filter: CommunityFilter) {
+  async function changeCommunityFilter(filter: CommunityFilter) {
     setCommunityFilter(filter);
-    setCommunityCursor(null);
-    void loadSocial('community', filter);
+    if (!session?.authToken) return;
+    const my = await getMyHubs(session.authToken).catch(() => null);
+    if (!my) return;
+    if (filter === 'friends') setHubSearchResults(my.items);
+    else if (filter === 'following') setHubSearchResults(my.items.filter((hub) => hub.postCount > 0));
+    else setHubSearchResults(my.items.filter((hub) => hub.category !== null));
+  }
+
+  function openHubFromChip(hub: { id: number; name: string; slug: string }) {
+    setShowCommunity(true);
+    setHubQuery('');
+    setActiveHub({
+      id: hub.id,
+      name: hub.name,
+      slug: hub.slug,
+      description: '',
+      icon: null,
+      coverImage: null,
+      category: null,
+      status: 'active',
+      privacy: 'public',
+      memberCount: 0,
+      postCount: 0,
+      createdBy: 0,
+      joined: false,
+      role: null,
+      parent: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    void loadHubDetails(hub.id, hubFeedTab);
   }
 
   function shareSocialPost(post: SocialPost) {
@@ -553,7 +683,7 @@ export default function UpdatesScreen() {
             <Screen title="Current Updates" left={
              <View style={styles.headerLeftActions}>
                <IconButton name="chevron-down" label="Back to Feed" onPress={() => setViewMode('media-feed')} />
-               <IconButton name="albums-outline" label="Open community" onPress={openCommunity} />
+               <IconButton name="albums-outline" label="Open Hubs" onPress={openCommunity} />
              </View>
            } right={
              <View style={styles.socialHeaderActions}>
@@ -612,6 +742,7 @@ export default function UpdatesScreen() {
                    onComment={setSocialCommentPost}
                    onShare={shareSocialPost}
                    onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
+                   onOpenHub={openHubFromChip}
                  />
                  <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 }}>
                    <AdMobBanner />
@@ -664,49 +795,79 @@ export default function UpdatesScreen() {
          </View>
        </Modal>
 
-       {/* Layer 2: Community Modal */}
+       {/* Layer 2: Hubs Modal */}
        <Modal visible={showCommunity} transparent animationType="slide" onRequestClose={closeCommunity}>
          <View style={{ flex: 1, backgroundColor: colors.background }}>
-           <Screen title="Community" left={
-             <View style={styles.headerLeftActions}>
-               <IconButton name="chevron-down" label="Back" onPress={closeCommunity} />
-             </View>
-           } right={
-             <View style={styles.socialHeaderActions}>
-               <IconButton
-                 name="add"
-                 label="Create community post"
-                 onPress={() => {
-                   setPostComposerSurface('community');
-                   setCompose('post');
+           <Screen title={activeHub ? activeHub.name : 'Hubs'} left={<View style={styles.headerLeftActions}><IconButton name="chevron-down" label="Back" onPress={closeCommunity} /></View>} right={<View style={styles.socialHeaderActions}><IconButton name="add" label={activeHub ? 'Create post in hub' : 'Create a Hub'} onPress={() => { if (activeHub) { setPostComposerSurface('community'); setCompose('post'); } else setHubCreateOpen(true); }} /></View>}>
+             {activeHub ? (
+               <HubFeed
+                 hub={activeHub}
+                 children={activeHubChildren}
+                 posts={hubFeed}
+                 loading={hubFeedLoading}
+                 error={hubFeedError}
+                 loadingMore={hubFeedLoadingMore}
+                 tab={hubFeedTab}
+                 colors={colors}
+                 token={session?.authToken ?? ''}
+                 onSelectTab={(nextTab) => {
+                   setHubFeedTab(nextTab);
+                   void loadHubDetails(activeHub.id, nextTab);
+                 }}
+                 onOpenChild={(hub) => void loadHubDetails(hub.id, hubFeedTab)}
+                 onOpenProfile={setProfileUserId}
+                 onComment={setSocialCommentPost}
+                 onShare={shareSocialPost}
+                 onChanged={(updated) => setHubFeed((items) => items.map((item) => item.id === updated.id ? updated : item))}
+                 onOpenHub={openHubFromChip}
+                 onRetry={() => void loadHubDetails(activeHub.id, hubFeedTab)}
+                 onLoadMore={() => void loadMoreHubFeed()}
+                 onJoinToggle={async () => {
+                   if (!session?.authToken) return;
+                   try {
+                     if (activeHub.joined) await leaveHub(session.authToken, activeHub.id);
+                     else await joinHub(session.authToken, activeHub.id);
+                     await Promise.all([loadHubDetails(activeHub.id, hubFeedTab), loadHubDiscovery(hubQuery)]);
+                   } catch (error) {
+                     setHubFeedError(error instanceof Error ? error.message : 'Membership could not be updated.');
+                   }
+                 }}
+                 onBackToDiscover={() => {
+                   setActiveHub(null);
+                   void loadHubDiscovery(hubQuery);
                  }}
                />
-             </View>
-           }>
-             <CommunityFeed
-               posts={socialPosts}
-               loading={socialLoading}
-               error={socialError}
-               colors={colors}
-               token={session?.authToken ?? ''}
-               filter={communityFilter}
-               interests={interests}
-               onFilterChange={changeCommunityFilter}
-               onClose={closeCommunity}
-               onRetry={() => void loadSocial('community', communityFilter)}
-               onEndReached={() => void loadMoreCommunity()}
-               loadingMore={communityLoadingMore}
-               onOpenProfile={setProfileUserId}
-               onComment={setSocialCommentPost}
-               onShare={shareSocialPost}
-               onCreatePost={() => {
-                 setPostComposerSurface('community');
-                 setCompose('post');
-               }}
-               onChanged={(post) => setSocialPosts((items) => items.map((item) => item.id === post.id ? post : item))}
-             />
+             ) : (
+               <HubDiscoveryPanel
+                 query={hubQuery}
+                 onQueryChange={setHubQuery}
+                 loading={hubDiscoveryLoading}
+                 error={hubDiscoveryError}
+                 filter={communityFilter}
+                 onFilterChange={(filter) => { void changeCommunityFilter(filter); }}
+                 data={hubDiscovery}
+                 searchResults={hubSearchResults}
+                 colors={colors}
+                 onRetry={() => void loadHubDiscovery(hubQuery)}
+                 onCreateHub={() => setHubCreateOpen(true)}
+                 onOpenHub={(hub) => void loadHubDetails(hub.id, hubFeedTab)}
+               />
+             )}
            </Screen>
          </View>
+       </Modal>
+
+       <Modal visible={hubCreateOpen} transparent animationType="slide" onRequestClose={() => setHubCreateOpen(false)}>
+         <CreateHubSheet
+           token={session?.authToken ?? ''}
+           colors={colors}
+           onClose={() => setHubCreateOpen(false)}
+           onCreated={(hub) => {
+             setActiveHub(hub);
+             setHubFeedTab('for-you');
+             void loadHubDetails(hub.id, 'for-you');
+           }}
+         />
        </Modal>
 
       <Modal visible={viewMode === 'feed'} transparent animationType="slide" onRequestClose={() => setViewMode('landing')}>
@@ -762,6 +923,7 @@ export default function UpdatesScreen() {
               initialMediaUri={capturedStatusMedia?.uri}
               initialMediaType={capturedStatusMedia?.type}
               initialMediaFit={capturedStatusMedia?.fit}
+               initialHubIds={activeHub ? [activeHub.id] : []}
                defaultAudience={settings.statusAudience}
              onClose={() => setCompose(null)}
              colors={colors}
@@ -802,8 +964,13 @@ export default function UpdatesScreen() {
                  visibility: data.audience,
                  allowReposts: Boolean(data.allowReposts),
                   });
-                  setSocialPosts((items) => [post, ...items]);
-                   if (postComposerSurface === 'community') setShowCommunity(true);
+                  const withHubs = data.hubIds?.length ? await setPostHubs(session.authToken, post.id, data.hubIds) : null;
+                  const published = withHubs?.post ?? post;
+                  setSocialPosts((items) => [published, ...items]);
+                   if (postComposerSurface === 'community') {
+                     setShowCommunity(true);
+                     if (activeHub) void loadHubDetails(activeHub.id, hubFeedTab);
+                   }
                 }
                 setCapturedStatusMedia(null);
              }}
@@ -917,6 +1084,7 @@ export default function UpdatesScreen() {
              onComment={setSocialCommentPost}
              onShare={shareSocialPost}
               onFeedback={showFeedback}
+             onOpenHub={openHubFromChip}
           />
         ) : null}
       </Modal>
@@ -1087,7 +1255,7 @@ const FOR_YOU_STARTERS: StarterCard[] = [
   { id: 'whats-happening', starterAction: 'map', eyebrow: 'NEAR YOU', title: 'See what’s happening', detail: 'Explore Stories, live rooms, and trending moments on the Map.', icon: 'map', colors: ['#172554', '#2563EB'] },
   { id: 'create-story', starterAction: 'story', eyebrow: 'YOUR MOMENT', title: 'Share your first Story', detail: 'Post a photo or video that disappears after 24 hours.', icon: 'camera', colors: ['#4C1D95', '#C026D3'] },
   { id: 'choose-interests', starterAction: 'interests', eyebrow: 'FOR YOU', title: 'Choose what you enjoy', detail: 'Pick topics so Old Time can personalize your feed.', icon: 'options', colors: ['#7C2D12', '#F97316'] },
-  { id: 'open-community', starterAction: 'community', eyebrow: 'COMMUNITY', title: 'Join the conversation', detail: 'Find posts from friends, people you follow, and shared interests.', icon: 'people', colors: ['#064E3B', '#10B981'] },
+  { id: 'open-community', starterAction: 'community', eyebrow: 'HUBS', title: 'Discover communities', detail: 'Find hubs by profession, interests, and location.', icon: 'people', colors: ['#064E3B', '#10B981'] },
 ];
 
 type CreatorGridItem = SocialPost | DiscoveryItem | StarterCard;
@@ -1672,7 +1840,7 @@ function StatusViewer({ initialGroup, allGroups, onClose, colors, onMarkViewed }
   );
 }
 
-function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, colors, initialMediaUri, initialMediaType, initialMediaFit, defaultAudience }: any) {
+function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, colors, initialMediaUri, initialMediaType, initialMediaFit, defaultAudience, initialHubIds = [] }: any) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [draft, setDraft] = useState('');
@@ -1689,6 +1857,10 @@ function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, 
    const [shareLocation, setShareLocation] = useState(false);
    const [allowReposts, setAllowReposts] = useState(false);
    const [taggedUsers, setTaggedUsers] = useState<SocialUser[]>([]);
+   const [hubPickerOpen, setHubPickerOpen] = useState(false);
+   const [hubSearch, setHubSearch] = useState('');
+   const [hubSearchResults, setHubSearchResults] = useState<SocialHub[]>([]);
+   const [selectedHubs, setSelectedHubs] = useState<SocialHub[]>([]);
    const [tagPickerOpen, setTagPickerOpen] = useState(false);
    const [tagQuery, setTagQuery] = useState('');
    const [tagResults, setTagResults] = useState<SocialUser[]>([]);
@@ -1699,6 +1871,15 @@ function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, 
    const gradient: [string, string, string] = type === 'status' && selectedColor === colors.brandBlue
      ? [colors.brandBlue, colors.brandBlue, colors.brandBlue]
      : [...storyGradients[Math.abs(selectedColor.charCodeAt(1) || 0) % storyGradients.length]];
+
+   useEffect(() => {
+     if (type !== 'post' || !token || !initialHubIds.length) return;
+     let cancelled = false;
+     void getMyHubs(token).then((result) => {
+      if (!cancelled) setSelectedHubs(result.items.filter((hub) => initialHubIds.includes(hub.id)));
+     }).catch(() => undefined);
+     return () => { cancelled = true; };
+   }, [initialHubIds, token, type]);
 
    useEffect(() => {
      if (!tagPickerOpen || !token || tagQuery.trim().length < 2) {
@@ -1716,6 +1897,20 @@ function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, 
      });
      return () => { cancelled = true; };
    }, [tagPickerOpen, tagQuery, taggedUsers, token]);
+
+   useEffect(() => {
+     if (!hubPickerOpen || !token || hubSearch.trim().length < 2) {
+       setHubSearchResults([]);
+       return;
+     }
+     let cancelled = false;
+     void searchHubs(token, hubSearch.trim()).then((result) => {
+       if (!cancelled) setHubSearchResults(result.items);
+     }).catch(() => {
+       if (!cancelled) setHubSearchResults([]);
+     });
+     return () => { cancelled = true; };
+   }, [hubPickerOpen, hubSearch, token]);
 
    useEffect(() => {
      storyTextOffsetRef.current = storyTextOffset;
@@ -1775,7 +1970,7 @@ function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, 
               taggedUserIds: taggedUsers.map((user) => user.id),
             });
        } else {
-           await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, fit: mediaFit, allowReposts });
+           await onPublish({ caption: draft.trim(), tag, color: selectedColor, type: mediaUri ? selectedMediaType : 'text', uri: mediaUri, audience, fit: mediaFit, allowReposts, hubIds: selectedHubs.map((hub) => hub.id) });
        }
        onClose();
      } catch (error) {
@@ -1880,6 +2075,34 @@ function ComposeModal({ type, token, mediaRequired = false, onClose, onPublish, 
              ))}
            </ScrollView>
          )}
+
+          {type === 'post' ? (
+            <View style={styles.tagPicker}>
+              <Pressable onPress={() => setHubPickerOpen((open) => !open)} style={styles.tagPickerButton} accessibilityRole="button" accessibilityLabel="Add post to hubs">
+                <Ionicons name="albums-outline" size={17} color="#fff" />
+                <Text style={styles.mapStoryLabel}>{selectedHubs.length ? `Added to ${selectedHubs.length} hubs` : 'Add to Hubs'}</Text>
+              </Pressable>
+              {selectedHubs.length ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagChips}>
+                  {selectedHubs.map((hub) => (
+                    <Pressable key={hub.id} onPress={() => setSelectedHubs((items) => items.filter((item) => item.id !== hub.id))} style={styles.tagChip} accessibilityRole="button" accessibilityLabel={`Remove ${hub.name}`}>
+                      <Text style={styles.tagChipText}>#{hub.name} ×</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+              {hubPickerOpen ? (
+                <View style={styles.tagResultsBox}>
+                  <TextInput value={hubSearch} onChangeText={setHubSearch} autoFocus placeholder="Search professions, interests, communities…" placeholderTextColor="rgba(255,255,255,0.68)" style={styles.tagSearchInput} accessibilityLabel="Search hubs" />
+                  {hubSearch.trim().length < 2 ? <Text style={styles.tagSearchHint}>Type at least two characters.</Text> : hubSearchResults.length === 0 ? <Text style={styles.tagSearchHint}>No Hubs found.</Text> : hubSearchResults.map((hub) => (
+                    <Pressable key={hub.id} onPress={() => { if (!selectedHubs.some((item) => item.id === hub.id)) setSelectedHubs((items) => [...items, hub]); setHubSearch(''); }} style={styles.tagResultRow} accessibilityRole="button" accessibilityLabel={`Add ${hub.name}`}>
+                      <View><Text style={styles.tagResultName}>{hub.name}</Text><Text style={styles.tagResultUsername}>{hub.category ?? 'Hub'}</Text></View>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           {type === 'status' ? (
             <Pressable onPress={() => setShareLocation((value) => !value)} style={styles.mapStoryToggle} accessibilityRole="switch" accessibilityState={{ checked: shareLocation }}>
@@ -2023,6 +2246,7 @@ function SocialHubPanel({
   onComment,
   onShare,
   onChanged,
+  onOpenHub,
 }: {
   posts: SocialPost[];
   stories: Story[];
@@ -2042,6 +2266,7 @@ function SocialHubPanel({
   onComment: (post: SocialPost) => void;
   onShare: (post: SocialPost) => void;
   onChanged: (post: SocialPost) => void;
+  onOpenHub: (hub: { id: number; name: string; slug: string }) => void;
 }) {
   const ownStory = stories.find((story) => story.viewer.isOwner);
   const otherStories = stories.filter((story) => !story.viewer.isOwner);
@@ -2087,6 +2312,257 @@ function SocialHubPanel({
   );
 }
 
+function HubDiscoveryPanel({
+  query,
+  onQueryChange,
+  loading,
+  error,
+  data,
+  searchResults,
+  filter,
+  onFilterChange,
+  colors,
+  onRetry,
+  onCreateHub,
+  onOpenHub,
+}: {
+  query: string;
+  onQueryChange: (value: string) => void;
+  loading: boolean;
+  error: string | null;
+  data: { myHubs: SocialHub[]; suggestedHubs: SocialHub[]; trendingHubs: SocialHub[]; recentlyActiveHubs: SocialHub[]; categories: string[] } | null;
+  searchResults: SocialHub[];
+  filter: CommunityFilter;
+  onFilterChange: (value: CommunityFilter) => void;
+  colors: any;
+  onRetry: () => void;
+  onCreateHub: () => void;
+  onOpenHub: (hub: SocialHub) => void;
+}) {
+  const isSearching = query.trim().length >= 2;
+  const sections: Array<{ title: string; items: SocialHub[] }> = isSearching
+    ? [{ title: 'Search results', items: searchResults }]
+    : [
+      { title: 'My Hubs', items: data?.myHubs ?? [] },
+      { title: 'Suggested Hubs', items: data?.suggestedHubs ?? [] },
+      { title: 'Trending Hubs', items: data?.trendingHubs ?? [] },
+      { title: 'Recently Active', items: data?.recentlyActiveHubs ?? [] },
+    ];
+  return (
+    <ScrollView contentContainerStyle={styles.hubDiscoveryContent} keyboardShouldPersistTaps="handled">
+      <View style={[styles.hubSearchBox, { backgroundColor: colors.secondary }]}>
+        <Ionicons name="search-outline" size={18} color={colors.mutedForeground} />
+        <TextInput value={query} onChangeText={onQueryChange} placeholder="Search professions, interests, communities…" placeholderTextColor={colors.mutedForeground} style={[styles.hubSearchInput, { color: colors.foreground }]} />
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.communityFilters}>
+        {([['friends', 'My Hubs'], ['following', 'Active'], ['interests', 'Categories']] as [CommunityFilter, string][]).map(([value, label]) => (
+          <Pressable key={value} onPress={() => onFilterChange(value)} style={[styles.communityFilter, { borderColor: filter === value ? colors.primary : colors.border, backgroundColor: filter === value ? colors.primary : colors.card }]}>
+            <Text style={{ color: filter === value ? '#fff' : colors.foreground, fontSize: 13, fontWeight: '700' }}>{label}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      {error ? (
+        <Pressable onPress={onRetry} style={[styles.communityState, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Text style={[styles.communityStateTitle, { color: colors.foreground }]}>Hubs are unavailable</Text>
+          <Text style={[styles.communityStateText, { color: colors.mutedForeground }]}>{error}</Text>
+          <Text style={[styles.communityRetry, { color: colors.primary }]}>Try again</Text>
+        </Pressable>
+      ) : null}
+      {!error && loading ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 24 }} /> : null}
+      {!error && !loading ? sections.map((section) => (
+        <View key={section.title} style={styles.hubSection}>
+          <Text style={[styles.socialSectionTitle, { color: colors.foreground }]}>{section.title}</Text>
+          {section.items.length === 0 ? <Text style={[styles.socialSectionHint, { color: colors.mutedForeground }]}>{section.title === 'Search results' ? 'No Hubs found.' : 'Nothing here yet.'}</Text> : null}
+          {section.items.map((hub) => (
+            <Pressable key={hub.id} onPress={() => onOpenHub(hub)} style={[styles.hubRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.hubRowTitle, { color: colors.foreground }]}>{hub.name}</Text>
+                <Text style={[styles.hubRowMeta, { color: colors.mutedForeground }]}>{hub.memberCount} members · {hub.postCount} posts</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+            </Pressable>
+          ))}
+        </View>
+      )) : null}
+      {!isSearching ? (
+        <View style={styles.hubSection}>
+          <Text style={[styles.socialSectionTitle, { color: colors.foreground }]}>Categories</Text>
+          <View style={styles.hubCategoryWrap}>
+            {(data?.categories ?? []).map((category) => (
+              <View key={category} style={[styles.hubCategoryChip, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                <Text style={[styles.hubCategoryChipText, { color: colors.foreground }]}>{category}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+      {isSearching && searchResults.length === 0 ? (
+        <View style={[styles.communityState, { paddingTop: 10 }]}>
+          <Text style={[styles.communityStateTitle, { color: colors.foreground }]}>No Hubs found.</Text>
+          <Text style={[styles.communityStateText, { color: colors.mutedForeground }]}>Can’t find what you’re looking for?</Text>
+          <Pressable onPress={onCreateHub} style={[styles.communityCreateButton, { backgroundColor: colors.primary }]}>
+            <Text style={styles.communityCreateButtonText}>Create a Hub</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </ScrollView>
+  );
+}
+
+function HubFeed({
+  hub,
+  children,
+  posts,
+  loading,
+  error,
+  loadingMore,
+  tab,
+  colors,
+  token,
+  onSelectTab,
+  onOpenChild,
+  onOpenProfile,
+  onComment,
+  onShare,
+  onChanged,
+  onOpenHub,
+  onRetry,
+  onLoadMore,
+  onJoinToggle,
+  onBackToDiscover,
+}: {
+  hub: SocialHub;
+  children: SocialHub[];
+  posts: SocialPost[];
+  loading: boolean;
+  error: string | null;
+  loadingMore: boolean;
+  tab: 'for-you' | 'trending' | 'latest';
+  colors: any;
+  token: string;
+  onSelectTab: (tab: 'for-you' | 'trending' | 'latest') => void;
+  onOpenChild: (hub: SocialHub) => void;
+  onOpenProfile: (id: number) => void;
+  onComment: (post: SocialPost) => void;
+  onShare: (post: SocialPost) => void;
+  onChanged: (post: SocialPost) => void;
+  onOpenHub: (hub: { id: number; name: string; slug: string }) => void;
+  onRetry: () => void;
+  onLoadMore: () => void;
+  onJoinToggle: () => void;
+  onBackToDiscover: () => void;
+}) {
+  const tabs: Array<{ key: 'for-you' | 'trending' | 'latest'; label: string }> = [{ key: 'for-you', label: 'For You' }, { key: 'trending', label: 'Trending' }, { key: 'latest', label: 'Latest' }];
+  return (
+    <FlatList
+      data={posts}
+      keyExtractor={(item) => String(item.id)}
+      contentContainerStyle={styles.communityFeedContent}
+      onEndReached={onLoadMore}
+      onEndReachedThreshold={0.7}
+      ListHeaderComponent={(
+        <View style={styles.communityIntro}>
+          <Pressable onPress={onBackToDiscover} style={[styles.communityCloseButton, { borderColor: colors.border, marginBottom: 10 }]}>
+            <Ionicons name="chevron-back" size={18} color={colors.foreground} />
+          </Pressable>
+          <Text style={[styles.communityIntroTitle, { color: colors.foreground }]}>{hub.name}</Text>
+          {hub.description ? <Text style={[styles.communityIntroText, { color: colors.mutedForeground }]}>{hub.description}</Text> : null}
+          <Text style={[styles.socialSectionHint, { color: colors.mutedForeground }]}>{hub.memberCount} members · {hub.postCount} posts</Text>
+          <Pressable onPress={onJoinToggle} style={[styles.communityCreateButton, { backgroundColor: hub.joined ? colors.secondary : colors.primary }]}>
+            <Text style={[styles.communityCreateButtonText, { color: hub.joined ? colors.foreground : '#fff' }]}>{hub.joined ? 'Leave Hub' : 'Join Hub'}</Text>
+          </Pressable>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.communityFilters}>
+            {tabs.map((item) => (
+              <Pressable key={item.key} onPress={() => onSelectTab(item.key)} style={[styles.communityFilter, { borderColor: tab === item.key ? colors.primary : colors.border, backgroundColor: tab === item.key ? colors.primary : colors.card }]}>
+                <Text style={{ color: tab === item.key ? '#fff' : colors.foreground, fontSize: 13, fontWeight: '700' }}>{item.label}</Text>
+              </Pressable>
+            ))}
+            {(['Discussions', 'Creators', 'Lives'] as const).map((item) => (
+              <View key={item} style={[styles.communityFilter, { borderColor: colors.border, backgroundColor: colors.secondary, opacity: 0.7 }]}>
+                <Text style={{ color: colors.mutedForeground, fontSize: 13, fontWeight: '700' }}>{item}</Text>
+              </View>
+            ))}
+          </ScrollView>
+          {children.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.communityFilters}>
+              {children.map((child) => (
+                <Pressable key={child.id} onPress={() => onOpenChild(child)} style={[styles.hubChildChip, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                  <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>{child.name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
+        </View>
+      )}
+      ListEmptyComponent={loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> : error ? (
+        <Pressable onPress={onRetry} style={[styles.communityState, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Text style={[styles.communityStateTitle, { color: colors.foreground }]}>Hub feed unavailable</Text>
+          <Text style={[styles.communityStateText, { color: colors.mutedForeground }]}>{error}</Text>
+          <Text style={[styles.communityRetry, { color: colors.primary }]}>Try again</Text>
+        </Pressable>
+      ) : (
+        <View style={styles.communityState}>
+          <Text style={[styles.communityStateTitle, { color: colors.foreground }]}>Nothing here yet.</Text>
+          <Text style={[styles.communityStateText, { color: colors.mutedForeground }]}>Be the first to post in this Hub.</Text>
+        </View>
+      )}
+      renderItem={({ item }) => (
+        <SocialPostCard
+          post={item}
+          colors={colors}
+          token={token}
+          onOpenProfile={() => onOpenProfile(item.author.id)}
+          onShare={() => onShare(item)}
+          onComment={() => onComment(item)}
+          onChanged={onChanged}
+          onOpenHub={onOpenHub}
+        />
+      )}
+      ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.primary} style={{ margin: 18 }} /> : <View style={{ height: 12 }} />}
+    />
+  );
+}
+
+function CreateHubSheet({ token, colors, onClose, onCreated }: { token: string; colors: any; onClose: () => void; onCreated: (hub: SocialHub) => void }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <KeyboardAvoidingView behavior="padding" style={styles.sheetOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={[styles.commentSheet, { backgroundColor: colors.card }]}>
+        <View style={styles.sheetTop}>
+          <Text style={[styles.notificationsTitle, { color: colors.foreground }]}>Create a Hub</Text>
+          <IconButton name="close" onPress={onClose} size={24} />
+        </View>
+        <TextInput value={name} onChangeText={setName} placeholder="Hub name" placeholderTextColor={colors.mutedForeground} style={[styles.composeInput, { color: colors.foreground, borderColor: colors.border }]} />
+        <TextInput value={description} onChangeText={setDescription} placeholder="Description" placeholderTextColor={colors.mutedForeground} style={[styles.composeInput, { color: colors.foreground, borderColor: colors.border }]} multiline />
+        <TextInput value={category} onChangeText={setCategory} placeholder="Category" placeholderTextColor={colors.mutedForeground} style={[styles.composeInput, { color: colors.foreground, borderColor: colors.border }]} />
+        {error ? <Text style={[styles.newMessageError, { color: colors.destructive }]}>{error}</Text> : null}
+        <Pressable
+          onPress={() => {
+            if (!name.trim() || submitting) return;
+            setSubmitting(true);
+            setError(null);
+            void createHub(token, { name: name.trim(), description: description.trim(), category: category.trim() || null }).then((hub) => {
+              onCreated(hub);
+              onClose();
+            }).catch((cause) => {
+              setError(cause instanceof Error ? cause.message : 'Hub could not be created.');
+            }).finally(() => setSubmitting(false));
+          }}
+          style={[styles.communityCreateButton, { backgroundColor: colors.primary, marginTop: 10, opacity: submitting ? 0.7 : 1 }]}
+        >
+          <Text style={styles.communityCreateButtonText}>{submitting ? 'Creating…' : 'Create Hub'}</Text>
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
 function CommunityFeed({
   posts,
   loading,
@@ -2105,6 +2581,7 @@ function CommunityFeed({
   onComment,
   onShare,
   onChanged,
+  onOpenHub,
 }: {
   posts: SocialPost[];
   loading: boolean;
@@ -2123,6 +2600,7 @@ function CommunityFeed({
   onComment: (post: SocialPost) => void;
   onShare: (post: SocialPost) => void;
   onChanged: (post: SocialPost) => void;
+  onOpenHub: (hub: { id: number; name: string; slug: string }) => void;
 }) {
   const feedItems = useMemo(() => adManager.blendNativeAds('community-feed', posts, (post) => String(post.id)), [posts]);
   return (
@@ -2195,6 +2673,7 @@ function CommunityFeed({
           onShare={() => onShare(item.content)}
           onComment={() => onComment(item.content)}
           onChanged={onChanged}
+          onOpenHub={onOpenHub}
         />
       )}
       ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -2203,7 +2682,7 @@ function CommunityFeed({
   );
 }
 
-function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment, onChanged }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onComment?: () => void; onChanged: (post: SocialPost) => void }) {
+function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment, onChanged, onOpenHub }: { post: SocialPost; colors: any; token: string; onOpenProfile: () => void; onShare: () => void; onComment?: () => void; onChanged: (post: SocialPost) => void; onOpenHub?: (hub: { id: number; name: string; slug: string }) => void }) {
   const [busy, setBusy] = useState(false);
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -2288,6 +2767,21 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment
         </Pressable>
       </View>
       {post.content ? <Text style={[styles.socialPostContent, { color: colors.foreground }]}>{post.content}</Text> : null}
+      {post.hubs?.length ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.postHubChipRow}>
+          {post.hubs.slice(0, 4).map((hub) => (
+            <Pressable
+              key={hub.id}
+              onPress={() => onOpenHub?.(hub)}
+              style={[styles.postHubChip, { borderColor: colors.border, backgroundColor: colors.secondary }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${hub.name} hub`}
+            >
+              <Text style={[styles.postHubChipText, { color: colors.primary }]}>#{hub.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
       {media?.type === 'image' ? <Image source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.socialPostMedia} contentFit="cover" /> : null}
       {media?.type === 'video' ? <VideoSurface source={{ uri: socialMediaUrl(media.objectPath), headers: { Authorization: `Bearer ${token}` } }} style={styles.socialPostMedia} controls /> : null}
       {post.linkUrl ? (
@@ -2511,7 +3005,7 @@ function SharePostInOldTimeSheet({ post, viewerId, colors, onBack, onClose, onSh
   );
 }
 
-function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequest, onExclude, onNotifications, onRequests, onBlock, unreadCount, onComment, onShare, onFeedback }: { userId: number; own: boolean; token: string; colors: any; onClose: () => void; onMessageRequest: (userId: number, name: string) => void; onExclude: (person: { id: number; name: string }) => void; onNotifications: () => void; onRequests: () => void; onBlock: (userId: number, name: string) => void; unreadCount: number; onComment: (post: SocialPost) => void; onShare: (post: SocialPost) => void; onFeedback: (message: string) => void }) {
+function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequest, onExclude, onNotifications, onRequests, onBlock, unreadCount, onComment, onShare, onFeedback, onOpenHub }: { userId: number; own: boolean; token: string; colors: any; onClose: () => void; onMessageRequest: (userId: number, name: string) => void; onExclude: (person: { id: number; name: string }) => void; onNotifications: () => void; onRequests: () => void; onBlock: (userId: number, name: string) => void; unreadCount: number; onComment: (post: SocialPost) => void; onShare: (post: SocialPost) => void; onFeedback: (message: string) => void; onOpenHub: (hub: { id: number; name: string; slug: string }) => void }) {
   const [card, setCard] = useState<UserCard | null>(null);
   const [profilePosts, setProfilePosts] = useState<SocialPost[]>([]);
   const [profilePostsLoading, setProfilePostsLoading] = useState(true);
@@ -2599,6 +3093,7 @@ function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequ
                     onShare={() => onShare(post)}
                     onComment={() => onComment(post)}
                     onChanged={(updated) => setProfilePosts((items) => items.map((item) => item.id === updated.id ? updated : item))}
+                    onOpenHub={onOpenHub}
                   />
                 ))}
               </View>
@@ -3510,6 +4005,9 @@ const styles = StyleSheet.create({
   socialAuthorName: { fontSize: 14, fontWeight: '600' },
   socialAuthorMeta: { fontSize: 10, marginTop: 2 },
   socialPostContent: { fontSize: 14, lineHeight: 20, marginTop: 11 },
+  postHubChipRow: { flexDirection: 'row', gap: 7, paddingTop: 10 },
+  postHubChip: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
+  postHubChipText: { fontSize: 11, fontWeight: '700' },
   socialPostMedia: { width: '100%', height: 210, borderRadius: 12, marginTop: 11 },
   socialLinkCard: { borderRadius: 11, padding: 10, marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
   socialLinkTitle: { fontSize: 12, fontWeight: '600' },
@@ -3672,6 +4170,19 @@ const styles = StyleSheet.create({
   communityStateTitle: { fontSize: 17, fontWeight: '700', textAlign: 'center' },
   communityStateText: { fontSize: 13, lineHeight: 18, textAlign: 'center' },
   communityRetry: { fontSize: 14, fontWeight: '700', marginTop: 4 },
+  hubDiscoveryContent: { paddingHorizontal: 14, paddingBottom: 120 },
+  hubSearchBox: { minHeight: 44, borderRadius: 22, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  hubSearchInput: { flex: 1, fontSize: 15, paddingVertical: 9 },
+  hubSection: { marginTop: 16, gap: 8 },
+  hubRow: { borderWidth: 1, borderRadius: 14, minHeight: 56, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  hubRowTitle: { fontSize: 14, fontWeight: '700' },
+  hubRowMeta: { fontSize: 11, marginTop: 3 },
+  hubCategoryWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  hubCategoryChip: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7 },
+  hubCategoryChipText: { fontSize: 12, fontWeight: '600' },
+  hubChildChip: { borderWidth: 1, borderRadius: 15, paddingHorizontal: 11, paddingVertical: 8 },
+  commentSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20 },
+  composeInput: { minHeight: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginTop: 10 },
   profileContentTab: { width: '100%', minHeight: 42, borderBottomWidth: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 12 },
   profileContentTabText: { fontSize: 14, fontWeight: '700' },
   pipelineCard: { borderWidth: 1, borderRadius: 11, padding: 14, marginTop: 12 },

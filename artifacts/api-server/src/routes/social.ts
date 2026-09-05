@@ -25,6 +25,10 @@ import {
   socialCommentsTable,
   socialFollowsTable,
   socialMutesTable,
+  socialHubAliasesTable,
+  socialHubMembersTable,
+  socialHubPostsTable,
+  socialHubsTable,
   socialPostLikesTable,
   socialPostRepostsTable,
   socialPostSavesTable,
@@ -91,6 +95,20 @@ const postInput = z.object({
   linkDescription: z.string().trim().max(800).nullable().optional(),
   linkImageUrl: z.string().url().max(2_000).nullable().optional(),
 });
+const hubStatus = z.enum(["active", "pending", "suspended", "archived"]);
+const hubPrivacy = z.enum(["public", "private"]);
+const hubCreateInput = z.object({
+  name: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(500).default(""),
+  category: z.string().trim().max(80).nullable().optional(),
+  parentHubId: z.number().int().positive().nullable().optional(),
+  icon: z.string().trim().max(80).nullable().optional(),
+  coverImage: z.string().trim().max(500).nullable().optional(),
+  privacy: hubPrivacy.default("public"),
+});
+const hubPostInput = z.object({
+  hubIds: z.array(z.number().int().positive()).max(8),
+});
 
 const commentInput = z.object({
   content: z.string().trim().min(1).max(1_000),
@@ -126,6 +144,7 @@ const storyReplyInput = z.object({ content: z.string().trim().min(1).max(1_000) 
 const storyReactionInput = z.object({ reaction: z.string().trim().min(1).max(32).default("❤️") });
 
 type SocialPost = typeof socialPostsTable.$inferSelect;
+type SocialHub = typeof socialHubsTable.$inferSelect;
 
 function parseId(value: unknown): number | null {
   const parsed = Number(value);
@@ -140,6 +159,52 @@ function parseLimit(value: unknown): number {
 function parseGeoQuery(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function slugifyHubName(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "hub";
+}
+
+function normalizeHubName(value: string): string {
+  const compact = value.trim().replace(/\s+/g, " ");
+  return compact.length < 2 ? compact : compact
+    .split(" ")
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function nowMs() {
+  return Date.now();
+}
+
+async function hubMemberRole(hubId: number, userId: number): Promise<"member" | "moderator" | "owner" | null> {
+  const [membership] = await db
+    .select({ role: socialHubMembersTable.role })
+    .from(socialHubMembersTable)
+    .where(and(eq(socialHubMembersTable.hubId, hubId), eq(socialHubMembersTable.userId, userId)))
+    .limit(1);
+  if (!membership) return null;
+  if (membership.role === "moderator" || membership.role === "owner") return membership.role;
+  return "member";
+}
+
+async function visibleHubFor(viewerId: number, hubId: number): Promise<SocialHub | undefined> {
+  const [hub] = await db
+    .select()
+    .from(socialHubsTable)
+    .where(eq(socialHubsTable.id, hubId))
+    .limit(1);
+  if (!hub) return undefined;
+  if (hub.status !== "active" && hub.createdBy !== viewerId) return undefined;
+  if (hub.privacy === "public") return hub;
+  const role = await hubMemberRole(hubId, viewerId);
+  if (hub.createdBy === viewerId || role) return hub;
+  return undefined;
 }
 
 function distanceKm(from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }) {
@@ -354,7 +419,7 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
   if (!posts.length) return [];
   const authorIds = [...new Set(posts.map((post) => post.authorId))];
   const postIds = posts.map((post) => post.id);
-  const [authors, likes, reposts, saves, comments, viewerLikes, viewerReposts, viewerSaves, viewerViews, follows] =
+  const [authors, likes, reposts, saves, comments, viewerLikes, viewerReposts, viewerSaves, viewerViews, follows, postHubs] =
     await Promise.all([
       db
         .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
@@ -431,6 +496,21 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
             inArray(socialFollowsTable.followingId, authorIds),
           ),
         ),
+      db
+        .select({
+          postId: socialHubPostsTable.postId,
+          id: socialHubsTable.id,
+          name: socialHubsTable.name,
+          slug: socialHubsTable.slug,
+        })
+        .from(socialHubPostsTable)
+        .innerJoin(socialHubsTable, eq(socialHubsTable.id, socialHubPostsTable.hubId))
+        .where(
+          and(
+            inArray(socialHubPostsTable.postId, postIds),
+            eq(socialHubsTable.status, "active"),
+          ),
+        ),
     ]);
   const authorById = new Map(authors.map((author) => [author.id, author]));
   const countBy = (rows: Array<{ postId: number; count: number }>) =>
@@ -444,6 +524,12 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
   const saved = new Set(viewerSaves.map((row) => row.postId));
   const viewExpiryById = new Map(viewerViews.map((row) => [row.postId, row.expiresAt]));
   const following = new Set(follows.map((row) => row.followingId));
+  const hubsByPostId = new Map<number, Array<{ id: number; name: string; slug: string }>>();
+  for (const row of postHubs) {
+    const current = hubsByPostId.get(row.postId) ?? [];
+    if (!current.some((hub) => hub.id === row.id)) current.push({ id: row.id, name: row.name, slug: row.slug });
+    hubsByPostId.set(row.postId, current);
+  }
 
   return posts.map((post) => {
     const author = authorById.get(post.authorId);
@@ -484,6 +570,7 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
         reposts: repostCounts.get(post.id) ?? 0,
         saves: saveCounts.get(post.id) ?? 0,
       },
+      hubs: hubsByPostId.get(post.id) ?? [],
       viewer: {
         liked: liked.has(post.id),
         reposted: reposted.has(post.id),
@@ -494,6 +581,58 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
       },
     };
   });
+}
+
+async function serializeHubs(hubs: SocialHub[], viewerId: number) {
+  if (!hubs.length) return [];
+  const hubIds = hubs.map((hub) => hub.id);
+  const parentIds = [...new Set(hubs.map((hub) => hub.parentHubId).filter((hubId): hubId is number => Number.isInteger(hubId)))];
+  const [memberships, parents] = await Promise.all([
+    db
+      .select({ hubId: socialHubMembersTable.hubId, role: socialHubMembersTable.role })
+      .from(socialHubMembersTable)
+      .where(and(eq(socialHubMembersTable.userId, viewerId), inArray(socialHubMembersTable.hubId, hubIds))),
+    parentIds.length
+      ? db.select({ id: socialHubsTable.id, name: socialHubsTable.name, slug: socialHubsTable.slug }).from(socialHubsTable).where(inArray(socialHubsTable.id, parentIds))
+      : Promise.resolve([]),
+  ]);
+  const membershipByHubId = new Map(memberships.map((membership) => [membership.hubId, membership.role]));
+  const parentById = new Map(parents.map((parent) => [parent.id, parent]));
+  return hubs.map((hub) => ({
+    id: hub.id,
+    name: hub.name,
+    slug: hub.slug,
+    description: hub.description,
+    icon: hub.icon,
+    coverImage: hub.coverImage,
+    category: hub.category,
+    status: hub.status,
+    privacy: hub.privacy,
+    memberCount: hub.memberCount,
+    postCount: hub.postCount,
+    createdBy: hub.createdBy,
+    joined: membershipByHubId.has(hub.id),
+    role: membershipByHubId.get(hub.id) ?? null,
+    parent: hub.parentHubId ? parentById.get(hub.parentHubId) ?? null : null,
+    createdAt: hub.createdAt,
+    updatedAt: hub.updatedAt,
+  }));
+}
+
+async function parseHubIdsForOwner(postId: number, ownerId: number, input: number[]) {
+  const uniqueIds = [...new Set(input)].slice(0, 8);
+  if (!uniqueIds.length) return [];
+  const [post] = await db
+    .select({ id: socialPostsTable.id })
+    .from(socialPostsTable)
+    .where(and(eq(socialPostsTable.id, postId), eq(socialPostsTable.authorId, ownerId), eq(socialPostsTable.deleted, false)))
+    .limit(1);
+  if (!post) return null;
+  const hubs = await db
+    .select({ id: socialHubsTable.id })
+    .from(socialHubsTable)
+    .where(and(inArray(socialHubsTable.id, uniqueIds), eq(socialHubsTable.status, "active"), eq(socialHubsTable.privacy, "public")));
+  return hubs.map((hub) => hub.id);
 }
 
 router.get("/social/feed", async (req, res): Promise<void> => {
@@ -709,6 +848,7 @@ router.delete("/social/posts/:postId", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Post not found or not owned by you." });
     return;
   }
+  await db.delete(socialHubPostsTable).where(eq(socialHubPostsTable.postId, postId));
   res.json({ success: true });
 });
 
@@ -1564,6 +1704,358 @@ router.get("/social/saved", async (req, res): Promise<void> => {
     if (await canSeePost(viewerId, post, following, blocked)) visible.push(post);
   }
   res.json({ items: await serializePosts(visible, viewerId) });
+});
+
+router.get("/social/hubs/discover", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const searchQuery = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+  const limit = parseLimit(req.query.limit);
+  const [myRows, trendingRows, recentRows, suggestedRows, allRows] = await Promise.all([
+    db
+      .select({ hub: socialHubsTable, joinedAt: socialHubMembersTable.joinedAt })
+      .from(socialHubMembersTable)
+      .innerJoin(socialHubsTable, eq(socialHubsTable.id, socialHubMembersTable.hubId))
+      .where(and(eq(socialHubMembersTable.userId, viewerId), eq(socialHubsTable.status, "active")))
+      .orderBy(desc(socialHubMembersTable.joinedAt))
+      .limit(20),
+    db
+      .select()
+      .from(socialHubsTable)
+      .where(and(eq(socialHubsTable.status, "active"), eq(socialHubsTable.privacy, "public")))
+      .orderBy(desc(socialHubsTable.postCount), desc(socialHubsTable.memberCount), asc(socialHubsTable.name))
+      .limit(20),
+    db
+      .select()
+      .from(socialHubsTable)
+      .where(and(eq(socialHubsTable.status, "active"), eq(socialHubsTable.privacy, "public")))
+      .orderBy(desc(socialHubsTable.updatedAt), desc(socialHubsTable.postCount))
+      .limit(20),
+    db
+      .selectDistinct({ hub: socialHubsTable })
+      .from(socialFollowsTable)
+      .innerJoin(socialPostsTable, eq(socialPostsTable.authorId, socialFollowsTable.followingId))
+      .innerJoin(socialHubPostsTable, eq(socialHubPostsTable.postId, socialPostsTable.id))
+      .innerJoin(socialHubsTable, eq(socialHubsTable.id, socialHubPostsTable.hubId))
+      .where(and(eq(socialFollowsTable.followerId, viewerId), eq(socialPostsTable.deleted, false), eq(socialHubsTable.status, "active"), eq(socialHubsTable.privacy, "public")))
+      .orderBy(desc(socialHubsTable.postCount), desc(socialHubsTable.memberCount))
+      .limit(20),
+    db
+      .select()
+      .from(socialHubsTable)
+      .where(and(eq(socialHubsTable.status, "active"), eq(socialHubsTable.privacy, "public")))
+      .orderBy(desc(socialHubsTable.memberCount), desc(socialHubsTable.postCount), asc(socialHubsTable.name))
+      .limit(300),
+  ]);
+  const myHubs = await serializeHubs(myRows.map((row) => row.hub), viewerId);
+  const suggestedFallback = trendingRows.filter((hub) => !myRows.some((row) => row.hub.id === hub.id)).slice(0, 12);
+  const suggested = suggestedRows.length
+    ? suggestedRows.map((row) => row.hub).filter((hub) => !myRows.some((item) => item.hub.id === hub.id)).slice(0, 12)
+    : suggestedFallback;
+  const categories = [...new Set(allRows.map((hub) => hub.category).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
+  const queryTokens = searchQuery.split(/\s+/).filter(Boolean);
+  const searched = searchQuery
+    ? allRows
+      .map((hub) => {
+        const parent = hub.parentHubId ? allRows.find((candidate) => candidate.id === hub.parentHubId) : null;
+        const haystack = `${hub.name} ${hub.slug} ${hub.description} ${hub.category ?? ""} ${parent?.name ?? ""}`.toLowerCase();
+        const exactName = hub.name.toLowerCase() === searchQuery ? 100 : 0;
+        const exactSlug = hub.slug.toLowerCase() === searchQuery ? 95 : 0;
+        const startsWith = hub.name.toLowerCase().startsWith(searchQuery) ? 90 : 0;
+        const tokenMatches = queryTokens.reduce((score, token) => score + (haystack.includes(token) ? 8 : 0), 0);
+        const parentBoost = parent && queryTokens.some((token) => parent.name.toLowerCase().includes(token)) ? 6 : 0;
+        return { hub, score: exactName + exactSlug + startsWith + tokenMatches + parentBoost + Math.min(20, hub.memberCount / 25) };
+      })
+      .filter((row) => row.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map((row) => row.hub)
+    : [];
+  res.json({
+    myHubs,
+    suggestedHubs: await serializeHubs(suggested, viewerId),
+    trendingHubs: await serializeHubs(trendingRows.slice(0, 12), viewerId),
+    recentlyActiveHubs: await serializeHubs(recentRows.slice(0, 12), viewerId),
+    categories,
+    searchResults: await serializeHubs(searched, viewerId),
+  });
+});
+
+router.get("/social/hubs/search", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const query = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+  if (!query) {
+    res.json({ items: [] });
+    return;
+  }
+  const limit = parseLimit(req.query.limit);
+  const rows = await db
+    .select({ hub: socialHubsTable, alias: socialHubAliasesTable.alias })
+    .from(socialHubsTable)
+    .leftJoin(socialHubAliasesTable, eq(socialHubAliasesTable.hubId, socialHubsTable.id))
+    .where(and(eq(socialHubsTable.status, "active"), eq(socialHubsTable.privacy, "public")))
+    .limit(400);
+  const hubsById = new Map<number, { hub: SocialHub; aliases: string[] }>();
+  for (const row of rows) {
+    const existing = hubsById.get(row.hub.id);
+    if (!existing) hubsById.set(row.hub.id, { hub: row.hub, aliases: row.alias ? [row.alias] : [] });
+    else if (row.alias) existing.aliases.push(row.alias);
+  }
+  const tokens = query.split(/\s+/).filter(Boolean);
+  const ranked = [...hubsById.values()]
+    .map((item) => {
+      const parentName = item.hub.parentHubId
+        ? (hubsById.get(item.hub.parentHubId)?.hub.name ?? "")
+        : "";
+      const text = `${item.hub.name} ${item.hub.slug} ${item.hub.description} ${item.hub.category ?? ""} ${parentName} ${item.aliases.join(" ")}`.toLowerCase();
+      const exactName = item.hub.name.toLowerCase() === query ? 120 : 0;
+      const singularPluralMatch = item.hub.name.toLowerCase().replace(/s$/, "") === query.replace(/s$/, "") ? 105 : 0;
+      const startsWith = item.hub.name.toLowerCase().startsWith(query) ? 92 : 0;
+      const aliasStarts = item.aliases.some((alias) => alias.startsWith(query)) ? 84 : 0;
+      const tokenScore = tokens.reduce((score, token) => score + (text.includes(token) ? 10 : 0), 0);
+      const relatedBoost = parentName && tokens.some((token) => parentName.toLowerCase().includes(token)) ? 6 : 0;
+      return { hub: item.hub, score: exactName + singularPluralMatch + startsWith + aliasStarts + tokenScore + relatedBoost + Math.min(18, item.hub.postCount / 20) };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit);
+  res.json({ items: await serializeHubs(ranked.map((row) => row.hub), viewerId) });
+});
+
+router.post("/social/hubs", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const parsed = hubCreateInput.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Enter a valid hub name and details." });
+    return;
+  }
+  const name = normalizeHubName(parsed.data.name);
+  const slugBase = slugifyHubName(name);
+  const similar = await db
+    .select({ id: socialHubsTable.id, name: socialHubsTable.name, slug: socialHubsTable.slug })
+    .from(socialHubsTable)
+    .where(
+      or(
+        ilike(socialHubsTable.name, `%${name}%`),
+        ilike(socialHubsTable.slug, `%${slugBase}%`),
+      ),
+    )
+    .orderBy(desc(socialHubsTable.memberCount), asc(socialHubsTable.name))
+    .limit(10);
+  const duplicate = similar.find((hub) => {
+    const left = hub.name.toLowerCase().replace(/s\b/g, "").trim();
+    const right = name.toLowerCase().replace(/s\b/g, "").trim();
+    return left === right || hub.slug.toLowerCase() === slugBase;
+  });
+  if (duplicate) {
+    res.status(409).json({ error: "A similar hub already exists.", existingHub: duplicate });
+    return;
+  }
+  let slug = slugBase;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const [existing] = await db.select({ id: socialHubsTable.id }).from(socialHubsTable).where(eq(socialHubsTable.slug, slug)).limit(1);
+    if (!existing) break;
+    slug = `${slugBase}-${attempt + 2}`;
+  }
+  const parentHubId = parsed.data.parentHubId ?? null;
+  if (parentHubId) {
+    const [parent] = await db.select({ id: socialHubsTable.id }).from(socialHubsTable).where(and(eq(socialHubsTable.id, parentHubId), eq(socialHubsTable.status, "active"))).limit(1);
+    if (!parent) {
+      res.status(400).json({ error: "Choose an active parent hub." });
+      return;
+    }
+  }
+  const now = nowMs();
+  const [hub] = await db.transaction(async (tx) => {
+    const inserted = await tx.insert(socialHubsTable).values({
+      name,
+      slug,
+      description: parsed.data.description ?? "",
+      icon: parsed.data.icon ?? null,
+      coverImage: parsed.data.coverImage ?? null,
+      category: parsed.data.category ?? null,
+      parentHubId,
+      createdBy: viewerId,
+      status: "pending",
+      privacy: parsed.data.privacy,
+      memberCount: 1,
+      postCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+    await tx.insert(socialHubMembersTable).values({
+      hubId: inserted[0].id,
+      userId: viewerId,
+      role: "owner",
+      joinedAt: now,
+    });
+    await tx.insert(socialHubAliasesTable).values({
+      hubId: inserted[0].id,
+      alias: name.toLowerCase(),
+      createdAt: now,
+    }).onConflictDoNothing();
+    return inserted;
+  });
+  res.status(201).json((await serializeHubs([hub], viewerId))[0]);
+});
+
+router.get("/social/hubs/my", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const rows = await db
+    .select({ hub: socialHubsTable, joinedAt: socialHubMembersTable.joinedAt })
+    .from(socialHubMembersTable)
+    .innerJoin(socialHubsTable, eq(socialHubsTable.id, socialHubMembersTable.hubId))
+    .where(and(eq(socialHubMembersTable.userId, viewerId), eq(socialHubsTable.status, "active")))
+    .orderBy(desc(socialHubMembersTable.joinedAt));
+  res.json({ items: await serializeHubs(rows.map((row) => row.hub), viewerId) });
+});
+
+router.get("/social/hubs/:hubId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const hubId = parseId(req.params.hubId);
+  if (viewerId === null || hubId === null) return;
+  const hub = await visibleHubFor(viewerId, hubId);
+  if (!hub) {
+    res.status(404).json({ error: "Hub not found." });
+    return;
+  }
+  const [children] = await Promise.all([
+    db
+      .select()
+      .from(socialHubsTable)
+      .where(and(eq(socialHubsTable.parentHubId, hub.id), eq(socialHubsTable.status, "active"), eq(socialHubsTable.privacy, "public")))
+      .orderBy(desc(socialHubsTable.memberCount), asc(socialHubsTable.name))
+      .limit(40),
+  ]);
+  res.json({ hub: (await serializeHubs([hub], viewerId))[0], children: await serializeHubs(children, viewerId) });
+});
+
+router.post("/social/hubs/:hubId/join", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const hubId = parseId(req.params.hubId);
+  if (viewerId === null || hubId === null) return;
+  const hub = await visibleHubFor(viewerId, hubId);
+  if (!hub || hub.status !== "active" || hub.privacy !== "public") {
+    res.status(404).json({ error: "Hub is unavailable." });
+    return;
+  }
+  const now = nowMs();
+  await db
+    .insert(socialHubMembersTable)
+    .values({ hubId, userId: viewerId, role: "member", joinedAt: now })
+    .onConflictDoNothing();
+  res.json({ success: true, joined: true });
+});
+
+router.delete("/social/hubs/:hubId/join", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const hubId = parseId(req.params.hubId);
+  if (viewerId === null || hubId === null) return;
+  await db
+    .delete(socialHubMembersTable)
+    .where(and(eq(socialHubMembersTable.hubId, hubId), eq(socialHubMembersTable.userId, viewerId), ne(socialHubMembersTable.role, "owner")));
+  res.json({ success: true, joined: false });
+});
+
+router.get("/social/hubs/:hubId/feed", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const hubId = parseId(req.params.hubId);
+  if (viewerId === null || hubId === null) return;
+  const hub = await visibleHubFor(viewerId, hubId);
+  if (!hub) {
+    res.status(404).json({ error: "Hub not found." });
+    return;
+  }
+  const tab = req.query.tab === "trending"
+    ? "trending"
+    : req.query.tab === "latest"
+      ? "latest"
+      : "for-you";
+  const limit = parseLimit(req.query.limit);
+  const cursor = req.query.cursor ? Number(req.query.cursor) : Number.POSITIVE_INFINITY;
+  const [following, blocked] = await Promise.all([followingUserIds(viewerId), blockedUserIds(viewerId)]);
+  const rows = await db
+    .select({ post: socialPostsTable, linkedAt: socialHubPostsTable.createdAt })
+    .from(socialHubPostsTable)
+    .innerJoin(socialPostsTable, eq(socialPostsTable.id, socialHubPostsTable.postId))
+    .where(and(eq(socialHubPostsTable.hubId, hubId), eq(socialPostsTable.deleted, false), Number.isFinite(cursor) ? lt(socialHubPostsTable.createdAt, cursor) : undefined))
+    .orderBy(desc(socialHubPostsTable.createdAt))
+    .limit(Math.min(120, limit * 5));
+  const visible: SocialPost[] = [];
+  for (const row of rows) {
+    if (await canSeePost(viewerId, row.post, following, blocked)) visible.push(row.post);
+  }
+  const serialized = await serializePosts(visible, viewerId);
+  if (tab === "trending") {
+    serialized.sort((left, right) => {
+      const leftScore = left.counts.likes + left.counts.comments * 2 + left.counts.reposts * 3;
+      const rightScore = right.counts.likes + right.counts.comments * 2 + right.counts.reposts * 3;
+      return rightScore - leftScore;
+    });
+  } else if (tab === "for-you") {
+    serialized.sort((left, right) => {
+      const leftScore = (left.viewer.followingAuthor ? 24 : 0) + left.counts.likes + left.counts.comments * 2 + Math.max(0, 100 - (Date.now() - left.createdAt) / 3_600_000);
+      const rightScore = (right.viewer.followingAuthor ? 24 : 0) + right.counts.likes + right.counts.comments * 2 + Math.max(0, 100 - (Date.now() - right.createdAt) / 3_600_000);
+      return rightScore - leftScore;
+    });
+  }
+  const page = serialized.slice(0, limit);
+  const last = rows.find((row) => row.post.id === page[page.length - 1]?.id);
+  res.json({ items: page, nextCursor: page.length === limit && last ? last.linkedAt : null });
+});
+
+router.put("/social/posts/:postId/hubs", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const postId = parseId(req.params.postId);
+  if (viewerId === null || postId === null) return;
+  const parsed = hubPostInput.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Choose valid hubs." });
+    return;
+  }
+  const hubIds = await parseHubIdsForOwner(postId, viewerId, parsed.data.hubIds);
+  if (hubIds === null) {
+    res.status(404).json({ error: "Post not found." });
+    return;
+  }
+  await db.transaction(async (tx) => {
+    await tx.delete(socialHubPostsTable).where(eq(socialHubPostsTable.postId, postId));
+    if (hubIds.length) {
+      await tx.insert(socialHubPostsTable).values(hubIds.map((hubId) => ({ hubId, postId, createdAt: nowMs() }))).onConflictDoNothing();
+    }
+  });
+  const [post] = await db.select().from(socialPostsTable).where(eq(socialPostsTable.id, postId)).limit(1);
+  res.json({ post: post ? (await serializePosts([post], viewerId))[0] : null });
+});
+
+router.get("/social/posts/:postId/hubs", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const postId = parseId(req.params.postId);
+  if (viewerId === null || postId === null) return;
+  const rows = await db
+    .select({ hub: socialHubsTable })
+    .from(socialHubPostsTable)
+    .innerJoin(socialHubsTable, eq(socialHubsTable.id, socialHubPostsTable.hubId))
+    .where(and(eq(socialHubPostsTable.postId, postId), eq(socialHubsTable.status, "active")));
+  res.json({ items: await serializeHubs(rows.map((row) => row.hub), viewerId) });
+});
+
+router.delete("/social/hubs/:hubId/posts/:postId", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const hubId = parseId(req.params.hubId);
+  const postId = parseId(req.params.postId);
+  if (viewerId === null || hubId === null || postId === null) return;
+  const [post] = await db.select({ authorId: socialPostsTable.authorId }).from(socialPostsTable).where(eq(socialPostsTable.id, postId)).limit(1);
+  const role = await hubMemberRole(hubId, viewerId);
+  if (!post || (post.authorId !== viewerId && role !== "owner" && role !== "moderator")) {
+    res.status(403).json({ error: "Not authorized to remove this post from the hub." });
+    return;
+  }
+  await db.delete(socialHubPostsTable).where(and(eq(socialHubPostsTable.hubId, hubId), eq(socialHubPostsTable.postId, postId)));
+  res.json({ success: true });
 });
 
 type Story = typeof socialStoriesTable.$inferSelect;
