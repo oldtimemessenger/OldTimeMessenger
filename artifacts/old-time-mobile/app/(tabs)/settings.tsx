@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useDeleteAccount, useLogout } from '@workspace/api-client-react';
+import { useDeleteAccount, useLogout, useRequestUploadUrl } from '@workspace/api-client-react';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { File, Paths } from 'expo-file-system';
+import { fetch as expoFetch } from 'expo/fetch';
 import { signOut as firebaseSignOut } from 'firebase/auth';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, PrimaryButton, Screen } from '@/components/ui';
@@ -14,6 +15,7 @@ import { useColors } from '@/hooks/useColors';
 import { useQueryClient } from '@tanstack/react-query';
 import { auth } from '@/firebaseConfig';
 import { setPresencePrivacy, setSharingExcluded, updateUserProfile } from '@/lib/social-api';
+import { apiBaseUrl } from '@/lib/api-base-url';
 import { t } from '@/lib/i18n';
 import { unregisterDeviceForPush } from '@/lib/push-notifications';
 
@@ -35,6 +37,7 @@ export default function SettingsScreen() {
   const queryClient = useQueryClient();
   const logout = useLogout();
   const deleteAccount = useDeleteAccount();
+  const requestUploadUrl = useRequestUploadUrl();
   const { profile, settings, savedMessages, calls, session, updateProfile, updateSettings, addSavedMessage, removeSavedMessage, setSession, resetLocalData } = useApp();
   const translate = (key: Parameters<typeof t>[1]) => t(settings.language, key);
 
@@ -44,6 +47,7 @@ export default function SettingsScreen() {
   const [signingOut, setSigningOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [updatingNotifications, setUpdatingNotifications] = useState(false);
+  const [uploadingProfilePhoto, setUploadingProfilePhoto] = useState(false);
 
   // Profile state
   const [draftName, setDraftName] = useState(profile.name);
@@ -169,18 +173,25 @@ export default function SettingsScreen() {
     });
     if (!result.canceled && result.assets[0]?.uri) {
       const selectedUri = result.assets[0].uri;
+      if (!session?.authToken) {
+        Alert.alert('Sign in required', 'Sign in again before changing your profile photo.');
+        return;
+      }
+      setUploadingProfilePhoto(true);
       try {
-        if (Platform.OS === 'web') {
-          updateProfile({ avatarUri: selectedUri });
-          return;
-        }
         const source = new File(selectedUri);
-        const destination = new File(Paths.document, `old-time-profile-${session?.id ?? 'local'}${source.extension || '.jpg'}`);
-        if (destination.exists) destination.delete();
-        source.copy(destination);
-        updateProfile({ avatarUri: destination.uri });
-      } catch {
-        Alert.alert('Photo not saved', 'Old Time could not store that photo. Choose another image and try again.');
+        const mimeType = source.extension?.toLowerCase() === '.png' ? 'image/png' : source.extension?.toLowerCase() === '.webp' ? 'image/webp' : 'image/jpeg';
+        const upload = await requestUploadUrl.mutateAsync({ data: { name: `profile-${Date.now()}${source.extension || '.jpg'}`, size: Math.max(1, source.size || 1), contentType: mimeType } });
+        const uploadUrl = upload.uploadURL.startsWith('/') ? `${apiBaseUrl()}${upload.uploadURL}` : upload.uploadURL;
+        const response = await expoFetch(uploadUrl, { method: 'PUT', headers: { Authorization: `Bearer ${session.authToken}`, 'Content-Type': mimeType }, body: source });
+        if (!response.ok) throw new Error(`Photo upload failed (${response.status}).`);
+        const updated = await updateUserProfile(session.authToken, session.id, { avatarObjectPath: upload.objectPath });
+        updateProfile({ avatarUri: `${apiBaseUrl()}/api/storage/profile-images${(updated.avatarObjectPath ?? upload.objectPath).replace(/^\/objects/, '')}` });
+        setSession({ ...session, ...updated });
+      } catch (error) {
+        Alert.alert('Photo not saved', error instanceof Error ? error.message : 'Old Time could not upload that photo. Choose another image and try again.');
+      } finally {
+        setUploadingProfilePhoto(false);
       }
     }
   }
@@ -292,12 +303,12 @@ export default function SettingsScreen() {
           <DetailShell title="Edit Profile" onBack={() => setPanel(null)}>
             <PanelSection>
               <View style={[styles.profileEditor, { backgroundColor: colors.card }]}>
-                <View style={styles.profileEditorAvatar}>
+                <Pressable onPress={() => void chooseProfilePhoto()} disabled={uploadingProfilePhoto} style={styles.profileEditorAvatar} accessibilityRole="button" accessibilityLabel="Change profile photo">
                   <Avatar name={draftName || 'User'} size={96} color={colors.primary} uri={profile.avatarUri} />
                   <View style={[styles.profileEditorCamera, { backgroundColor: colors.primary, borderColor: colors.card }]}>
-                    <Ionicons name="camera" size={16} color="#fff" />
+                     {uploadingProfilePhoto ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="camera" size={16} color="#fff" />}
                   </View>
-                </View>
+                </Pressable>
                 <TextInput
                   value={draftName}
                   onChangeText={setDraftName}
@@ -317,14 +328,14 @@ export default function SettingsScreen() {
                   accessibilityLabel="Profile bio"
                 />
                 <Text style={[styles.profileEditorBioCount, { color: colors.mutedForeground }]}>{draftBio.length}/150</Text>
-                <PrimaryButton label="Save Profile" onPress={() => void handleSaveProfile()} />
+                <PrimaryButton label={uploadingProfilePhoto ? "Uploading photo…" : "Save Profile"} disabled={uploadingProfilePhoto} onPress={() => void handleSaveProfile()} />
               </View>
             </PanelSection>
             <PanelSection>
               <Pressable onPress={() => void chooseProfilePhoto()} style={[styles.panelRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
                 <View style={[styles.settingIcon, { backgroundColor: colors.brandBlue }]}><Ionicons name="camera" size={16} color="#fff" /></View>
                 <Text style={[styles.panelRowLabel, { flex: 1, color: colors.foreground, marginLeft: 16 }]}>Set Profile Photo</Text>
-                <Text style={[styles.panelActionText, { color: colors.primary }]}>Choose</Text>
+                 <Text style={[styles.panelActionText, { color: colors.primary }]}>{uploadingProfilePhoto ? 'Uploading…' : 'Choose'}</Text>
               </Pressable>
               <View style={[styles.panelRow, { borderBottomColor: 'transparent', backgroundColor: colors.card }]}>
                  <View style={[styles.settingIcon, { backgroundColor: '#8B5CF6' }]}><Ionicons name="at" size={16} color="#fff" /></View>
