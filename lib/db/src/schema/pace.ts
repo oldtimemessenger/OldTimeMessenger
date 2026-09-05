@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   bigint as pgBigint,
   boolean,
   doublePrecision,
@@ -122,7 +123,7 @@ export const paceActivityCommentsTable = pgTable(
     id: serial("id").primaryKey(),
     activityId: integer("activity_id").notNull().references(() => paceActivitiesTable.id, { onDelete: "cascade" }),
     authorId: integer("author_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-    parentId: integer("parent_id").references(() => paceActivityCommentsTable.id, { onDelete: "cascade" }),
+    parentId: integer("parent_id").references((): AnyPgColumn => paceActivityCommentsTable.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
     deleted: boolean("deleted").notNull().default(false),
