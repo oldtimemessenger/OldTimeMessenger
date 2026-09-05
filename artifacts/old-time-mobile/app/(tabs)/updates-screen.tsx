@@ -121,27 +121,11 @@ function MediaFeedFloatingHeader({
   onSelectTab,
   onOpenHub,
   onOpenCommunity,
-  onOpenCreate,
-  onOpenSettings,
-  onOpenSearch,
-  onOpenMessages,
-  onOpenProfile,
-  unreadRequests,
-  ownCard,
-  session,
 }: {
   tab: FeedTab;
   onSelectTab: (tab: FeedTab) => void;
   onOpenHub: () => void;
   onOpenCommunity: () => void;
-  onOpenCreate: () => void;
-  onOpenSettings: () => void;
-  onOpenSearch: () => void;
-  onOpenMessages: () => void;
-  onOpenProfile: () => void;
-  unreadRequests: number;
-  ownCard: any;
-  session: any;
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -154,24 +138,6 @@ function MediaFeedFloatingHeader({
           </Pressable>
           <Pressable onPress={onOpenCommunity} accessibilityRole="button" accessibilityLabel="Open Hubs" style={styles.floatingIconButton}>
             <Ionicons name="albums" size={21} color="#fff" />
-          </Pressable>
-        </View>
-        <View style={styles.mediaFeedHeaderGroup}>
-          <Pressable onPress={onOpenCreate} accessibilityRole="button" accessibilityLabel="Create an update" style={styles.floatingIconButton}>
-            <Ionicons name="add" size={23} color="#fff" />
-          </Pressable>
-          <Pressable onPress={onOpenSettings} accessibilityRole="button" accessibilityLabel="Open Updates settings" style={styles.floatingIconButton}>
-            <Ionicons name="options-outline" size={21} color="#fff" />
-          </Pressable>
-          <Pressable onPress={onOpenSearch} accessibilityRole="button" accessibilityLabel="Search people" style={styles.floatingIconButton}>
-            <Ionicons name="search" size={21} color="#fff" />
-          </Pressable>
-          <Pressable onPress={onOpenMessages} accessibilityRole="button" accessibilityLabel="Open messages" style={styles.floatingIconButton}>
-            <Ionicons name="mail" size={21} color="#fff" />
-            {unreadRequests > 0 && <View style={[styles.headerUnreadDot, styles.floatingUnreadDot]} />}
-          </Pressable>
-          <Pressable onPress={onOpenProfile} accessibilityRole="button" accessibilityLabel="Open your profile">
-            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={32} color="#4C63F5" uri={socialAvatarUrl(ownCard?.avatarObjectPath ?? session?.avatarObjectPath)} />
           </Pressable>
         </View>
       </View>
@@ -672,14 +638,6 @@ export default function UpdatesScreen() {
              onSelectTab={selectFeedTab}
              onOpenHub={() => setViewMode('landing')}
              onOpenCommunity={openCommunity}
-              onOpenCreate={() => setShowCreateMenu(true)}
-              onOpenSettings={() => setShowFeedSettings((value) => !value)}
-             onOpenSearch={() => setShowPeopleSearch(true)}
-             onOpenMessages={openMessagesInbox}
-             onOpenProfile={() => setProfileUserId(session?.id ?? 0)}
-             unreadRequests={messageRequests.filter(r => r.status === 'pending').length}
-             ownCard={ownCard}
-             session={session}
            />
          }
          onComment={setSocialCommentPost}
@@ -695,20 +653,7 @@ export default function UpdatesScreen() {
              <View style={styles.headerLeftActions}>
                <IconButton name="chevron-down" label="Back to Feed" onPress={() => setViewMode('media-feed')} />
              </View>
-           } right={
-             <View style={styles.socialHeaderActions}>
-                <IconButton name="add" label="Create an update" onPress={() => setShowCreateMenu(true)} />
-                <IconButton name="options-outline" label="Open Updates settings" onPress={() => setShowFeedSettings((value) => !value)} />
-               <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
-                <View>
-                  <IconButton name="mail-outline" label="Open messages" onPress={openMessagesInbox} />
-                  {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
-                </View>
-               <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
-                  <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} uri={socialAvatarUrl(ownCard?.avatarObjectPath ?? session?.avatarObjectPath)} />
-               </Pressable>
-             </View>
-           }>
+            }>
              <FlatList
                 testID="updates-feed"
                 data={socialPosts.filter((post) => post.media.some((media) => media.type === 'image' || media.type === 'video'))}
@@ -1177,6 +1122,8 @@ export default function UpdatesScreen() {
           loading={messageRequestsLoading}
           username={ownCard?.username ?? session?.username ?? 'oldtime'}
           displayName={ownCard?.name ?? session?.name ?? 'Old Time'}
+           token={session?.authToken ?? ''}
+           stories={socialStories}
           posts={socialPosts}
           notes={notes}
           colors={colors}
@@ -1203,6 +1150,10 @@ export default function UpdatesScreen() {
             setShowMessagesInbox(false);
             openMessageRequests();
           }}
+           onOpenStory={(story) => {
+             setShowMessagesInbox(false);
+             setServerStoryOpen(story);
+           }}
         />
       </Modal>
 
@@ -3586,11 +3537,15 @@ function MessageRequestsSheet({ requests, loading, colors, onClose, onAccept, on
   );
 }
 
-function MessagesInboxSheet({ requestCount, loading, username, displayName, notes, posts, colors, onClose, onCreateMessage, onOpenRequests, onCreateNote, onEditNote }: { requestCount: number; loading: boolean; username: string; displayName: string; notes: Note[]; posts: SocialPost[]; colors: any; onClose: () => void; onCreateMessage: () => void; onOpenRequests: () => void; onCreateNote: () => void; onEditNote: (note: Note) => void; onDeleteNote: (note: Note) => void }) {
+function MessagesInboxSheet({ requestCount, loading, username, displayName, token, stories, notes, posts, colors, onClose, onCreateMessage, onOpenRequests, onCreateNote, onEditNote, onOpenStory }: { requestCount: number; loading: boolean; username: string; displayName: string; token: string; stories: Story[]; notes: Note[]; posts: SocialPost[]; colors: any; onClose: () => void; onCreateMessage: () => void; onOpenRequests: () => void; onCreateNote: () => void; onEditNote: (note: Note) => void; onDeleteNote: (note: Note) => void; onOpenStory: (story: Story) => void }) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const ownNote = notes.find((note) => note.viewer.isOwner);
-  const sharedNotes = notes.filter((note) => !note.viewer.isOwner);
+  const ownStory = stories.find((story) => story.viewer.isOwner);
+  const storyItems = [
+    { story: ownStory, name: displayName, isOwn: true },
+    ...stories.filter((story) => !story.viewer.isOwner).slice(0, 10).map((story) => ({ story, name: story.author.name, isOwn: false })),
+  ];
   const messageAuthors = Array.from(new Map(posts.map((post) => [post.author.id, post.author])).values()).filter((author) => author.username !== username);
   const visibleAuthors = messageAuthors.filter((author) => `${author.name} ${author.username}`.toLowerCase().includes(query.trim().toLowerCase()));
   return (
@@ -3615,39 +3570,44 @@ function MessagesInboxSheet({ requestCount, loading, username, displayName, note
           />
         </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}>
-          <Pressable
-            onPress={() => ownNote ? onEditNote(ownNote) : onCreateNote()}
-            style={[styles.ownNoteCard, { backgroundColor: colors.muted, borderColor: colors.border }]}
-            accessibilityRole="button"
-            accessibilityLabel={ownNote ? 'Edit your note' : 'Create a note'}
-          >
-            <Avatar name={displayName} size={48} color={colors.primary} />
-            <View style={styles.ownNoteCopy}>
-              <Text style={[styles.ownNoteTitle, { color: colors.foreground }]}>{ownNote ? 'Your note' : 'Share a note'}</Text>
-              <Text style={[styles.ownNoteText, { color: colors.mutedForeground }]} numberOfLines={2}>
-                {ownNote?.content ?? 'Let friends know what’s on your mind.'}
-              </Text>
-            </View>
-            <View style={[styles.ownNoteAction, { backgroundColor: colors.card }]}>
-              <Ionicons name={ownNote ? 'pencil' : 'add'} size={17} color={colors.primary} />
-            </View>
-          </Pressable>
-          {sharedNotes.length > 0 ? (
-            <View style={styles.friendNotes}>
-              <Text style={[styles.friendNotesLabel, { color: colors.mutedForeground }]}>FRIENDS’ NOTES</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesRail}>
-                {sharedNotes.slice(0, 8).map((note) => (
-                  <View key={note.id} style={[styles.friendNoteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Avatar name={note.owner.name} size={34} color={colors.primary} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.noteName, { color: colors.foreground }]} numberOfLines={1}>{note.owner.name}</Text>
-                      <Text style={[styles.friendNoteText, { color: colors.mutedForeground }]} numberOfLines={2}>{note.content}</Text>
-                    </View>
+          <View style={styles.messageStoriesSection}>
+            <Text style={[styles.friendNotesLabel, { color: colors.mutedForeground }]}>STORIES</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.messageStoriesRail}>
+              {storyItems.map(({ story, name, isOwn }, index) => {
+                const note = isOwn ? ownNote : notes.find((item) => item.owner.id === story?.author.id);
+                return (
+                  <View key={story?.id ?? `own-story-${index}`} style={styles.messageStoryItem}>
+                    {isOwn ? (
+                      <Pressable
+                        onPress={() => ownNote ? onEditNote(ownNote) : onCreateNote()}
+                        style={[styles.storyNoteBubble, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={ownNote ? 'Edit your note' : 'Create a note'}
+                      >
+                        <Text style={[styles.storyNoteBubbleText, { color: colors.foreground }]} numberOfLines={2}>
+                          {ownNote?.content ?? 'Add a note'}
+                        </Text>
+                      </Pressable>
+                    ) : note ? (
+                      <View style={[styles.storyNoteBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Text style={[styles.storyNoteBubbleText, { color: colors.foreground }]} numberOfLines={2}>{note.content}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.storyNoteBubbleSpacer} />
+                    )}
+                    <StoryCard
+                      story={story}
+                      name={name}
+                      isOwn={isOwn}
+                      colors={colors}
+                      token={token}
+                      onPress={() => story ? onOpenStory(story) : onCreateNote()}
+                    />
                   </View>
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
+                );
+              })}
+            </ScrollView>
+          </View>
           <View style={styles.messagesTabs}>
             <View style={styles.messagesTab} accessibilityRole="tab" accessibilityState={{ selected: true }}>
               <Text style={[styles.messagesTabText, { color: colors.foreground }]}>Messages</Text>
@@ -4273,6 +4233,12 @@ const styles = StyleSheet.create({
   messagesInboxHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   messagesSearch: { minHeight: 45, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, marginTop: 4 },
   messagesSearchInput: { flex: 1, fontSize: 16, paddingVertical: 9 },
+  messageStoriesSection: { paddingTop: 18 },
+  messageStoriesRail: { gap: 10, paddingTop: 2, paddingBottom: 16 },
+  messageStoryItem: { width: 92, minHeight: 190, alignItems: 'center' },
+  storyNoteBubble: { width: 92, minHeight: 38, borderWidth: StyleSheet.hairlineWidth, borderRadius: 13, paddingHorizontal: 7, paddingVertical: 6, marginBottom: 7, alignItems: 'center', justifyContent: 'center' },
+  storyNoteBubbleText: { fontSize: 10, lineHeight: 13, fontWeight: '600', textAlign: 'center' },
+  storyNoteBubbleSpacer: { width: 92, height: 45 },
   ownNoteCard: { minHeight: 82, borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, marginTop: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   ownNoteCopy: { flex: 1 },
   ownNoteTitle: { fontSize: 15, fontWeight: '700' },
