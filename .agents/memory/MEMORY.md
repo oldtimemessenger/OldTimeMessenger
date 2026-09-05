@@ -20,3 +20,4 @@
 - [Mobile advertising boundaries](mobile-advertising-boundaries.md) — central policy governs public placements; private communication surfaces stay permanently ad-free.
 - [Deployment status and placeholder behavior](deployment-status-quirk.md) — an existing production URL can still serve the not-live placeholder when the current build is unsuccessful.
 - [Mobile startup hydration](mobile-startup-hydration.md) — native storage hydration must always settle before hiding the splash screen, with a timeout fallback for stalled TestFlight launches.
+- [Photo-to-chat handoff](photo-chat-handoff.md) — preserve captured media through both existing/new chat branches and never block its draft on message history.
