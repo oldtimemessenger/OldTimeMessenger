@@ -254,11 +254,11 @@ export default function CurrentEventRoomScreen() {
     } catch {
       setFeedback('Sharing is unavailable right now.');
     }
+  }
 
-    async function promoteFromPeople(participant: CurrentEventParticipant) {
-      await moderate(participant, 'promote');
-      setPeopleOpen(false);
-    }
+  async function promoteFromPeople(participant: CurrentEventParticipant) {
+    await moderate(participant, 'promote');
+    setPeopleOpen(false);
   }
 
   if (loading || (!room && !roomUnavailable)) {
@@ -485,7 +485,7 @@ export default function CurrentEventRoomScreen() {
             <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to host Access rooms longer than 18 minutes.</Text>
             <View style={styles.verifyActions}>
               <Pressable onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); }}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
-              <Pressable onPress={() => { setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
+              <Pressable onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
             </View>
           </View>
         </View>
