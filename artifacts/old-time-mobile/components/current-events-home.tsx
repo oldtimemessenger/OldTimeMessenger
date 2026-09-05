@@ -70,7 +70,7 @@ export default function CurrentEventsHome({
   onOpenRoom: (room: CurrentEventRoom) => void;
   onRoomCreated: (room: CurrentEventRoom) => void;
   onRoomsChanged: (rooms: CurrentEventRoom[]) => void;
-  currentUserId: number;
+  currentUserId?: number | null;
 }) {
   const insets = useSafeAreaInsets();
   const [topic, setTopic] = useState<CurrentEventTopic>('for-you');
@@ -116,13 +116,16 @@ export default function CurrentEventsHome({
       }
       return picked;
     };
-    return [
+    const sectionList = [
       { key: 'live', title: 'LIVE NOW', items: take(() => true, 8) },
       { key: 'friends', title: 'FRIENDS ARE TALKING', items: take((room) => room.counts.speakers >= 2, 4) },
       { key: 'trending', title: 'TRENDING', items: take(() => true, 6) },
       { key: 'for-you', title: 'FOR YOU', items: take((room) => topic === 'for-you' || room.topic === topic, 6) },
-      { key: 'my-access', title: 'MY ACCESS', items: take((room) => room.hostId === currentUserId, 4) },
-    ].filter((section) => section.items.length > 0);
+    ];
+    if (typeof currentUserId === 'number' && currentUserId > 0) {
+      sectionList.push({ key: 'my-access', title: 'MY ACCESS', items: take((room) => room.hostId === currentUserId, 4) });
+    }
+    return sectionList.filter((section) => section.items.length > 0);
   }, [currentUserId, rooms, topic]);
 
   async function hostRoom() {

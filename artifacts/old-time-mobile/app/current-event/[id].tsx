@@ -427,7 +427,7 @@ export default function CurrentEventRoomScreen() {
                 <View key={participant.id} style={styles.controlRow}>
                   <Avatar name={participant.user.name} size={30} color={colors.primary} />
                   <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name} · {roleLabel(participant.role)}</Text>
-                  {canModerate && participant.id !== room.viewer.participantId && participant.role !== 'host' ? <Pressable onPress={() => void moderate(participant, participant.muted ? 'unmute' : 'mute')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>{participant.muted ? 'Unmute' : 'Mute'}</Text></Pressable> : null}
+                  {canModerate && participant.user.id !== session?.id && participant.role !== 'host' ? <Pressable onPress={() => void moderate(participant, participant.muted ? 'unmute' : 'mute')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>{participant.muted ? 'Unmute' : 'Mute'}</Text></Pressable> : null}
                 </View>
               ))}
               <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>AUDIENCE</Text>
@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
   listener: { alignItems: 'center', width: 52 },
   listenerName: { fontSize: 10, fontWeight: '500', marginTop: 4, maxWidth: 52 },
   roomActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 24 },
-  actionButton: { width: '31%', minHeight: 52, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  actionButton: { flexBasis: '31%', minWidth: 104, flexGrow: 1, minHeight: 52, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', gap: 3 },
   actionButtonActive: { borderWidth: 0 },
   actionText: { fontSize: 10, fontWeight: '600' },
   leaveBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 9 },
