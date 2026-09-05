@@ -255,9 +255,7 @@ export default function CurrentEventRoomScreen() {
       await Share.share({
         message: `Join me in Access: ${room.title}`,
       });
-    } catch {
-      setFeedback('Sharing is unavailable right now.');
-    }
+    } catch {}
   }
 
   async function promoteFromPeople(participant: CurrentEventParticipant) {
@@ -408,7 +406,7 @@ export default function CurrentEventRoomScreen() {
                 </View>
               ))}
               <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>AUDIENCE</Text>
-              {listeners.length === 0 ? <Text style={[styles.mutedNote, { color: colors.mutedForeground }]}>No listeners right now.</Text> : listeners.map((participant) => (
+              {listeners.filter((participant) => !participant.handRaised).length === 0 ? <Text style={[styles.mutedNote, { color: colors.mutedForeground }]}>No listeners right now.</Text> : listeners.filter((participant) => !participant.handRaised).map((participant) => (
                 <View key={participant.id} style={styles.controlRow}>
                   <Avatar name={participant.user.name} size={30} color={colors.foreground} />
                   <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}</Text>

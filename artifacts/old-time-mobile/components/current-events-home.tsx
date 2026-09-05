@@ -316,7 +316,7 @@ export default function CurrentEventsHome({
               ))}
             </View>
             <View style={styles.featureList}>
-              <Text style={[styles.featureItem, { color: colors.mutedForeground }]}>Chat, reactions, replay, clips, and scheduling are visible in Access and can be managed after room start.</Text>
+              <Text style={[styles.featureItem, { color: colors.mutedForeground }]}>Chat, reactions, gifting, and people controls are available once the room is live.</Text>
             </View>
             <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Room pricing</Text>
             <View style={styles.roomTypeRail}>
