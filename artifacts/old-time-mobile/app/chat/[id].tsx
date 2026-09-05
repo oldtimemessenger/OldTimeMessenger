@@ -969,6 +969,24 @@ export default function ChatDetailScreen() {
     return <View style={[styles.center, { backgroundColor: colors.background }]}><LoadingState /></View>;
   }
 
+  if (messages.isError) {
+    return (
+      <View style={[styles.center, { backgroundColor: colors.background, paddingHorizontal: 28 }]}>
+        <Ionicons name="chatbubble-ellipses-outline" size={42} color={colors.mutedForeground} />
+        <Text style={[styles.emptyMessageTitle, { color: colors.foreground }]}>Conversation could not load</Text>
+        <Text style={[styles.emptyMessageText, { color: colors.mutedForeground }]}>Check your connection and try again.</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading conversation"
+          onPress={() => void messages.refetch()}
+          style={[styles.retryButton, { backgroundColor: colors.primary }]}
+        >
+          <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>Try again</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   const headerPresence = presenceLabel(contact, typingState);
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior="padding" keyboardVerticalOffset={0}>
@@ -1028,6 +1046,13 @@ export default function ChatDetailScreen() {
           shouldAutoScrollRef.current = distanceFromBottom < 120;
         }}
         scrollEventThrottle={16}
+         ListEmptyComponent={
+           <View style={styles.emptyMessageState}>
+             <Ionicons name="chatbubble-outline" size={34} color={colors.mutedForeground} />
+             <Text style={[styles.emptyMessageTitle, { color: colors.foreground }]}>No messages yet</Text>
+             <Text style={[styles.emptyMessageText, { color: colors.mutedForeground }]}>Send a message to start the conversation.</Text>
+           </View>
+         }
         renderItem={({ item }) => {
           if (item.type === 'separator') {
             return (
@@ -1205,7 +1230,6 @@ export default function ChatDetailScreen() {
             </Swipeable>
           );
         }}
-        ListEmptyComponent={<View style={styles.emptyChat}><Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.mutedForeground} /><Text style={{ color: colors.mutedForeground }}>Start the conversation.</Text></View>}
       />
 
       {uploadLabel ? <View style={[styles.uploadBanner, { backgroundColor: colors.secondary }]}><Ionicons name="cloud-upload-outline" size={16} color={colors.primary} /><Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>{uploadLabel}</Text></View> : null}
@@ -1404,6 +1428,10 @@ function ActionRow({ icon, label, onPress, destructive = false }: { icon: keyof 
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyMessageState: { flexGrow: 1, minHeight: 240, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
+  emptyMessageTitle: { fontSize: 17, fontWeight: '800', marginTop: 12, textAlign: 'center' },
+  emptyMessageText: { fontSize: 13, lineHeight: 19, marginTop: 6, textAlign: 'center' },
+  retryButton: { borderRadius: 10, marginTop: 18, paddingHorizontal: 18, paddingVertical: 11 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
   headerBody: { flex: 1 },
   headerContact: { flexDirection: 'row', alignItems: 'center', gap: 10 },
