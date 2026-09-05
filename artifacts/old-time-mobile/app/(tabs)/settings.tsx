@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState, useMemo } from 'react';
+import { getCurrentEventWallet } from '@workspace/api-client-react';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -30,6 +32,7 @@ const SUPPORTED_LANGUAGES = [
 
 export default function SettingsScreen() {
   const colors = useColors();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const logout = useLogout();
   const deleteAccount = useDeleteAccount();
@@ -38,6 +41,7 @@ export default function SettingsScreen() {
 
   const [panel, setPanel] = useState<Panel>(null);
   const [query, setQuery] = useState('');
+  const [walletCoins, setWalletCoins] = useState<number | null>(null);
   const [cacheStatus, setCacheStatus] = useState<'idle' | 'clearing' | 'cleared' | 'error'>('idle');
   const [signingOut, setSigningOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -58,6 +62,16 @@ export default function SettingsScreen() {
   const [faqOpen, setFaqOpen] = useState(-1);
 
   const [savedInput, setSavedInput] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void getCurrentEventWallet().then((wallet) => {
+      if (!cancelled) setWalletCoins(wallet.coins);
+    }).catch(() => {
+      if (!cancelled) setWalletCoins(null);
+    });
+    return () => { cancelled = true; };
+  }, [session?.id]);
 
   function toggle(key: keyof typeof settings) {
     updateSettings({ [key]: !settings[key] } as Partial<typeof settings>);
@@ -251,8 +265,9 @@ export default function SettingsScreen() {
       { items: [
       { key: "profile", icon: "person", bg: colors.settingsRed, label: translate('myProfile'), value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
       { key: "phone", icon: "call", bg: colors.settingsGreen, label: 'Phone Number', value: session?.hasRegisteredPhone ? (session.phoneVerified ? 'Verified' : 'Registered') : 'Not registered', onPress: () => { setDraftPhone(session?.phone ?? ''); setPhonePermission(session?.phoneDiscoveryPermission ?? 'contacts'); setPanel('phone'); } },
-      { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
-    ]},
+    { key: "wallet", icon: "wallet", bg: colors.settingsViolet, label: 'Wallet', value: walletCoins === null ? undefined : `◈ ${walletCoins}`, onPress: () => router.push('/wallet') },
+    { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
+  ]},
     { items: [
       { key: "calls", icon: "call", bg: colors.settingsGreen, label: translate('recentCalls'), onPress: () => setPanel('calls') },
       { key: "chatSettings", icon: "chatbubbles", bg: colors.settingsCyan, label: translate('chatSettings'), onPress: () => setPanel('chatSettings') },
@@ -271,7 +286,7 @@ export default function SettingsScreen() {
     { items: [
        { key: "logout", icon: "log-out", bg: colors.settingsRed, label: translate('logout'), danger: true, onPress: signOut },
     ]},
-  ] as const), [colors, profile, savedMessages.length, session, settings, logout]);
+  ] as const), [colors, profile, router, savedMessages.length, session, settings, logout, translate, walletCoins]);
 
   const filteredGroups = useMemo(() => {
     if (!query.trim()) return groups;

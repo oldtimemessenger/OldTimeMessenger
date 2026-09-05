@@ -42,7 +42,8 @@ function RootLayoutNav() {
       <Stack.Screen name="index" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="chat/[id]" />
-       <Stack.Screen name="call/[id]" />
+      <Stack.Screen name="call/[id]" />
+      <Stack.Screen name="wallet" />
       <Stack.Screen name="current-event/[id]" />
       <Stack.Screen name="camera" options={{ presentation: 'modal' }} />
       <Stack.Screen name="story/[id]" options={{ presentation: 'modal' }} />
