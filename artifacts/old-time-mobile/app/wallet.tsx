@@ -39,14 +39,14 @@ export default function WalletScreen() {
 
   async function refreshWallet(options?: { clearFeedback?: boolean; alertOnError?: boolean }) {
     const result = await walletQuery.refetch();
-    if (result.data) {
-      if (options?.clearFeedback) setFeedback(null);
-      return result.data;
+    if (result.status === 'error') {
+      const message = result.error instanceof Error ? result.error.message : 'Wallet unavailable.';
+      if (options?.alertOnError) Alert.alert('Wallet not updated', message);
+      else setFeedback(message);
+      return null;
     }
-    const message = result.error instanceof Error ? result.error.message : 'Wallet unavailable.';
-    if (options?.alertOnError) Alert.alert('Wallet not updated', message);
-    else setFeedback(message);
-    return null;
+    if (options?.clearFeedback) setFeedback(null);
+    return result.data ?? wallet;
   }
 
   async function handlePurchase(item: (typeof revenueCat.packages)[number]) {
@@ -123,6 +123,7 @@ export default function WalletScreen() {
               key={item.identifier}
               accessibilityRole="button"
               accessibilityLabel={`Buy ${item.product.title}`}
+              accessibilityState={{ disabled: revenueCat.purchasing }}
               disabled={revenueCat.purchasing}
               onPress={() => void handlePurchase(item)}
               style={({ pressed }) => [
