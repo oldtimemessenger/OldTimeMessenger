@@ -503,6 +503,9 @@ export default function CurrentEventRoomScreen() {
               setFeedback(error?.message ?? 'Restore unavailable.');
             }
           }} style={styles.walletLink}><Text style={[styles.walletLinkText, { color: colors.primary }]}>Restore purchases</Text></Pressable>
+          <Pressable onPress={() => { setStoreOpen(false); router.push('/wallet'); }} style={styles.walletLink}>
+            <Text style={[styles.walletLinkText, { color: colors.primary }]}>Open wallet page</Text>
+          </Pressable>
         </View></View>
       </Modal>
 
