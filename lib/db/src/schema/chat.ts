@@ -127,8 +127,8 @@ export const messagesTable = pgTable("chat_messages", {
 export const messageReactionsTable = pgTable(
   "chat_message_reactions",
   {
-    messageId: integer("message_id").notNull(),
-    userId: integer("user_id").notNull(),
+    messageId: integer("message_id").notNull().references(() => messagesTable.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
     emoji: text("emoji").notNull(),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
   },
@@ -141,8 +141,8 @@ export const messageReactionsTable = pgTable(
 export const messageHiddenTable = pgTable(
   "chat_message_hidden",
   {
-    messageId: integer("message_id").notNull(),
-    userId: integer("user_id").notNull(),
+    messageId: integer("message_id").notNull().references(() => messagesTable.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
     hiddenAt: pgBigint("hidden_at", { mode: "number" }).notNull(),
   },
   (table) => ({

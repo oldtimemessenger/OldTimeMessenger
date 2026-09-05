@@ -54,7 +54,6 @@ export default function CallScreen() {
   const [busy, setBusy] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(true);
-  const [cameraEnabled, setCameraEnabled] = useState(true);
   const [elapsed, setElapsed] = useState(0);
   const connectStarted = useRef(false);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session?.id), queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
@@ -185,7 +184,6 @@ export default function CallScreen() {
   }
 
   function toggleCamera() {
-    setCameraEnabled((current) => !current);
     Alert.alert('Video preview coming soon', 'This build keeps the call connected, but camera publishing is not available yet.');
   }
 
@@ -216,7 +214,7 @@ export default function CallScreen() {
           <Text style={[styles.callTypeText, { color: colors.foreground }]}>{call?.type === 'video' ? 'Video call' : 'Voice call'}</Text>
         </View>
         <Pressable accessibilityLabel="Share screen" onPress={startScreenShare} style={[styles.topButton, { backgroundColor: colors.card }]}>
-          <Ionicons name="phone-portrait-outline" size={18} color={colors.foreground} />
+          <Ionicons name="desktop-outline" size={18} color={colors.foreground} />
         </Pressable>
       </View>
 
@@ -228,16 +226,12 @@ export default function CallScreen() {
       </View>
 
       <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={[styles.previewBadge, { backgroundColor: connected && call?.type === 'video' && cameraEnabled ? '#DCFCE7' : colors.secondary }]}>
-          <Ionicons
-            name={call?.type === 'video' && cameraEnabled ? 'videocam' : 'person'}
-            size={18}
-            color={call?.type === 'video' && cameraEnabled ? '#166534' : colors.foreground}
-          />
+        <View style={[styles.previewBadge, { backgroundColor: connected && call?.type === 'video' ? '#DCFCE7' : colors.secondary }]}>
+          <Ionicons name={call?.type === 'video' ? 'videocam' : 'person'} size={18} color={call?.type === 'video' ? '#166534' : colors.foreground} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.previewTitle, { color: colors.foreground }]}>
-            {call?.type === 'video' ? (cameraEnabled ? 'Video ready' : 'Camera off') : 'Audio connected'}
+            {call?.type === 'video' ? 'Video calling' : 'Audio connected'}
           </Text>
           <Text style={[styles.previewMeta, { color: colors.mutedForeground }]}>
             {call?.type === 'video'
@@ -257,8 +251,8 @@ export default function CallScreen() {
           <Text style={[styles.controlLabel, { color: colors.foreground }]}>{speaker ? 'Speaker' : 'Earpiece'}</Text>
         </Pressable>
         <Pressable onPress={toggleCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
-          <Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>{cameraEnabled ? 'Camera on' : 'Camera off'}</Text>
+          <Ionicons name="videocam-off" size={22} color={colors.foreground} />
+          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Camera unavailable</Text>
         </Pressable>
         <Pressable onPress={swapCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
           <Ionicons name="camera-reverse" size={22} color={colors.foreground} />

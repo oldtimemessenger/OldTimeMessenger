@@ -23,7 +23,11 @@ CREATE TABLE IF NOT EXISTS "chat_message_reactions" (
   "user_id" integer NOT NULL,
   "emoji" text NOT NULL,
   "created_at" bigint NOT NULL,
-  PRIMARY KEY ("message_id", "user_id")
+  PRIMARY KEY ("message_id", "user_id"),
+  CONSTRAINT "chat_message_reactions_message_id_fkey"
+    FOREIGN KEY ("message_id") REFERENCES "chat_messages" ("id") ON DELETE CASCADE,
+  CONSTRAINT "chat_message_reactions_user_id_fkey"
+    FOREIGN KEY ("user_id") REFERENCES "chat_users" ("id") ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS "chat_message_reactions_message_idx"
@@ -33,7 +37,11 @@ CREATE TABLE IF NOT EXISTS "chat_message_hidden" (
   "message_id" integer NOT NULL,
   "user_id" integer NOT NULL,
   "hidden_at" bigint NOT NULL,
-  PRIMARY KEY ("message_id", "user_id")
+  PRIMARY KEY ("message_id", "user_id"),
+  CONSTRAINT "chat_message_hidden_message_id_fkey"
+    FOREIGN KEY ("message_id") REFERENCES "chat_messages" ("id") ON DELETE CASCADE,
+  CONSTRAINT "chat_message_hidden_user_id_fkey"
+    FOREIGN KEY ("user_id") REFERENCES "chat_users" ("id") ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS "chat_message_hidden_user_idx"

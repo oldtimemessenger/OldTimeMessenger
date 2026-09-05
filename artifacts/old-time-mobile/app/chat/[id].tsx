@@ -533,6 +533,10 @@ export default function ChatDetailScreen() {
     }
   }, [activeAudioMessageId, audioStatus.playing, mergeIncomingMessage, session, visibleMessages]);
 
+  useEffect(() => {
+    audioPlayedRef.current = null;
+  }, [activeAudioMessageId]);
+
   const emitTypingState = useCallback((state: TypingState) => {
     chatSocketRef.current?.emit('typing', { chatId, state });
   }, [chatId]);
@@ -1265,9 +1269,9 @@ export default function ChatDetailScreen() {
             <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Share in chat</Text>
             <View style={styles.attachmentActions}>
               <AttachmentAction icon="camera" label="Camera" color={colors.primary} onPress={() => { setAttachmentMenu(false); router.push({ pathname: '/camera', params: { returnChatId: String(chatId) } } as never); }} />
-              <AttachmentAction icon="images" label="Photos & Videos" color="#4BB77B" onPress={() => void choosePhotoOrVideo()} />
-              <AttachmentAction icon="document-text" label="Document" color="#8B6DE9" onPress={() => void chooseFile()} />
-              <AttachmentAction icon="location" label="Location" color="#F97316" onPress={() => void shareLocation()} />
+              <AttachmentAction icon="images" label="Photos & Videos" color="#4BB77B" onPress={() => { setAttachmentMenu(false); void choosePhotoOrVideo(); }} />
+              <AttachmentAction icon="document-text" label="Document" color="#8B6DE9" onPress={() => { setAttachmentMenu(false); void chooseFile(); }} />
+              <AttachmentAction icon="location" label="Location" color="#F97316" onPress={() => { setAttachmentMenu(false); void shareLocation(); }} />
             </View>
           </View>
         </View>

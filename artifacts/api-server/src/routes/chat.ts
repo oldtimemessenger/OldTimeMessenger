@@ -205,6 +205,20 @@ async function loadReactions(messageIds: number[]) {
 
 async function serializeMessages(messages: MessageRecord[], viewerId: number) {
   const reactionMap = await loadReactions(messages.map((message) => message.id));
+  const replyTargetIds = [...new Set(messages.map((message) => message.replyToMessageId).filter((messageId): messageId is number => Number.isInteger(messageId)))];
+  const replyTargets = replyTargetIds.length
+    ? await db.select().from(messagesTable).where(and(
+      inArray(messagesTable.id, replyTargetIds),
+      visibleMessageCondition(now()),
+      visibleForUserCondition(viewerId),
+    ))
+    : [];
+  const replyTargetMap = new Map(replyTargets.map((message) => [message.id, message]));
+  const replySenderIds = [...new Set(replyTargets.map((message) => message.senderId))];
+  const replySenders = replySenderIds.length
+    ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, replySenderIds))
+    : [];
+  const replySenderMap = new Map(replySenders.map((user) => [user.id, user.name]));
   return messages.map((message) => ({
     id: message.id,
     chatId: message.chatId,
@@ -221,7 +235,12 @@ async function serializeMessages(messages: MessageRecord[], viewerId: number) {
     deletedForEveryone: message.deletedForEveryone,
     attachment: message.deletedForEveryone ? null : message.attachment,
     replyToMessageId: message.replyToMessageId,
-    replyPreview: message.replyPreview,
+    replyPreview: message.replyToMessageId && replyTargetMap.get(message.replyToMessageId)
+      ? serializeReplyPreview(
+        replyTargetMap.get(message.replyToMessageId)!,
+        replySenderMap.get(replyTargetMap.get(message.replyToMessageId)!.senderId) ?? message.replyPreview?.senderName ?? "Unknown",
+      )
+      : message.replyPreview,
     expiresAt: message.expiresAt,
     saved: message.saved,
     reactions: (reactionMap.get(message.id) ?? []).map((reaction) => ({
@@ -1665,25 +1684,6 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
       res.status(404).json({ error: "Message not found." });
       return;
     }
-    await db.update(messagesTable).set({
-      replyPreview: sql`jsonb_set(
-        jsonb_set(
-          jsonb_set(
-            coalesce(${messagesTable.replyPreview}, '{}'::jsonb),
-            '{content}',
-            ${JSON.stringify(updated.content)}::jsonb
-          ),
-          '{attachmentType}',
-          '"text"'::jsonb
-        ),
-        '{deleted}',
-        'false'::jsonb
-      )`,
-    }).where(and(
-      eq(messagesTable.chatId, message.chatId),
-      eq(messagesTable.replyToMessageId, message.id),
-      eq(messagesTable.deletedForEveryone, false),
-    ));
     const response = (await serializeMessages([updated], userId))[0];
     emitToChat(message.chatId, "message-updated", response);
     for (const participantId of participants) emitToUser(participantId, "inbox-updated", response);
@@ -1751,7 +1751,6 @@ router.put("/messages/:messageId/reaction", async (req, res): Promise<void> => {
     return;
   }
   await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(${messageId}, ${userId})`);
     const existing = await tx.select().from(messageReactionsTable)
       .where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.userId, userId))).limit(1);
     if (existing[0]?.emoji === emoji) {
