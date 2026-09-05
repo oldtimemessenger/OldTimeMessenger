@@ -427,7 +427,7 @@ export default function CurrentEventRoomScreen() {
                 <View key={participant.id} style={styles.controlRow}>
                   <Avatar name={participant.user.name} size={30} color={colors.primary} />
                   <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name} · {roleLabel(participant.role)}</Text>
-                  {canModerate && participant.user.id !== session?.id && participant.role !== 'host' ? <Pressable onPress={() => void moderate(participant, participant.muted ? 'unmute' : 'mute')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>{participant.muted ? 'Unmute' : 'Mute'}</Text></Pressable> : null}
+                  {canModerate && participant.id !== room.viewer.participantId && participant.role !== 'host' ? <Pressable onPress={() => void moderate(participant, participant.muted ? 'unmute' : 'mute')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>{participant.muted ? 'Unmute' : 'Mute'}</Text></Pressable> : null}
                 </View>
               ))}
               <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>AUDIENCE</Text>

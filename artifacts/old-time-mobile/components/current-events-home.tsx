@@ -105,25 +105,14 @@ export default function CurrentEventsHome({
 
   const sections = useMemo(() => {
     const sorted = [...rooms].sort((left, right) => (right.counts.listeners + right.counts.speakers) - (left.counts.listeners + left.counts.speakers));
-    const assigned = new Set<number>();
-    const take = (predicate: (room: CurrentEventRoom) => boolean, limit: number) => {
-      const picked: CurrentEventRoom[] = [];
-      for (const room of sorted) {
-        if (assigned.has(room.id) || !predicate(room)) continue;
-        picked.push(room);
-        assigned.add(room.id);
-        if (picked.length >= limit) break;
-      }
-      return picked;
-    };
     const sectionList = [
-      { key: 'live', title: 'LIVE NOW', items: take(() => true, 8) },
-      { key: 'friends', title: 'FRIENDS ARE TALKING', items: take((room) => room.counts.speakers >= 2, 4) },
-      { key: 'trending', title: 'TRENDING', items: take(() => true, 6) },
-      { key: 'for-you', title: 'FOR YOU', items: take((room) => topic === 'for-you' || room.topic === topic, 6) },
+      { key: 'live', title: 'LIVE NOW', items: sorted.slice(0, 8) },
+      { key: 'friends', title: 'FRIENDS ARE TALKING', items: sorted.filter((room) => room.counts.speakers >= 2).slice(0, 4) },
+      { key: 'trending', title: 'TRENDING', items: sorted.slice(0, 6) },
+      { key: 'for-you', title: 'FOR YOU', items: sorted.filter((room) => topic === 'for-you' || room.topic === topic).slice(0, 6) },
     ];
     if (typeof currentUserId === 'number' && currentUserId > 0) {
-      sectionList.push({ key: 'my-access', title: 'MY ACCESS', items: take((room) => room.hostId === currentUserId, 4) });
+      sectionList.push({ key: 'my-access', title: 'MY ACCESS', items: sorted.filter((room) => room.hostId === currentUserId).slice(0, 4) });
     }
     return sectionList.filter((section) => section.items.length > 0);
   }, [currentUserId, rooms, topic]);
@@ -150,11 +139,11 @@ export default function CurrentEventsHome({
 
   const flatRooms = useMemo(() => {
     const rows: Array<{ type: 'section'; key: string; title: string } | { type: 'room'; key: string; room: CurrentEventRoom }> = [];
+    const seen = new Set<number>();
     for (const section of sections) {
-      const seenInSection = new Set<number>();
       const uniqueRooms = section.items.filter((room) => {
-        if (seenInSection.has(room.id)) return false;
-        seenInSection.add(room.id);
+        if (seen.has(room.id)) return false;
+        seen.add(room.id);
         return true;
       });
       if (!uniqueRooms.length) continue;
