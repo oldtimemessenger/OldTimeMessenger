@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Contacts from 'expo-contacts';
 import * as Crypto from 'expo-crypto';
 import { Image } from 'expo-image';
@@ -40,6 +40,7 @@ export default function ChatsScreen() {
   const [unmatchedContacts, setUnmatchedContacts] = useState<string[]>([]);
   const [contactDiscoveryState, setContactDiscoveryState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [pendingMedia, setPendingMedia] = useState<{ uri: string; type: 'image' | 'video'; fit?: 'contain' | 'cover' } | null>(null);
+  const [startingChatUserId, setStartingChatUserId] = useState<number | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [storyOpen, setStoryOpen] = useState<Story | null>(null);
   const [contactsPermission, setContactsPermission] = useState<{ granted: boolean; status: string; canAskAgain: boolean } | null>(null);
@@ -78,6 +79,7 @@ export default function ChatsScreen() {
     if (!session) return;
     const media = pendingMedia;
     const openChat = (chatId: number) => {
+      setStartingChatUserId(null);
       setShowNew(false);
       setPendingMedia(null);
       setNewMessageSearch('');
@@ -98,11 +100,14 @@ export default function ChatsScreen() {
       openChat(existing.chat.id);
       return;
     }
+    if (createChat.isPending) return;
+    setStartingChatUserId(user.id);
     createChat.mutate({ data: { userIds: [session.id, user.id] } }, {
       onSuccess: (chat) => {
         openChat(chat.id);
       },
       onError: (error) => {
+        setStartingChatUserId(null);
         Alert.alert('Chat unavailable', error instanceof Error ? error.message : `You cannot start a chat with ${user.name} yet.`);
       },
     });
@@ -278,18 +283,18 @@ export default function ChatsScreen() {
             <>
               {contactMatches.length > 0 ? <Text style={[styles.directoryLabel, { color: colors.mutedForeground }]}>FROM YOUR CONTACTS</Text> : null}
               {contactMatches.map((user) => (
-                <Pressable key={`contact-${user.id}`} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
+                 <Pressable key={`contact-${user.id}`} onPress={() => startChat(user)} disabled={startingChatUserId !== null} style={[styles.person, { borderBottomColor: colors.border, opacity: startingChatUserId !== null && startingChatUserId !== user.id ? 0.5 : 1 }]}>
                   <View style={styles.avatarWrap}><Avatar name={user.name} size={42} />{user.online ? <View style={[styles.onlineDotSmall, { backgroundColor: colors.primary, borderColor: colors.card }]} /> : null}</View>
                   <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: colors.primary }]}>On Old Time · {presenceLabel(user)}</Text></View>
-                  <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.primary} />
+                   {startingChatUserId === user.id ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.primary} />}
                 </Pressable>
               ))}
               <Text style={[styles.directoryLabel, { color: colors.mutedForeground }]}>ON OLD TIME</Text>
               {directoryUsers.length ? directoryUsers.map((user) => (
-                <Pressable key={user.id} onPress={() => startChat(user)} style={[styles.person, { borderBottomColor: colors.border }]}>
+                 <Pressable key={user.id} onPress={() => startChat(user)} disabled={startingChatUserId !== null} style={[styles.person, { borderBottomColor: colors.border, opacity: startingChatUserId !== null && startingChatUserId !== user.id ? 0.5 : 1 }]}>
                   <View style={styles.avatarWrap}><Avatar name={user.name} size={42} />{user.online ? <View style={[styles.onlineDotSmall, { backgroundColor: colors.primary, borderColor: colors.card }]} /> : null}</View>
                   <View style={{ flex: 1 }}><Text style={[styles.personName, { color: colors.foreground }]}>{user.name}</Text><Text style={[styles.personPhone, { color: user.online ? colors.primary : colors.mutedForeground }]}>{presenceLabel(user)}</Text></View>
-                  <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.primary} />
+                   {startingChatUserId === user.id ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.primary} />}
                 </Pressable>
               )) : <Text style={[styles.directoryEmpty, { color: colors.mutedForeground }]}>No people match that search.</Text>}
               {unmatchedContacts.length > 0 ? <>
