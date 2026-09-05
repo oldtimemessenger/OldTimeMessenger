@@ -9,6 +9,7 @@ export type CallVideoSurfaceProps = {
   cameraEnabled: boolean;
   onError: (message: string) => void;
   onConnectionChange?: (connected: boolean) => void;
+  onScreenShareChange?: (sharing: boolean) => void;
 };
 
 export type CallVideoSurfaceHandle = {

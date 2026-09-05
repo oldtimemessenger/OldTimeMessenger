@@ -9,7 +9,6 @@ import discoveryRouter from "./discovery";
 import callsRouter from "./calls";
 import authBirthdayRouter from "./auth-birthday";
 import accountRouter from "./account";
-import paceRouter from "./pace";
 
 const router: IRouter = Router();
 
@@ -24,6 +23,5 @@ router.use(mapRouter);
 router.use(currentEventsRouter);
 router.use(discoveryRouter);
 router.use(callsRouter);
-router.use(paceRouter);
 
 export default router;

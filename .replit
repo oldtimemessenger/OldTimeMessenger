@@ -27,5 +27,8 @@ timeoutMs = 20000
 FIREBASE_PROJECT_ID = "oldtime-a23af"
 SUPABASE_URL = "https://kcwawiqtfmravkljfswu.supabase.co"
 
+[userenv.shared]
+EXPO_APPLE_TEAM_ID = "FC6ZRKNS2N"
+
 [nix]
 channel = "stable-25_05"

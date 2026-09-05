@@ -10,7 +10,7 @@ export type { CallVideoSurfaceHandle, CallVideoSurfaceProps } from './call-video
 
 type VideoStageProps = Omit<CallVideoSurfaceProps, 'serverUrl' | 'token' | 'onConnectionChange'>;
 
-const VideoStage = forwardRef<CallVideoSurfaceHandle, VideoStageProps>(function VideoStage({ muted, cameraEnabled, onError }, ref) {
+const VideoStage = forwardRef<CallVideoSurfaceHandle, VideoStageProps>(function VideoStage({ muted, cameraEnabled, onError, onScreenShareChange }, ref) {
   const colors = useColors();
   const { localParticipant } = useLocalParticipant();
   const screenCapturePicker = useRef<React.ElementRef<typeof ScreenCapturePickerView>>(null);
@@ -20,6 +20,10 @@ const VideoStage = forwardRef<CallVideoSurfaceHandle, VideoStageProps>(function 
   const localScreenShare = screenShareTracks.find((track) => track.participant.isLocal);
   const remoteCamera = cameraTracks.find((track) => !track.participant.isLocal);
   const localCamera = cameraTracks.find((track) => track.participant.isLocal);
+
+  useEffect(() => {
+    onScreenShareChange?.(Boolean(localScreenShare));
+  }, [localScreenShare, onScreenShareChange]);
 
   useImperativeHandle(ref, () => ({
     async setMuted(nextMuted) {
@@ -91,7 +95,7 @@ const VideoStage = forwardRef<CallVideoSurfaceHandle, VideoStageProps>(function 
   );
 });
 
-export const CallVideoSurface = forwardRef<CallVideoSurfaceHandle, CallVideoSurfaceProps>(function CallVideoSurface({ serverUrl, token, muted, cameraEnabled, onError, onConnectionChange }, ref) {
+export const CallVideoSurface = forwardRef<CallVideoSurfaceHandle, CallVideoSurfaceProps>(function CallVideoSurface({ serverUrl, token, muted, cameraEnabled, onError, onConnectionChange, onScreenShareChange }, ref) {
   const [audioConfigured, setAudioConfigured] = useState(false);
 
   useEffect(() => {
@@ -129,7 +133,7 @@ export const CallVideoSurface = forwardRef<CallVideoSurfaceHandle, CallVideoSurf
       }}
       onDisconnected={() => onConnectionChange?.(false)}
     >
-      <VideoStage ref={ref} muted={muted} cameraEnabled={cameraEnabled} onError={onError} />
+       <VideoStage ref={ref} muted={muted} cameraEnabled={cameraEnabled} onError={onError} onScreenShareChange={onScreenShareChange} />
     </LiveKitRoom>
   );
 });

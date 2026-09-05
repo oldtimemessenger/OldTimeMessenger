@@ -58,6 +58,7 @@ export default function CallScreen() {
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [videoConnected, setVideoConnected] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
+  const [screenShareBusy, setScreenShareBusy] = useState(false);
   const [callCredentials, setCallCredentials] = useState<{ token: string; url: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const connectStarted = useRef(false);
@@ -75,8 +76,10 @@ export default function CallScreen() {
   const name = contact?.name ?? 'Old Time';
   const isCallee = call?.calleeId === session?.id;
   const connected = call?.status === 'accepted';
+  const isVideoCall = call?.type === 'video';
+  const isFinished = Boolean(call && ['declined', 'missed', 'ended'].includes(call.status));
   const controlsEnabled = connected && (call?.type !== 'video' || videoConnected);
-  const screenShareAvailable = (Platform.OS === 'android' || Platform.OS === 'ios') && call?.type === 'video';
+  const screenShareAvailable = (Platform.OS === 'android' || Platform.OS === 'ios') && isVideoCall && connected;
   const tone = toneForCall(call, Boolean(isCallee), elapsed);
 
   const refresh = useCallback(async () => {
@@ -168,6 +171,15 @@ export default function CallScreen() {
 
   async function hangup() {
     if (!session?.authToken || !call) return;
+    if (isFinished) {
+      setCallCredentials(null);
+      setVideoConnected(false);
+      setScreenSharing(false);
+      connectedCallId.current = null;
+      await audioService.leave();
+      router.back();
+      return;
+    }
     setBusy(true);
     try {
       if (call.status === 'ringing' && isCallee) await declineManagedCall(session.authToken, call.id);
@@ -228,13 +240,17 @@ export default function CallScreen() {
 
   async function startScreenShare() {
     if (!screenShareAvailable) return;
+    const nextScreenSharing = !screenSharing;
     try {
       if (!videoSurface.current) throw new Error('Video is still connecting.');
-      const nextScreenSharing = !screenSharing;
+      setScreenShareBusy(true);
       await videoSurface.current.setScreenShareEnabled(nextScreenSharing);
-      setScreenSharing(nextScreenSharing);
+      if (!nextScreenSharing) setScreenSharing(false);
     } catch (nextError) {
+      setScreenSharing(false);
       Alert.alert('Screen sharing unavailable', nextError instanceof Error ? nextError.message : 'Screen sharing permission was not granted.');
+    } finally {
+      setScreenShareBusy(false);
     }
   }
 
@@ -246,97 +262,144 @@ export default function CallScreen() {
     return <View style={[styles.center, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
   }
 
+  const closeCall = () => {
+    if (isFinished || !connected) {
+      router.back();
+      return;
+    }
+    Alert.alert('Leave call?', 'The call will end for everyone.', [
+      { text: 'Stay', style: 'cancel' },
+      { text: 'End call', style: 'destructive', onPress: () => void hangup() },
+    ]);
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 18 }]}>
       <View style={styles.topBar}>
-        <Pressable onPress={() => void hangup()} style={[styles.topButton, { backgroundColor: colors.card }]}>
-          <Ionicons name="chevron-down" size={22} color={colors.foreground} />
+        <Pressable accessibilityLabel="Close call" onPress={closeCall} style={styles.topButton}>
+          <Ionicons name="chevron-down" size={23} color={colors.foreground} />
         </Pressable>
-        <View style={[styles.callTypeChip, { backgroundColor: colors.card }]}>
-          <View style={[styles.statusDot, { backgroundColor: tone.accent }]} />
-          <Text style={[styles.callTypeText, { color: colors.foreground }]}>{call?.type === 'video' ? 'Video call' : 'Voice call'}</Text>
+        <View style={styles.topTitle}>
+          <Text style={[styles.callTypeText, { color: colors.foreground }]}>{isVideoCall ? 'Video call' : 'Voice call'}</Text>
+          <Text style={[styles.topMeta, { color: colors.mutedForeground }]}>{tone.detail}</Text>
         </View>
-        {screenShareAvailable ? (
-          <Pressable accessibilityLabel="Share screen" onPress={() => void startScreenShare()} disabled={!controlsEnabled} style={[styles.topButton, { backgroundColor: colors.card, opacity: controlsEnabled ? 1 : 0.5 }]}>
-            <Ionicons name={screenSharing ? 'stop-circle-outline' : 'desktop-outline'} size={18} color={colors.foreground} />
-          </Pressable>
-        ) : <View style={styles.topButton} />}
+        {connected ? <View style={[styles.liveDot, { backgroundColor: tone.accent }]} /> : <View style={styles.topButton} />}
       </View>
 
-      <View style={styles.hero}>
-        <Avatar name={name} size={112} />
-        <Text style={[styles.name, { color: colors.foreground }]}>{name}</Text>
-        <Text style={[styles.title, { color: colors.foreground }]}>{error ?? tone.title}</Text>
-        <Text style={[styles.detail, { color: colors.mutedForeground }]}>{error ? 'Please try again.' : tone.detail}</Text>
-      </View>
-
-      {call?.type === 'video' && callCredentials ? (
-        <CallVideoSurface
-            ref={videoSurface}
-          serverUrl={callCredentials.url}
-          token={callCredentials.token}
-          muted={muted}
-          cameraEnabled={cameraEnabled}
-          onError={setError}
-            onConnectionChange={setVideoConnected}
-        />
+      {isVideoCall && connected ? (
+        <View style={styles.videoStageContainer}>
+          {callCredentials ? (
+            <CallVideoSurface
+              ref={videoSurface}
+              serverUrl={callCredentials.url}
+              token={callCredentials.token}
+              muted={muted}
+              cameraEnabled={cameraEnabled}
+              onError={setError}
+              onConnectionChange={setVideoConnected}
+              onScreenShareChange={setScreenSharing}
+            />
+          ) : (
+            <View style={[styles.videoConnecting, { backgroundColor: colors.card }]}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={[styles.videoConnectingText, { color: colors.mutedForeground }]}>Connecting video…</Text>
+            </View>
+          )}
+          <View style={styles.videoOverlay}>
+            <View style={styles.videoStatusPill}>
+              <View style={[styles.statusDot, { backgroundColor: tone.accent }]} />
+              <Text style={styles.videoStatusText}>{screenSharing ? 'You are sharing your screen' : tone.detail}</Text>
+            </View>
+            {error ? <Text style={styles.videoError}>{error}</Text> : null}
+          </View>
+        </View>
       ) : (
-        <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.previewBadge, { backgroundColor: colors.secondary }]}>
-            <Ionicons name={call?.type === 'video' ? 'videocam' : 'person'} size={18} color={colors.foreground} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.previewTitle, { color: colors.foreground }]}>
-              {call?.type === 'video' ? 'Connecting video' : 'Audio connected'}
-            </Text>
-            <Text style={[styles.previewMeta, { color: colors.mutedForeground }]}>
-              {call?.type === 'video' ? 'Starting camera and microphone.' : tone.detail}
-            </Text>
-          </View>
+        <View style={[styles.voiceContent, isFinished && styles.finishedContent]}>
+          <Avatar name={name} size={isFinished ? 94 : 118} />
+          <Text style={[styles.name, { color: colors.foreground }]}>{name}</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>{error ?? tone.title}</Text>
+          <Text style={[styles.detail, { color: colors.mutedForeground }]}>
+            {error ? 'Please try again.' : isFinished ? `Call duration  ${durationLabel(call?.durationSeconds ?? elapsed)}` : tone.detail}
+          </Text>
+          {connected && !isFinished ? (
+            <View style={[styles.connectionPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.statusDot, { backgroundColor: tone.accent }]} />
+              <Text style={[styles.connectionText, { color: colors.foreground }]}>Connected</Text>
+            </View>
+          ) : null}
         </View>
       )}
 
-      <View style={styles.controlsGrid}>
-        <Pressable onPress={() => void toggleMute()} disabled={!controlsEnabled} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled ? 1 : 0.5 }]}>
-          <Ionicons name={muted ? 'mic-off' : 'mic'} size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>{muted ? 'Unmute' : 'Mute'}</Text>
-        </Pressable>
-        <Pressable onPress={() => void toggleSpeaker()} disabled={!controlsEnabled} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled ? 1 : 0.5 }]}>
-          <Ionicons name={speaker ? 'volume-high' : 'volume-mute'} size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>{speaker ? 'Speaker' : 'Earpiece'}</Text>
-        </Pressable>
-        <Pressable onPress={() => void toggleCamera()} disabled={!controlsEnabled || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled && call?.type === 'video' ? 1 : 0.5 }]}>
-          <Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>{cameraEnabled ? 'Camera' : 'Camera off'}</Text>
-        </Pressable>
-        <Pressable onPress={() => void swapCamera()} disabled={!controlsEnabled || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled && call?.type === 'video' ? 1 : 0.5 }]}>
-          <Ionicons name="camera-reverse" size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Switch</Text>
-        </Pressable>
-        {screenShareAvailable ? (
-          <Pressable onPress={() => void startScreenShare()} disabled={!controlsEnabled} style={[styles.controlButton, { backgroundColor: colors.card, opacity: controlsEnabled ? 1 : 0.5 }]}>
-            <Ionicons name={screenSharing ? 'stop-circle-outline' : 'desktop-outline'} size={22} color={colors.foreground} />
-            <Text style={[styles.controlLabel, { color: colors.foreground }]}>{screenSharing ? 'Stop sharing' : 'Share screen'}</Text>
-          </Pressable>
-        ) : (
-          <View style={[styles.screenShareNotice, { backgroundColor: colors.card }]}>
-            <Text style={[styles.controlLabel, { color: colors.mutedForeground }]}>Screen sharing is available during video calls.</Text>
+      {isFinished ? (
+        <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.summaryIcon, { backgroundColor: colors.secondary }]}>
+            <Ionicons name={call?.status === 'missed' ? 'call-outline' : 'checkmark'} size={20} color={colors.foreground} />
           </View>
-        )}
-      </View>
-
-      <View style={styles.bottomActions}>
-        {call?.status === 'ringing' && isCallee ? (
-          <Pressable disabled={busy} onPress={() => void accept()} style={[styles.answerButton, { backgroundColor: '#34C77E' }]}>
-            <Ionicons name="call" size={20} color="#fff" />
-            <Text style={styles.answerText}>Answer</Text>
+          <View style={styles.summaryCopy}>
+            <Text style={[styles.summaryTitle, { color: colors.foreground }]}>{tone.title}</Text>
+            <Text style={[styles.summaryDetail, { color: colors.mutedForeground }]}>{tone.detail}</Text>
+          </View>
+          <Pressable accessibilityLabel="Close call summary" onPress={() => router.back()} style={[styles.doneButton, { backgroundColor: colors.secondary }]}>
+            <Ionicons name="chevron-forward" size={18} color={colors.foreground} />
           </Pressable>
-        ) : null}
-        <Pressable disabled={busy || !call} onPress={() => void hangup()} style={[styles.endButton, { backgroundColor: colors.destructive }]}>
-          <Ionicons name="call" size={20} color={colors.destructiveForeground} />
-          <Text style={[styles.endText, { color: colors.destructiveForeground }]}>{isCallee && call?.status === 'ringing' ? 'Decline' : 'End'}</Text>
-        </Pressable>
-      </View>
+        </View>
+      ) : (
+        <>
+          {connected ? (
+            <View style={styles.controlsRow}>
+              <Pressable accessibilityRole="button" accessibilityLabel={muted ? 'Unmute microphone' : 'Mute microphone'} onPress={() => void toggleMute()} disabled={!controlsEnabled} style={[styles.controlButton, { opacity: controlsEnabled ? 1 : 0.45 }]}>
+                <View style={[styles.controlIcon, { backgroundColor: muted ? colors.destructive : colors.card }]}>
+                  <Ionicons name={muted ? 'mic-off' : 'mic'} size={21} color={muted ? colors.destructiveForeground : colors.foreground} />
+                </View>
+                <Text style={[styles.controlLabel, { color: colors.foreground }]}>{muted ? 'Unmute' : 'Mute'}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={speaker ? 'Use earpiece' : 'Use speaker'} onPress={() => void toggleSpeaker()} disabled={!controlsEnabled} style={[styles.controlButton, { opacity: controlsEnabled ? 1 : 0.45 }]}>
+                <View style={[styles.controlIcon, { backgroundColor: speaker ? colors.primary : colors.card }]}>
+                  <Ionicons name={speaker ? 'volume-high' : 'volume-mute'} size={21} color={speaker ? '#FFFFFF' : colors.foreground} />
+                </View>
+                <Text style={[styles.controlLabel, { color: colors.foreground }]}>{speaker ? 'Speaker' : 'Earpiece'}</Text>
+              </Pressable>
+              {isVideoCall ? (
+                <>
+                  <Pressable accessibilityRole="button" accessibilityLabel={cameraEnabled ? 'Turn camera off' : 'Turn camera on'} onPress={() => void toggleCamera()} disabled={!controlsEnabled} style={[styles.controlButton, { opacity: controlsEnabled ? 1 : 0.45 }]}>
+                    <View style={[styles.controlIcon, { backgroundColor: cameraEnabled ? colors.card : colors.destructive }]}>
+                      <Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={21} color={cameraEnabled ? colors.foreground : colors.destructiveForeground} />
+                    </View>
+                    <Text style={[styles.controlLabel, { color: colors.foreground }]}>{cameraEnabled ? 'Camera' : 'Camera off'}</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Switch camera" onPress={() => void swapCamera()} disabled={!controlsEnabled} style={[styles.controlButton, { opacity: controlsEnabled ? 1 : 0.45 }]}>
+                    <View style={[styles.controlIcon, { backgroundColor: colors.card }]}>
+                      <Ionicons name="camera-reverse" size={21} color={colors.foreground} />
+                    </View>
+                    <Text style={[styles.controlLabel, { color: colors.foreground }]}>Flip</Text>
+                  </Pressable>
+                  {screenShareAvailable ? (
+                    <Pressable accessibilityRole="button" accessibilityLabel={screenSharing ? 'Stop sharing screen' : 'Share screen'} onPress={() => void startScreenShare()} disabled={!controlsEnabled || screenShareBusy} style={[styles.controlButton, { opacity: controlsEnabled ? 1 : 0.45 }]}>
+                      <View style={[styles.controlIcon, { backgroundColor: screenSharing ? colors.primary : colors.card }]}>
+                        {screenShareBusy ? <ActivityIndicator color={colors.foreground} size="small" /> : <Ionicons name={screenSharing ? 'stop-circle-outline' : 'desktop-outline'} size={21} color={screenSharing ? '#FFFFFF' : colors.foreground} />}
+                      </View>
+                      <Text style={[styles.controlLabel, { color: colors.foreground }]}>{screenSharing ? 'Stop share' : 'Share'}</Text>
+                    </Pressable>
+                  ) : null}
+                </>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={styles.bottomActions}>
+            {call?.status === 'ringing' && isCallee ? (
+              <Pressable disabled={busy} onPress={() => void accept()} style={[styles.answerButton, { backgroundColor: '#2DBE72' }]}>
+                <Ionicons name="call" size={20} color="#FFFFFF" />
+                <Text style={styles.answerText}>Answer</Text>
+              </Pressable>
+            ) : null}
+            <Pressable disabled={busy || !call} onPress={() => void hangup()} style={[styles.endButton, { backgroundColor: colors.destructive }]}>
+              <Ionicons name="call" size={20} color={colors.destructiveForeground} />
+              <Text style={[styles.endText, { color: colors.destructiveForeground }]}>{isCallee && call?.status === 'ringing' ? 'Decline' : 'End call'}</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -344,26 +407,40 @@ export default function CallScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 20 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  topButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  callTypeChip: { minHeight: 42, borderRadius: 21, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  callTypeText: { fontSize: 13, fontWeight: '800' },
+  topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  topTitle: { alignItems: 'center', gap: 2 },
+  callTypeText: { fontSize: 14, fontWeight: '800' },
+  topMeta: { fontSize: 12, fontWeight: '600' },
+  liveDot: { width: 8, height: 8, borderRadius: 4, marginRight: 17 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  name: { fontSize: 30, fontWeight: '800', marginTop: 18 },
+  voiceContent: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  finishedContent: { paddingBottom: 42 },
+  name: { fontSize: 30, fontWeight: '800', marginTop: 18, letterSpacing: -0.5 },
   title: { fontSize: 18, fontWeight: '700' },
   detail: { fontSize: 14, textAlign: 'center' },
-  previewCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 22 },
-  previewBadge: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  previewTitle: { fontSize: 15, fontWeight: '800' },
-  previewMeta: { fontSize: 12.5, marginTop: 2 },
-  controlsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', marginBottom: 28 },
-  controlButton: { width: '31%', minHeight: 92, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 8 },
-  screenShareNotice: { width: '31%', minHeight: 92, borderRadius: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
-  controlLabel: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
-  bottomActions: { flexDirection: 'row', justifyContent: 'center', gap: 14 },
+  connectionPill: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, marginTop: 14 },
+  connectionText: { fontSize: 12, fontWeight: '700' },
+  videoStageContainer: { flex: 1, marginTop: 14, marginBottom: 18, borderRadius: 28, overflow: 'hidden', backgroundColor: '#101217' },
+  videoConnecting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  videoConnectingText: { fontSize: 13, fontWeight: '700' },
+  videoOverlay: { position: 'absolute', top: 14, left: 14, right: 14, alignItems: 'center' },
+  videoStatusPill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(16,18,23,0.72)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  videoStatusText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  videoError: { color: '#FFFFFF', backgroundColor: 'rgba(190,40,56,0.88)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 8, fontSize: 12, textAlign: 'center' },
+  controlsRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 22 },
+  controlButton: { width: 66, alignItems: 'center', gap: 7 },
+  controlIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  controlLabel: { fontSize: 11.5, fontWeight: '700', textAlign: 'center' },
+  summaryCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  summaryIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  summaryCopy: { flex: 1, gap: 3 },
+  summaryTitle: { fontSize: 15, fontWeight: '800' },
+  summaryDetail: { fontSize: 12.5 },
+  doneButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  bottomActions: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 2 },
   answerButton: { minWidth: 132, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   answerText: { color: '#fff', fontSize: 15, fontWeight: '800' },
-  endButton: { minWidth: 132, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  endButton: { minWidth: 142, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   endText: { fontSize: 15, fontWeight: '800' },
 });

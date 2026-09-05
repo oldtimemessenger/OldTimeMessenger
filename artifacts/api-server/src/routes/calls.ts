@@ -181,7 +181,9 @@ router.post("/calls/:callId/end", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: "A valid call ID is required." }); return; }
   const call = await callForParticipant(parsed.data, userId);
   if (!call) { res.status(404).json({ error: "Call not found." }); return; }
-  if (!["ringing", "accepted"].includes(call.status)) { res.status(409).json({ error: "This call has already ended." }); return; }
+  // Ending a call is intentionally idempotent. The other participant may have
+  // ended it between the caller's last poll and this request.
+  if (!["ringing", "accepted"].includes(call.status)) { res.json(serializeCall(call)); return; }
   const [updated] = await db.update(callsTable).set({ status: "ended", endedAt: Date.now() })
     .where(and(eq(callsTable.id, call.id), inArray(callsTable.status, ["ringing", "accepted"]))).returning();
   if (!updated) { res.status(409).json({ error: "This call has already changed." }); return; }
