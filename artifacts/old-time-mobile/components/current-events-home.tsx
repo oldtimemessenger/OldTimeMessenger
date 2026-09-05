@@ -13,7 +13,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -58,14 +57,15 @@ type Colors = {
 
 type RoomType = typeof roomTypes[number]['key'];
 
-function parseRoomMeta(room: CurrentEventRoom) {
+function parseRoomMeta(room: CurrentEventRoom): { roomType: RoomType; coins: number; duration: string } {
   const payload = room.clubName.startsWith(ACCESS_META_PREFIX) ? room.clubName.slice(ACCESS_META_PREFIX.length) : '';
   const segments = payload.split('|').filter(Boolean);
-  const roomType = (segments.find((item) => item.startsWith('TYPE='))?.replace('TYPE=', '') ?? (room.isOpen ? 'public' : 'private')) as RoomType;
+  const rawRoomType = segments.find((item) => item.startsWith('TYPE='))?.replace('TYPE=', '') ?? (room.isOpen ? 'public' : 'private');
+  const roomType: RoomType = rawRoomType === 'friends' || rawRoomType === 'friends-of-friends' || rawRoomType === 'private' || rawRoomType === 'community' ? rawRoomType : 'public';
   const coins = Number(segments.find((item) => item.startsWith('COINS='))?.replace('COINS=', '') ?? 0);
   const duration = segments.find((item) => item.startsWith('DUR='))?.replace('DUR=', '') ?? '';
   return {
-    roomType: roomType === 'friends' || roomType === 'friends-of-friends' || roomType === 'private' || roomType === 'community' ? roomType : 'public',
+    roomType,
     coins: Number.isFinite(coins) && coins > 0 ? coins : 0,
     duration,
   };
@@ -91,12 +91,14 @@ export default function CurrentEventsHome({
   onOpenRoom,
   onRoomCreated,
   onRoomsChanged,
+  currentUserId,
 }: {
   colors: Colors;
   onBack: () => void;
   onOpenRoom: (room: CurrentEventRoom) => void;
   onRoomCreated: (room: CurrentEventRoom) => void;
   onRoomsChanged: (rooms: CurrentEventRoom[]) => void;
+  currentUserId: number;
 }) {
   const insets = useSafeAreaInsets();
   const [topic, setTopic] = useState<CurrentEventTopic>('for-you');
@@ -106,12 +108,6 @@ export default function CurrentEventsHome({
   const [title, setTitle] = useState('');
   const [hostTopic, setHostTopic] = useState<CurrentEventTopic>('for-you');
   const [roomType, setRoomType] = useState<RoomType>('public');
-  const [enableChat, setEnableChat] = useState(true);
-  const [enableReactions, setEnableReactions] = useState(true);
-  const [enableQuestions, setEnableQuestions] = useState(false);
-  const [enableReplay, setEnableReplay] = useState(false);
-  const [enableClips, setEnableClips] = useState(false);
-  const [scheduleLater, setScheduleLater] = useState(false);
   const [paidRoom, setPaidRoom] = useState(false);
   const [entryCoins, setEntryCoins] = useState('1200');
   const [duration, setDuration] = useState<(typeof accessDurations)[number]>('2 hours');
@@ -145,9 +141,9 @@ export default function CurrentEventsHome({
       { key: 'friends', title: 'FRIENDS ARE TALKING', items: sorted.filter((room) => room.counts.speakers >= 2).slice(0, 4) },
       { key: 'trending', title: 'TRENDING', items: sorted.slice(0, 6) },
       { key: 'for-you', title: 'FOR YOU', items: sorted.filter((room) => room.topic === topic || topic === 'for-you').slice(0, 6) },
-      { key: 'my-access', title: 'MY ACCESS', items: sorted.filter((room) => room.hostId === room.participants.find((participant) => participant.role === 'host')?.user.id).slice(0, 4) },
+      { key: 'my-access', title: 'MY ACCESS', items: sorted.filter((room) => room.hostId === currentUserId).slice(0, 4) },
     ].filter((section) => section.items.length > 0);
-  }, [rooms, topic]);
+  }, [currentUserId, rooms, topic]);
 
   async function hostRoom() {
     if (!title.trim()) return;
@@ -312,33 +308,17 @@ export default function CurrentEventsHome({
                 </Pressable>
               ))}
             </View>
-            <View style={styles.toggleRow}>
-              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Enable chat</Text>
-              <Switch value={enableChat} onValueChange={setEnableChat} trackColor={{ false: colors.border, true: colors.primary }} />
+            <View style={styles.featureList}>
+              <Text style={[styles.featureItem, { color: colors.mutedForeground }]}>Chat, reactions, replay, clips, and scheduling are visible in Access and can be managed after room start.</Text>
             </View>
-            <View style={styles.toggleRow}>
-              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Enable reactions</Text>
-              <Switch value={enableReactions} onValueChange={setEnableReactions} trackColor={{ false: colors.border, true: colors.primary }} />
-            </View>
-            <View style={styles.toggleRow}>
-              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Enable questions</Text>
-              <Switch value={enableQuestions} onValueChange={setEnableQuestions} trackColor={{ false: colors.border, true: colors.primary }} />
-            </View>
-            <View style={styles.toggleRow}>
-              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Enable replay recording</Text>
-              <Switch value={enableReplay} onValueChange={setEnableReplay} trackColor={{ false: colors.border, true: colors.primary }} />
-            </View>
-            <View style={styles.toggleRow}>
-              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Enable clips</Text>
-              <Switch value={enableClips} onValueChange={setEnableClips} trackColor={{ false: colors.border, true: colors.primary }} />
-            </View>
-            <View style={styles.toggleRow}>
-              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Schedule for later</Text>
-              <Switch value={scheduleLater} onValueChange={setScheduleLater} trackColor={{ false: colors.border, true: colors.primary }} />
-            </View>
-            <View style={styles.toggleRow}>
-              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>Paid room</Text>
-              <Switch value={paidRoom} onValueChange={setPaidRoom} trackColor={{ false: colors.border, true: colors.primary }} />
+            <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Room pricing</Text>
+            <View style={styles.roomTypeRail}>
+              <Pressable onPress={() => setPaidRoom(false)} style={[styles.roomTypeChip, { borderColor: paidRoom ? colors.border : colors.primary, backgroundColor: paidRoom ? 'transparent' : `${colors.primary}16` }]}>
+                <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>Free room</Text>
+              </Pressable>
+              <Pressable onPress={() => setPaidRoom(true)} style={[styles.roomTypeChip, { borderColor: paidRoom ? colors.primary : colors.border, backgroundColor: paidRoom ? `${colors.primary}16` : 'transparent' }]}>
+                <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>Paid room</Text>
+              </Pressable>
             </View>
             {paidRoom ? (
               <View style={[styles.paidPanel, { backgroundColor: colors.muted, borderColor: colors.border }]}>
@@ -419,8 +399,8 @@ const styles = StyleSheet.create({
   sheetChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
   roomTypeRail: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   roomTypeChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12 },
-  toggleLabel: { fontSize: 13, fontWeight: '500' },
+  featureList: { marginTop: 14, borderRadius: 12, padding: 12 },
+  featureItem: { fontSize: 12, lineHeight: 17 },
   paidPanel: { marginTop: 14, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 12 },
   priceInput: { marginTop: 9, minHeight: 44, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, fontSize: 16 },
   summaryText: { marginTop: 9, fontSize: 12, lineHeight: 17 },

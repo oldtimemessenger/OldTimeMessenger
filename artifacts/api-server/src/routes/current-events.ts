@@ -265,8 +265,8 @@ router.post("/current-events/rooms/:roomId/join", async (req, res): Promise<void
     await db.insert(currentEventParticipantsTable).values({
       roomId,
       userId: viewerId,
-      role: "speaker",
-      muted: false,
+      role: "listener",
+      muted: true,
       handRaised: false,
       joinedAt: Date.now(),
     });

@@ -297,6 +297,7 @@ export default function MapScreen() {
             router.push({ pathname: '/current-event/[id]', params: { id: String(room.id), returnTo: 'events' } });
           }}
           onRoomsChanged={setCurrentEventRooms}
+          currentUserId={session?.id ?? 0}
         />
       </Screen>
     );

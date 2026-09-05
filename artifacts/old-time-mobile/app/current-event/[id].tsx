@@ -318,6 +318,16 @@ export default function CurrentEventRoomScreen() {
         {canModerate ? (
           <View style={[styles.moderationPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.panelTitle, { color: colors.foreground }]}>Moderator controls</Text>
+            <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>HAND RAISES</Text>
+            {room.participants.filter((participant) => participant.role === 'listener' && participant.handRaised).map((participant) => (
+              <View key={`hand-${participant.id}`} style={styles.controlRow}>
+                <Avatar name={participant.user.name} size={30} color={colors.primary} />
+                <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name} raised hand</Text>
+                <Pressable onPress={() => void moderate(participant, 'promote')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite</Text></Pressable>
+              </View>
+            ))}
+            {room.participants.filter((participant) => participant.role === 'listener' && participant.handRaised).length === 0 ? <Text style={styles.mutedNote}>No hands raised.</Text> : null}
+            <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>PARTICIPANTS</Text>
             {room.participants.filter((participant) => participant.role !== 'host').slice(0, 6).map((participant) => (
               <View key={participant.id} style={styles.controlRow}>
                 <Avatar name={participant.user.name} size={30} color={colors.primary} />
@@ -469,7 +479,7 @@ export default function CurrentEventRoomScreen() {
             <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to host Access rooms longer than 18 minutes.</Text>
             <View style={styles.verifyActions}>
               <Pressable onPress={() => setVerifyPromptOpen(false)}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
-              <Pressable onPress={() => { setVerifyPromptOpen(false); setStoreOpen(true); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
+              <Pressable onPress={() => { setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
             </View>
           </View>
         </View>
