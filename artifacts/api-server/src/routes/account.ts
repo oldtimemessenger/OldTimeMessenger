@@ -3,7 +3,7 @@ import { Router, type IRouter } from "express";
 import {
   authChallengesTable, authSessionsTable, chatMessageRequestsTable, chatNotesTable,
   chatParticipantsTable, callsTable, currentEventParticipantsTable, currentEventWalletsTable,
-  db, discoveryCreatorClaimsTable, mapPinCommentsTable,
+  creatorPayoutAccountsTable, creatorWithdrawalsTable, db, discoveryCreatorClaimsTable, mapPinCommentsTable,
   messageHiddenTable, messageReactionsTable,
   mapPinReactionsTable, mapPinReportsTable, mapPinSavesTable, mapPinsTable, messagesTable,
   pushTokensTable, socialBlocksTable, socialCloseFriendsTable, socialCommentLikesTable,
@@ -132,6 +132,8 @@ router.delete("/account", async (req, res): Promise<void> => {
       await tx.delete(mapPinsTable).where(and(eq(mapPinsTable.authorId, userId), eq(mapPinsTable.visibility, "private")));
       await tx.delete(callsTable).where(or(eq(callsTable.callerId, userId), eq(callsTable.calleeId, userId)));
       await tx.delete(currentEventParticipantsTable).where(eq(currentEventParticipantsTable.userId, userId));
+      await tx.delete(creatorWithdrawalsTable).where(eq(creatorWithdrawalsTable.userId, userId));
+      await tx.delete(creatorPayoutAccountsTable).where(eq(creatorPayoutAccountsTable.userId, userId));
       await tx.delete(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, userId));
       await tx.delete(discoveryCreatorClaimsTable).where(eq(discoveryCreatorClaimsTable.claimantId, userId));
       await tx.delete(pushTokensTable).where(eq(pushTokensTable.userId, userId));

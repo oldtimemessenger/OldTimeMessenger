@@ -71,7 +71,6 @@ export default function WalletScreen() {
     [revenueCat.packages],
   );
   const selectedPackage = packages.find(({ coins }) => coins === selectedAmount);
-  const estimatedBalance = wallet.coins / COINS_PER_DOLLAR;
 
   async function refreshWallet() {
     await queryClient.fetchQuery(getGetCurrentEventWalletQueryOptions());
@@ -128,9 +127,9 @@ export default function WalletScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <Image source={balanceArt} contentFit="contain" style={styles.balanceArt} />
-        <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Estimated balance</Text>
+        <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Purchased Coins</Text>
         <Text style={[styles.estimatedValue, { color: colors.foreground }]}>
-          ${estimatedBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {wallet.coins.toLocaleString()} Coins
         </Text>
         <View style={[styles.coinPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.coinPillText, { color: colors.foreground }]}>
@@ -141,6 +140,14 @@ export default function WalletScreen() {
             <Text style={[styles.getCoinsText, { color: colors.foreground }]}>Get Coins →</Text>
           </Pressable>
         </View>
+        <Text style={[styles.nonWithdrawable, { color: colors.mutedForeground }]}>Purchased Coins are for spending in Old Time and cannot be withdrawn.</Text>
+        <View style={[styles.earningsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flex: 1 }}><Text style={[styles.infoTitle, { color: colors.foreground }]}>Creator Earnings</Text>
+            <Text style={[styles.earningsAmount, { color: colors.foreground }]}>{wallet.gold.toLocaleString()} Gold · ${(wallet.gold / COINS_PER_DOLLAR).toFixed(2)}</Text>
+            <Text style={[styles.infoHint, { color: colors.mutedForeground }]}>Available: {wallet.gold.toLocaleString()} Gold · Pending: {wallet.pendingGold.toLocaleString()} Gold</Text></View>
+          <Pressable onPress={() => router.push('/withdraw')} style={[styles.withdrawButton, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Withdraw creator earnings"><Text style={styles.withdrawText}>Withdraw</Text></Pressable>
+        </View>
+        <Pressable onPress={() => router.push('/payment-settings')} style={[styles.settingsRow, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityRole="button" accessibilityLabel="Open Payment Settings"><Ionicons name="card-outline" size={21} color={colors.primary} /><Text style={[styles.infoTitle, { flex: 1, color: colors.foreground }]}>Payment Settings</Text><Ionicons name="chevron-forward" size={20} color={colors.mutedForeground} /></Pressable>
 
         <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={[styles.infoIcon, { backgroundColor: `${colors.primary}18` }]}>
@@ -274,6 +281,12 @@ const styles = StyleSheet.create({
   estimatedValue: { fontSize: 45, fontWeight: '800', letterSpacing: -1.5, marginTop: 2 },
   coinPill: { minHeight: 48, borderRadius: 24, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 18 },
   coinPillText: { fontSize: 16, fontWeight: '700' },
+  nonWithdrawable: { fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 8, paddingHorizontal: 8 },
+  earningsCard: { width: '100%', borderWidth: 1, borderRadius: 20, marginTop: 20, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  earningsAmount: { fontSize: 17, fontWeight: '800', marginTop: 4 },
+  withdrawButton: { minHeight: 38, paddingHorizontal: 13, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  withdrawText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  settingsRow: { width: '100%', minHeight: 62, borderWidth: 1, borderRadius: 16, marginTop: 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   pillDivider: { width: 1, height: 22, marginHorizontal: 15 },
   getCoinsText: { fontSize: 16, fontWeight: '700' },
   infoCard: { width: '100%', minHeight: 92, borderWidth: 1, borderRadius: 20, marginTop: 28, padding: 16, flexDirection: 'row', gap: 13, alignItems: 'center' },

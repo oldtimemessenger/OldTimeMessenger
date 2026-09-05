@@ -1,9 +1,11 @@
-import { Router, type IRouter, type Response } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, desc, eq, gte, gt, inArray, sql } from "drizzle-orm";
 import { z } from "@workspace/api-zod";
 import {
   currentEventGiftsTable,
   currentEventCoinPurchasesTable,
+  creatorPayoutAccountsTable,
+  creatorWithdrawalsTable,
   currentEventMessagesTable,
   currentEventParticipantsTable,
   currentEventRoomsTable,
@@ -15,6 +17,7 @@ import { requireChatAuth } from "../lib/chat-auth";
 import { getVerifiedCoinPurchases } from "../lib/revenuecat";
 import { createLiveKitToken, liveKitConfigured, liveKitPublicUrl } from "../lib/livekit";
 import { emitToCurrentEventRoom, evictCurrentEventRoom, evictUserFromCurrentEventRoom } from "../lib/realtime";
+import { getUncachableStripeClient } from "../lib/stripe-client";
 
 const router: IRouter = Router();
 
@@ -43,6 +46,10 @@ const giftInput = z.object({
   gift: z.enum(["coffee", "idea", "heart", "gem", "studio"]),
   recipientId: z.coerce.number().int().positive(),
 });
+const withdrawalInput = z.object({ gold: z.coerce.number().int().min(900).max(9_000_000) });
+const GOLD_PER_USD = 90;
+const MINIMUM_WITHDRAWAL_GOLD = 900;
+const terminalPayoutStatuses = new Set(["paid", "failed", "canceled"]);
 
 const giftPrices = {
   coffee: 25,
@@ -79,6 +86,123 @@ function audioStatus() {
 
 async function ensureWallet(userId: number) {
   await db.insert(currentEventWalletsTable).values({ userId, updatedAt: Date.now() }).onConflictDoNothing();
+}
+
+function accountStatus(account: { details_submitted: boolean; payouts_enabled: boolean; requirements?: { disabled_reason?: string | null } | null }) {
+  if (account.payouts_enabled && account.details_submitted) return "enabled";
+  if (account.requirements?.disabled_reason) return "restricted";
+  return "pending";
+}
+
+function safePayoutUrl(req: Request, endpoint: "return" | "refresh") {
+  const host = req.get("host");
+  const forwarded = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwarded ?? req.protocol;
+  // Do not reflect a path, credentials, or a non-HTTPS host into Stripe.
+  if (protocol !== "https" || !host || !/^[a-z0-9.-]+(?::\d+)?$/i.test(host)) return null;
+  return `https://${host}/api/current-events/payouts/onboarding/${endpoint}`;
+}
+
+function payoutHtml() {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Old Time</title></head><body><p>You can return to Old Time now.</p><p><a href="oldtime://payment-settings">Return to Old Time</a></p><script>location.href="oldtime://payment-settings"</script></body></html>`;
+}
+
+type PayoutDestination = { type: "bank_account" | "card"; label: string; last4: string };
+
+async function payoutDestination(stripeAccountId: string): Promise<PayoutDestination | null> {
+  const stripe = await getUncachableStripeClient();
+  const externalAccounts = await stripe.accounts.listExternalAccounts(stripeAccountId, { limit: 1 });
+  const destination = externalAccounts.data[0];
+  if (!destination || !("object" in destination)) return null;
+  if (destination.object === "bank_account" && destination.last4) {
+    return { type: "bank_account", label: destination.bank_name || "Bank account", last4: destination.last4 };
+  }
+  if (destination.object === "card" && destination.last4) {
+    const cardLabel = [destination.brand, destination.funding].filter(Boolean).join(" ");
+    return { type: "card", label: cardLabel || "Card", last4: destination.last4 };
+  }
+  return null;
+}
+
+async function refreshPayoutAccount(userId: number) {
+  const [stored] = await db.select().from(creatorPayoutAccountsTable).where(eq(creatorPayoutAccountsTable.userId, userId)).limit(1);
+  if (!stored) return null;
+  const stripe = await getUncachableStripeClient();
+  const account = await stripe.accounts.retrieve(stored.stripeAccountId);
+  if ("deleted" in account && account.deleted) throw new Error("The payout account is no longer available.");
+  const values = { detailsSubmitted: account.details_submitted, payoutsEnabled: account.payouts_enabled, status: accountStatus(account), updatedAt: Date.now() };
+  await db.update(creatorPayoutAccountsTable).set(values).where(eq(creatorPayoutAccountsTable.userId, userId));
+  return { ...stored, ...values };
+}
+
+async function refundFailedWithdrawal(withdrawalId: number, reason: string) {
+  await db.transaction(async (tx) => {
+    const [claimed] = await tx.update(creatorWithdrawalsTable)
+      .set({ status: "failed", failureReason: reason.slice(0, 500), updatedAt: Date.now() })
+      .where(and(eq(creatorWithdrawalsTable.id, withdrawalId), eq(creatorWithdrawalsTable.status, "processing")))
+      .returning({ gold: creatorWithdrawalsTable.gold, userId: creatorWithdrawalsTable.userId });
+    if (claimed) {
+      await tx.update(currentEventWalletsTable).set({ gold: sql`${currentEventWalletsTable.gold} + ${claimed.gold}`, updatedAt: Date.now() })
+        .where(eq(currentEventWalletsTable.userId, claimed.userId));
+    }
+  });
+}
+
+function serializeWithdrawal(withdrawal: typeof creatorWithdrawalsTable.$inferSelect) {
+  return {
+    id: withdrawal.id,
+    gold: withdrawal.gold,
+    amountCents: withdrawal.amountCents,
+    currency: withdrawal.currency,
+    status: withdrawal.status,
+    createdAt: withdrawal.createdAt,
+    updatedAt: withdrawal.updatedAt,
+  };
+}
+
+async function refreshWithdrawal(withdrawal: typeof creatorWithdrawalsTable.$inferSelect) {
+  if (terminalPayoutStatuses.has(withdrawal.status) || withdrawal.status === "reversal_pending") return withdrawal;
+  const stripe = await getUncachableStripeClient();
+  const [payoutAccount] = await db.select({ stripeAccountId: creatorPayoutAccountsTable.stripeAccountId })
+    .from(creatorPayoutAccountsTable).where(eq(creatorPayoutAccountsTable.userId, withdrawal.userId)).limit(1);
+  if (!payoutAccount) return withdrawal;
+  // Recover safely if a process ended between either idempotent provider call
+  // and persisting its Stripe ID.
+  if (!withdrawal.stripePayoutId) {
+    let transferId = withdrawal.stripeTransferId;
+    if (!transferId) {
+      const transfer = await stripe.transfers.create({
+        amount: withdrawal.amountCents, currency: "usd", destination: payoutAccount.stripeAccountId,
+        metadata: { withdrawalId: String(withdrawal.id), oldtimeUserId: String(withdrawal.userId) },
+      }, { idempotencyKey: `oldtime-withdrawal-transfer-${withdrawal.id}` });
+      transferId = transfer.id;
+      await db.update(creatorWithdrawalsTable).set({ stripeTransferId: transferId, updatedAt: Date.now() })
+        .where(eq(creatorWithdrawalsTable.id, withdrawal.id));
+    }
+    const payout = await stripe.payouts.create({
+      amount: withdrawal.amountCents, currency: "usd", metadata: { withdrawalId: String(withdrawal.id) },
+    }, { stripeAccount: payoutAccount.stripeAccountId, idempotencyKey: `oldtime-withdrawal-payout-${withdrawal.id}` });
+    const [updated] = await db.update(creatorWithdrawalsTable)
+      .set({ stripeTransferId: transferId, stripePayoutId: payout.id, status: payout.status === "paid" ? "paid" : "processing", updatedAt: Date.now() })
+      .where(eq(creatorWithdrawalsTable.id, withdrawal.id)).returning();
+    return updated ?? withdrawal;
+  }
+  const payout = await stripe.payouts.retrieve(withdrawal.stripePayoutId, {}, { stripeAccount: payoutAccount.stripeAccountId });
+  if (!terminalPayoutStatuses.has(payout.status)) return withdrawal;
+  if (payout.status === "paid") {
+    const [updated] = await db.update(creatorWithdrawalsTable).set({ status: "paid", updatedAt: Date.now() })
+      .where(and(eq(creatorWithdrawalsTable.id, withdrawal.id), eq(creatorWithdrawalsTable.status, "processing"))).returning();
+    return updated ?? withdrawal;
+  }
+  // A failed connected-account payout leaves its transfer available to reverse.
+  try {
+    if (withdrawal.stripeTransferId) await stripe.transfers.createReversal(withdrawal.stripeTransferId, {}, { idempotencyKey: `oldtime-withdrawal-reversal-${withdrawal.id}` });
+    await refundFailedWithdrawal(withdrawal.id, payout.failure_message ?? "The payout was not completed.");
+  } catch {
+    await db.update(creatorWithdrawalsTable).set({ status: "reversal_pending", failureReason: "The payout needs review.", updatedAt: Date.now() })
+      .where(and(eq(creatorWithdrawalsTable.id, withdrawal.id), eq(creatorWithdrawalsTable.status, "processing")));
+  }
+  return (await db.select().from(creatorWithdrawalsTable).where(eq(creatorWithdrawalsTable.id, withdrawal.id)).limit(1))[0] ?? withdrawal;
 }
 
 async function roomById(roomId: number, liveOnly = true) {
@@ -478,7 +602,7 @@ router.post("/current-events/rooms/:roomId/gifts", async (req, res): Promise<voi
       .returning({ coins: currentEventWalletsTable.coins });
     if (!debited) return null;
     await tx.update(currentEventWalletsTable)
-      .set({ pendingGold: sql`${currentEventWalletsTable.pendingGold} + ${gold}`, updatedAt: Date.now() })
+      .set({ gold: sql`${currentEventWalletsTable.gold} + ${gold}`, updatedAt: Date.now() })
       .where(eq(currentEventWalletsTable.userId, parsed.data.recipientId));
     await tx.insert(currentEventGiftsTable).values({ roomId, senderId: viewerId, recipientId: parsed.data.recipientId, gift: parsed.data.gift, coins, gold, createdAt: Date.now() });
     return debited.coins;
@@ -525,6 +649,172 @@ router.post("/current-events/wallet/sync-purchases", async (req, res): Promise<v
   } catch (error) {
     req.log?.error?.({ err: error }, "RevenueCat wallet synchronization failed");
     res.status(503).json({ error: "Purchases could not be verified right now. Your purchase is safe; try restoring it shortly." });
+  }
+});
+
+// Stripe redirects here only after an account-link flow. There is deliberately
+// no caller-controlled return URL in this API.
+router.get("/current-events/payouts/onboarding/return", (_req, res): void => {
+  res.type("html").send(payoutHtml());
+});
+router.get("/current-events/payouts/onboarding/refresh", (_req, res): void => {
+  res.type("html").send(payoutHtml());
+});
+
+router.get("/current-events/payouts/settings", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  try {
+    const account = await refreshPayoutAccount(viewerId);
+    const destination = account ? await payoutDestination(account.stripeAccountId) : null;
+    res.json({
+      account: account ? {
+        configured: true,
+        detailsSubmitted: account.detailsSubmitted,
+        payoutsEnabled: account.payoutsEnabled,
+        status: account.status,
+      } : { configured: false, detailsSubmitted: false, payoutsEnabled: false, status: "not_started" },
+      minimumGold: MINIMUM_WITHDRAWAL_GOLD,
+      goldPerUsd: GOLD_PER_USD,
+      currency: "usd",
+      payoutDestination: destination,
+    });
+  } catch (error) {
+    req.log?.error?.({ err: error, userId: viewerId }, "Unable to refresh creator payout account");
+    res.status(503).json({ error: "Payout settings are unavailable right now. Please try again." });
+  }
+});
+
+router.post("/current-events/payouts/onboarding", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const returnUrl = safePayoutUrl(req, "return");
+  const refreshUrl = safePayoutUrl(req, "refresh");
+  if (!returnUrl || !refreshUrl) {
+    res.status(400).json({ error: "Payout setup requires a secure HTTPS connection." });
+    return;
+  }
+  try {
+    let [stored] = await db.select().from(creatorPayoutAccountsTable).where(eq(creatorPayoutAccountsTable.userId, viewerId)).limit(1);
+    const stripe = await getUncachableStripeClient();
+    if (!stored) {
+      const account = await stripe.accounts.create({
+        type: "express",
+        country: "US",
+        capabilities: { transfers: { requested: true } },
+        metadata: { oldtimeUserId: String(viewerId) },
+      }, { idempotencyKey: `oldtime-creator-account-${viewerId}` });
+      const now = Date.now();
+      const inserted = await db.insert(creatorPayoutAccountsTable).values({
+        userId: viewerId, stripeAccountId: account.id, detailsSubmitted: account.details_submitted,
+        payoutsEnabled: account.payouts_enabled, status: accountStatus(account), createdAt: now, updatedAt: now,
+      }).onConflictDoNothing().returning();
+      stored = inserted[0] ?? (await db.select().from(creatorPayoutAccountsTable).where(eq(creatorPayoutAccountsTable.userId, viewerId)).limit(1))[0];
+    }
+    const stripeAccount = await stripe.accounts.retrieve(stored.stripeAccountId);
+    if (!("deleted" in stripeAccount && stripeAccount.deleted)) {
+      await db.update(creatorPayoutAccountsTable).set({
+        detailsSubmitted: stripeAccount.details_submitted,
+        payoutsEnabled: stripeAccount.payouts_enabled,
+        status: accountStatus(stripeAccount),
+        updatedAt: Date.now(),
+      }).where(eq(creatorPayoutAccountsTable.userId, viewerId));
+    }
+    if (!("deleted" in stripeAccount && stripeAccount.deleted) && stripeAccount.type === "express" && stripeAccount.details_submitted) {
+      const loginLink = await stripe.accounts.createLoginLink(stored.stripeAccountId);
+      res.json({ url: loginLink.url, expiresAt: null });
+      return;
+    }
+    const link = await stripe.accountLinks.create({
+      account: stored.stripeAccountId,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
+      type: "account_onboarding",
+    });
+    res.json({ url: link.url, expiresAt: link.expires_at * 1000 });
+  } catch (error) {
+    req.log?.error?.({ err: error, userId: viewerId }, "Unable to create creator onboarding link");
+    res.status(503).json({ error: "Payout setup is unavailable right now. Please try again." });
+  }
+});
+
+router.get("/current-events/payouts/withdrawals", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  try {
+    const withdrawals = await db.select().from(creatorWithdrawalsTable)
+      .where(eq(creatorWithdrawalsTable.userId, viewerId)).orderBy(desc(creatorWithdrawalsTable.createdAt)).limit(100);
+    const refreshed = await Promise.all(withdrawals.map(refreshWithdrawal));
+    res.json({ items: refreshed.map(serializeWithdrawal) });
+  } catch (error) {
+    req.log?.error?.({ err: error, userId: viewerId }, "Unable to retrieve withdrawal history");
+    res.status(503).json({ error: "Withdrawal history is unavailable right now. Please try again." });
+  }
+});
+
+router.post("/current-events/payouts/withdrawals", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  const parsed = withdrawalInput.safeParse(req.body);
+  if (viewerId === null) return;
+  if (!parsed.success || parsed.data.gold % GOLD_PER_USD !== 0) {
+    res.status(400).json({ error: "Withdrawals must be whole US dollars and at least $10." });
+    return;
+  }
+  try {
+    const account = await refreshPayoutAccount(viewerId);
+    if (!account?.detailsSubmitted || !account.payoutsEnabled) {
+      res.status(400).json({ error: "Finish payout setup before requesting a withdrawal." });
+      return;
+    }
+    const now = Date.now();
+    const withdrawal = await db.transaction(async (tx) => {
+      await tx.insert(currentEventWalletsTable).values({ userId: viewerId, updatedAt: now }).onConflictDoNothing();
+      const [wallet] = await tx.update(currentEventWalletsTable)
+        .set({ gold: sql`${currentEventWalletsTable.gold} - ${parsed.data.gold}`, updatedAt: now })
+        .where(and(eq(currentEventWalletsTable.userId, viewerId), gte(currentEventWalletsTable.gold, parsed.data.gold)))
+        .returning({ gold: currentEventWalletsTable.gold });
+      if (!wallet) return null;
+      const [created] = await tx.insert(creatorWithdrawalsTable).values({
+        userId: viewerId, gold: parsed.data.gold, amountCents: (parsed.data.gold / GOLD_PER_USD) * 100,
+        currency: "usd", status: "processing", createdAt: now, updatedAt: now,
+      }).returning();
+      return created;
+    });
+    if (!withdrawal) {
+      res.status(400).json({ error: "You do not have enough withdrawable Gold." });
+      return;
+    }
+    let transferId: string | null = null;
+    let stripe: Awaited<ReturnType<typeof getUncachableStripeClient>> | null = null;
+    try {
+      stripe = await getUncachableStripeClient();
+      const transfer = await stripe.transfers.create({
+        amount: withdrawal.amountCents, currency: "usd", destination: account.stripeAccountId,
+        metadata: { withdrawalId: String(withdrawal.id), oldtimeUserId: String(viewerId) },
+      }, { idempotencyKey: `oldtime-withdrawal-transfer-${withdrawal.id}` });
+      transferId = transfer.id;
+      await db.update(creatorWithdrawalsTable).set({ stripeTransferId: transfer.id, updatedAt: Date.now() })
+        .where(eq(creatorWithdrawalsTable.id, withdrawal.id));
+      const payout = await stripe.payouts.create({ amount: withdrawal.amountCents, currency: "usd", metadata: { withdrawalId: String(withdrawal.id) } },
+        { stripeAccount: account.stripeAccountId, idempotencyKey: `oldtime-withdrawal-payout-${withdrawal.id}` });
+      const [updated] = await db.update(creatorWithdrawalsTable).set({ stripePayoutId: payout.id, status: payout.status === "paid" ? "paid" : "processing", updatedAt: Date.now() })
+        .where(eq(creatorWithdrawalsTable.id, withdrawal.id)).returning();
+      res.status(201).json(serializeWithdrawal(updated));
+    } catch (error) {
+      try {
+        if (transferId && stripe) await stripe.transfers.createReversal(transferId, {}, { idempotencyKey: `oldtime-withdrawal-reversal-${withdrawal.id}` });
+        await refundFailedWithdrawal(withdrawal.id, "The payment provider could not process the withdrawal.");
+        res.status(503).json({ error: "Your withdrawal could not be processed. Your Gold has been returned." });
+      } catch (reversalError) {
+        await db.update(creatorWithdrawalsTable).set({ status: "reversal_pending", failureReason: "The withdrawal needs review.", updatedAt: Date.now() })
+          .where(and(eq(creatorWithdrawalsTable.id, withdrawal.id), eq(creatorWithdrawalsTable.status, "processing")));
+        req.log?.error?.({ err: reversalError, withdrawalId: withdrawal.id }, "Creator withdrawal reversal failed");
+        res.status(503).json({ error: "Your withdrawal needs review. Please contact support." });
+      }
+    }
+  } catch (error) {
+    req.log?.error?.({ err: error, userId: viewerId }, "Unable to request creator withdrawal");
+    res.status(503).json({ error: "Withdrawals are unavailable right now. Please try again." });
   }
 });
 

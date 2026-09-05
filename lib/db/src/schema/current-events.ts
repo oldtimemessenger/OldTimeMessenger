@@ -105,3 +105,41 @@ export const currentEventCoinPurchasesTable = pgTable(
     userPurchasedIndex: index("current_event_coin_purchases_user_purchased_idx").on(table.userId, table.purchasedAt),
   }),
 );
+
+// Only Stripe identifiers and state are stored here. Bank and tax details
+// remain exclusively in Stripe.
+export const creatorPayoutAccountsTable = pgTable(
+  "creator_payout_accounts",
+  {
+    userId: integer("user_id").primaryKey(),
+    stripeAccountId: text("stripe_account_id").notNull(),
+    detailsSubmitted: boolean("details_submitted").notNull().default(false),
+    payoutsEnabled: boolean("payouts_enabled").notNull().default(false),
+    status: text("status").notNull().default("pending"),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: pgBigint("updated_at", { mode: "number" }).notNull(),
+  },
+);
+
+export const creatorWithdrawalsTable = pgTable(
+  "creator_withdrawals",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    gold: integer("gold").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull().default("usd"),
+    status: text("status").notNull().default("processing"),
+    stripeTransferId: text("stripe_transfer_id"),
+    stripePayoutId: text("stripe_payout_id"),
+    failureReason: text("failure_reason"),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: pgBigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    userCreatedIndex: index("creator_withdrawals_user_created_idx").on(table.userId, table.createdAt),
+    processingUserIndex: index("creator_withdrawals_user_status_idx").on(table.userId, table.status),
+    transferIndex: uniqueIndex("creator_withdrawals_transfer_idx").on(table.stripeTransferId),
+    payoutIndex: uniqueIndex("creator_withdrawals_payout_idx").on(table.stripePayoutId),
+  }),
+);

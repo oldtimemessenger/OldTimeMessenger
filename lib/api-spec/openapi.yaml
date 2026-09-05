@@ -1661,6 +1661,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentEventWalletSyncResult"
+  /current-events/payouts/settings:
+    get:
+      operationId: getCreatorPayoutSettings
+      tags: [current-events]
+      summary: Get the caller's creator payout setup status
+      responses:
+        "200":
+          description: Payout settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatorPayoutSettings" }
+  /current-events/payouts/onboarding:
+    post:
+      operationId: createCreatorPayoutOnboardingLink
+      tags: [current-events]
+      summary: Create or refresh a Stripe Express onboarding link
+      responses:
+        "200":
+          description: Short-lived Stripe onboarding URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatorPayoutSettingsLink" }
+        "400":
+          description: A secure connection is required
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+  /current-events/payouts/withdrawals:
+    get:
+      operationId: getCreatorWithdrawalHistory
+      tags: [current-events]
+      summary: List the caller's creator withdrawals
+      responses:
+        "200":
+          description: Withdrawal history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatorWithdrawalList" }
+    post:
+      operationId: requestCreatorWithdrawal
+      tags: [current-events]
+      summary: Request a USD creator withdrawal from gift-earned Gold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatorWithdrawalRequest" }
+      responses:
+        "201":
+          description: Withdrawal requested
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatorWithdrawal" }
+        "400":
+          description: The amount, balance, or payout setup is invalid
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -2829,4 +2883,53 @@ components:
         creditedCoins: { type: number }
         wallet: { $ref: "#/components/schemas/CurrentEventWallet" }
       required: [creditedCoins, wallet]
+    CreatorPayoutSettings:
+      type: object
+      properties:
+        account:
+          type: object
+          properties:
+            configured: { type: boolean }
+            detailsSubmitted: { type: boolean }
+            payoutsEnabled: { type: boolean }
+            status: { type: string, enum: [not_started, pending, enabled, restricted] }
+          required: [configured, detailsSubmitted, payoutsEnabled, status]
+        minimumGold: { type: number, const: 900 }
+        goldPerUsd: { type: number, const: 90 }
+        currency: { type: string, const: usd }
+        payoutDestination:
+          type: [object, "null"]
+          properties:
+            type: { type: string, enum: [bank_account, card] }
+            label: { type: string, description: Bank name or masked card brand/type. }
+            last4: { type: string, pattern: "^[0-9]{4}$" }
+          required: [type, label, last4]
+      required: [account, minimumGold, goldPerUsd, currency, payoutDestination]
+    CreatorPayoutSettingsLink:
+      type: object
+      properties:
+        url: { type: string }
+        expiresAt: { type: [number, "null"], description: Account onboarding expiry, if applicable. }
+      required: [url, expiresAt]
+    CreatorWithdrawalRequest:
+      type: object
+      properties:
+        gold: { type: number, minimum: 900, description: Must be divisible by 90; only gift-earned Gold is withdrawable. }
+      required: [gold]
+    CreatorWithdrawal:
+      type: object
+      properties:
+        id: { type: number }
+        gold: { type: number }
+        amountCents: { type: number }
+        currency: { type: string, const: usd }
+        status: { type: string, enum: [processing, paid, failed, canceled, reversal_pending] }
+        createdAt: { type: number }
+        updatedAt: { type: number }
+      required: [id, gold, amountCents, currency, status, createdAt, updatedAt]
+    CreatorWithdrawalList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/CreatorWithdrawal" } }
+      required: [items]
 

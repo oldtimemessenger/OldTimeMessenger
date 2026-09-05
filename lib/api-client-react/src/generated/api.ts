@@ -32,6 +32,11 @@ import type {
   CleanupResult,
   CompleteBirthdayBody,
   ContactDiscoveryResponse,
+  CreatorPayoutSettings,
+  CreatorPayoutSettingsLink,
+  CreatorWithdrawal,
+  CreatorWithdrawalList,
+  CreatorWithdrawalRequest,
   CurrentEventGiftInput,
   CurrentEventGiftResult,
   CurrentEventHandInput,
@@ -8856,6 +8861,314 @@ export const useSyncCurrentEventWalletPurchases = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSyncCurrentEventWalletPurchasesMutationOptions(options));
+    }
+
+export const getGetCreatorPayoutSettingsUrl = () => {
+
+
+
+
+  return `/api/current-events/payouts/settings`
+}
+
+/**
+ * @summary Get the caller's creator payout setup status
+ */
+export const getCreatorPayoutSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<CreatorPayoutSettings> => {
+
+  return customFetch<CreatorPayoutSettings>(getGetCreatorPayoutSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCreatorPayoutSettingsQueryKey = () => {
+    return [
+    `/api/current-events/payouts/settings`
+    ] as const;
+    }
+
+
+export const getGetCreatorPayoutSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getCreatorPayoutSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorPayoutSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCreatorPayoutSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCreatorPayoutSettings>>> = ({ signal }) => getCreatorPayoutSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCreatorPayoutSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCreatorPayoutSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getCreatorPayoutSettings>>>
+export type GetCreatorPayoutSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the caller's creator payout setup status
+ */
+
+export function useGetCreatorPayoutSettings<TData = Awaited<ReturnType<typeof getCreatorPayoutSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorPayoutSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCreatorPayoutSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCreatorPayoutOnboardingLinkUrl = () => {
+
+
+
+
+  return `/api/current-events/payouts/onboarding`
+}
+
+/**
+ * @summary Create or refresh a Stripe Express onboarding link
+ */
+export const createCreatorPayoutOnboardingLink = async ( options?: Parameters<typeof customFetch>[1]): Promise<CreatorPayoutSettingsLink> => {
+
+  return customFetch<CreatorPayoutSettingsLink>(getCreateCreatorPayoutOnboardingLinkUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateCreatorPayoutOnboardingLinkMutationKey = () => ['createCreatorPayoutOnboardingLink'] as const;
+
+export const getCreateCreatorPayoutOnboardingLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCreatorPayoutOnboardingLink>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCreatorPayoutOnboardingLink>>, TError,void, TContext> => {
+
+const mutationKey = getCreateCreatorPayoutOnboardingLinkMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCreatorPayoutOnboardingLink>>, void> = () => {
+
+
+          return  createCreatorPayoutOnboardingLink(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCreatorPayoutOnboardingLinkMutationResult = NonNullable<Awaited<ReturnType<typeof createCreatorPayoutOnboardingLink>>>
+
+    export type CreateCreatorPayoutOnboardingLinkMutationError = ErrorType<ErrorResponse>
+
+
+    /**
+ * @summary Create or refresh a Stripe Express onboarding link
+ */
+export const useCreateCreatorPayoutOnboardingLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCreatorPayoutOnboardingLink>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCreatorPayoutOnboardingLink>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateCreatorPayoutOnboardingLinkMutationOptions(options));
+    }
+
+export const getGetCreatorWithdrawalHistoryUrl = () => {
+
+
+
+
+  return `/api/current-events/payouts/withdrawals`
+}
+
+/**
+ * @summary List the caller's creator withdrawals
+ */
+export const getCreatorWithdrawalHistory = async ( options?: Parameters<typeof customFetch>[1]): Promise<CreatorWithdrawalList> => {
+
+  return customFetch<CreatorWithdrawalList>(getGetCreatorWithdrawalHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCreatorWithdrawalHistoryQueryKey = () => {
+    return [
+    `/api/current-events/payouts/withdrawals`
+    ] as const;
+    }
+
+
+export const getGetCreatorWithdrawalHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getCreatorWithdrawalHistory>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorWithdrawalHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCreatorWithdrawalHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCreatorWithdrawalHistory>>> = ({ signal }) => getCreatorWithdrawalHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCreatorWithdrawalHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCreatorWithdrawalHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getCreatorWithdrawalHistory>>>
+export type GetCreatorWithdrawalHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the caller's creator withdrawals
+ */
+
+export function useGetCreatorWithdrawalHistory<TData = Awaited<ReturnType<typeof getCreatorWithdrawalHistory>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorWithdrawalHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCreatorWithdrawalHistoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRequestCreatorWithdrawalUrl = () => {
+
+
+
+
+  return `/api/current-events/payouts/withdrawals`
+}
+
+/**
+ * @summary Request a USD creator withdrawal from gift-earned Gold
+ */
+export const requestCreatorWithdrawal = async (creatorWithdrawalRequest: CreatorWithdrawalRequest, options?: Parameters<typeof customFetch>[1]): Promise<CreatorWithdrawal> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<CreatorWithdrawal>(getRequestCreatorWithdrawalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(creatorWithdrawalRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestCreatorWithdrawalMutationKey = () => ['requestCreatorWithdrawal'] as const;
+
+export const getRequestCreatorWithdrawalMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestCreatorWithdrawal>>, TError,RequestCreatorWithdrawalMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestCreatorWithdrawal>>, TError,RequestCreatorWithdrawalMutationVariables, TContext> => {
+
+const mutationKey = getRequestCreatorWithdrawalMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestCreatorWithdrawal>>, RequestCreatorWithdrawalMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestCreatorWithdrawal(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestCreatorWithdrawalMutationResult = NonNullable<Awaited<ReturnType<typeof requestCreatorWithdrawal>>>
+    export type RequestCreatorWithdrawalMutationBody = BodyType<CreatorWithdrawalRequest>
+    export type RequestCreatorWithdrawalMutationError = ErrorType<ErrorResponse>
+    export type RequestCreatorWithdrawalMutationVariables = {data: BodyType<CreatorWithdrawalRequest>}
+
+    /**
+ * @summary Request a USD creator withdrawal from gift-earned Gold
+ */
+export const useRequestCreatorWithdrawal = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestCreatorWithdrawal>>, TError,RequestCreatorWithdrawalMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestCreatorWithdrawal>>,
+        TError,
+        RequestCreatorWithdrawalMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRequestCreatorWithdrawalMutationOptions(options));
     }
 
 export const getRequestUploadUrlUrl = () => {

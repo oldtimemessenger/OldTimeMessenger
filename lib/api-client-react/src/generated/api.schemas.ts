@@ -1213,6 +1213,93 @@ export interface CurrentEventWalletSyncResult {
   wallet: CurrentEventWallet;
 }
 
+export type CreatorPayoutSettingsAccountStatus = typeof CreatorPayoutSettingsAccountStatus[keyof typeof CreatorPayoutSettingsAccountStatus];
+
+
+export const CreatorPayoutSettingsAccountStatus = {
+  not_started: 'not_started',
+  pending: 'pending',
+  enabled: 'enabled',
+  restricted: 'restricted',
+} as const;
+
+export type CreatorPayoutSettingsAccount = {
+  configured: boolean;
+  detailsSubmitted: boolean;
+  payoutsEnabled: boolean;
+  status: CreatorPayoutSettingsAccountStatus;
+};
+
+export type CreatorPayoutSettingsPayoutDestinationType = typeof CreatorPayoutSettingsPayoutDestinationType[keyof typeof CreatorPayoutSettingsPayoutDestinationType];
+
+
+export const CreatorPayoutSettingsPayoutDestinationType = {
+  bank_account: 'bank_account',
+  card: 'card',
+} as const;
+
+/**
+ * @nullable
+ */
+export type CreatorPayoutSettingsPayoutDestination = {
+  type: CreatorPayoutSettingsPayoutDestinationType;
+  /** Bank name or masked card brand/type. */
+  label: string;
+  /** @pattern ^[0-9]{4}$ */
+  last4: string;
+} | null;
+
+export interface CreatorPayoutSettings {
+  account: CreatorPayoutSettingsAccount;
+  minimumGold: 900;
+  goldPerUsd: 90;
+  currency: 'usd';
+  /** @nullable */
+  payoutDestination: CreatorPayoutSettingsPayoutDestination;
+}
+
+export interface CreatorPayoutSettingsLink {
+  url: string;
+  /**
+     * Account onboarding expiry
+     * @nullable
+     */
+  expiresAt: number | null;
+}
+
+export interface CreatorWithdrawalRequest {
+  /**
+     * Must be divisible by 90; only gift-earned Gold is withdrawable.
+     * @minimum 900
+     */
+  gold: number;
+}
+
+export type CreatorWithdrawalStatus = typeof CreatorWithdrawalStatus[keyof typeof CreatorWithdrawalStatus];
+
+
+export const CreatorWithdrawalStatus = {
+  processing: 'processing',
+  paid: 'paid',
+  failed: 'failed',
+  canceled: 'canceled',
+  reversal_pending: 'reversal_pending',
+} as const;
+
+export interface CreatorWithdrawal {
+  id: number;
+  gold: number;
+  amountCents: number;
+  currency: 'usd';
+  status: CreatorWithdrawalStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreatorWithdrawalList {
+  items: CreatorWithdrawal[];
+}
+
 export type ViewerIdParameter = number;
 
 export type ListUsersParams = {

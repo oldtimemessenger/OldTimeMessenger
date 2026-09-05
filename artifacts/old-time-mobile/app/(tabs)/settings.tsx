@@ -253,9 +253,10 @@ export default function SettingsScreen() {
       { items: [
       { key: "profile", icon: "person", bg: colors.settingsRed, label: translate('myProfile'), value: profile.name, onPress: () => { setDraftName(profile.name); setDraftUsername(profile.username); setDraftBio(profile.bio); setPanel('profile'); } },
       { key: "phone", icon: "call", bg: colors.settingsGreen, label: 'Phone Number', value: session?.hasRegisteredPhone ? (session.phoneVerified ? 'Verified' : 'Registered') : 'Not registered', onPress: () => { setDraftPhone(session?.phone ?? ''); setPhonePermission(session?.phoneDiscoveryPermission ?? 'contacts'); setPanel('phone'); } },
-    { key: "wallet", icon: "wallet", bg: colors.settingsViolet, label: 'Wallet', onPress: () => router.push('/wallet') },
-    { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
-  ]},
+      { key: "wallet", icon: "wallet", bg: colors.settingsViolet, label: 'Wallet', onPress: () => router.push('/wallet') },
+      { key: "payment-settings", icon: "card", bg: colors.settingsGreen, label: 'Payment Settings', value: 'Creator payouts', onPress: () => router.push('/payment-settings') },
+      { key: "saved", icon: "bookmark", bg: colors.settingsCyan, label: translate('savedMessages'), value: String(savedMessages.length), onPress: () => setPanel('saved') },
+    ]},
     { items: [
       { key: "calls", icon: "call", bg: colors.settingsGreen, label: translate('recentCalls'), onPress: () => setPanel('calls') },
       { key: "chatSettings", icon: "chatbubbles", bg: colors.settingsCyan, label: translate('chatSettings'), onPress: () => setPanel('chatSettings') },

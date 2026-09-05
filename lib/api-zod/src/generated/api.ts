@@ -3368,6 +3368,77 @@ export const SyncCurrentEventWalletPurchasesResponse = zod.object({
 
 
 /**
+ * @summary Get the caller's creator payout setup status
+ */
+export const getCreatorPayoutSettingsResponsePayoutDestinationLast4RegExp = new RegExp('^[0-9]{4}$');
+
+
+export const GetCreatorPayoutSettingsResponse = zod.object({
+  "account": zod.object({
+  "configured": zod.boolean(),
+  "detailsSubmitted": zod.boolean(),
+  "payoutsEnabled": zod.boolean(),
+  "status": zod.enum(['not_started', 'pending', 'enabled', 'restricted'])
+}),
+  "minimumGold": zod.literal(900),
+  "goldPerUsd": zod.literal(90),
+  "currency": zod.literal("usd"),
+  "payoutDestination": zod.object({
+  "type": zod.enum(['bank_account', 'card']),
+  "label": zod.string().describe('Bank name or masked card brand\/type.'),
+  "last4": zod.string().regex(getCreatorPayoutSettingsResponsePayoutDestinationLast4RegExp)
+}).nullable()
+})
+
+
+/**
+ * @summary Create or refresh a Stripe Express onboarding link
+ */
+export const CreateCreatorPayoutOnboardingLinkResponse = zod.object({
+  "url": zod.string(),
+  "expiresAt": zod.number().nullable().describe('Account onboarding expiry')
+})
+
+
+/**
+ * @summary List the caller's creator withdrawals
+ */
+export const GetCreatorWithdrawalHistoryResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "gold": zod.number(),
+  "amountCents": zod.number(),
+  "currency": zod.literal("usd"),
+  "status": zod.enum(['processing', 'paid', 'failed', 'canceled', 'reversal_pending']),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number()
+}))
+})
+
+
+/**
+ * @summary Request a USD creator withdrawal from gift-earned Gold
+ */
+export const requestCreatorWithdrawalBodyGoldMin = 900;
+
+
+
+export const RequestCreatorWithdrawalBody = zod.object({
+  "gold": zod.number().min(requestCreatorWithdrawalBodyGoldMin).describe('Must be divisible by 90; only gift-earned Gold is withdrawable.')
+})
+
+export const RequestCreatorWithdrawalResponse = zod.object({
+  "id": zod.number(),
+  "gold": zod.number(),
+  "amountCents": zod.number(),
+  "currency": zod.literal("usd"),
+  "status": zod.enum(['processing', 'paid', 'failed', 'canceled', 'reversal_pending']),
+  "createdAt": zod.number(),
+  "updatedAt": zod.number()
+})
+
+
+/**
  * @summary Request a protected media upload endpoint
  */
 
