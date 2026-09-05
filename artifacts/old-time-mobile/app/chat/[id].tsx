@@ -773,7 +773,7 @@ export default function ChatDetailScreen() {
 
   async function resumeRecording() {
     try {
-      await recorder.resume();
+      recorder.record();
       setRecordingMode('locked');
     } catch {
       Alert.alert('Voice note failed', 'Recording could not resume.');
@@ -839,7 +839,7 @@ export default function ChatDetailScreen() {
     }
     audioPlayer.pause();
     audioPlayer.replace({ uri: storageUrl(message.attachment.objectPath), headers: { Authorization: 'Bearer ' + session.authToken } });
-    audioPlayer.setRate?.(playbackRate);
+    audioPlayer.setPlaybackRate(playbackRate);
     setActiveAudioMessageId(message.id);
     audioPlayer.play();
   }
@@ -1079,7 +1079,7 @@ export default function ChatDetailScreen() {
                             <Pressable onPress={() => {
                               const nextRate = PLAYBACK_RATES[(PLAYBACK_RATES.indexOf(playbackRate) + 1) % PLAYBACK_RATES.length];
                               setPlaybackRate(nextRate);
-                              audioPlayer.setRate?.(nextRate);
+                              audioPlayer.setPlaybackRate(nextRate);
                             }}>
                               <Text style={[styles.audioRate, { color: mine ? colors.primaryForeground : colors.primary }]}>{playbackRate}x</Text>
                             </Pressable>

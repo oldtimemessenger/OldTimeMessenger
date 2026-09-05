@@ -1,36 +1,308 @@
 import { Ionicons } from '@expo/vector-icons';
-import { acceptCall, declineCall, endCall, getCall, getCallLiveKitToken, type Call } from '@workspace/api-client-react';
+import { getGetInboxQueryKey, useGetInbox } from '@workspace/api-client-react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { io } from 'socket.io-client';
 import { Avatar } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
+import { apiBaseUrl } from '@/lib/api-base-url';
 import { audioService } from '@/lib/audio-service';
+import {
+  acceptManagedCall,
+  declineManagedCall,
+  endManagedCall,
+  getManagedCall,
+  getManagedCallToken,
+  type ManagedCall,
+} from '@/lib/chat-api';
+
+type CallStatusTone = { title: string; detail: string; accent: string };
+
+function durationLabel(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  return `${String(Math.floor(safeSeconds / 60)).padStart(2, '0')}:${String(safeSeconds % 60).padStart(2, '0')}`;
+}
+
+function toneForCall(call: ManagedCall | null, isCallee: boolean, elapsed: number): CallStatusTone {
+  if (!call) return { title: 'Connecting…', detail: 'Checking call status', accent: '#34C77E' };
+  if (call.status === 'accepted') return { title: call.type === 'video' ? 'Video call' : 'Voice call', detail: durationLabel(elapsed), accent: '#34C77E' };
+  if (call.status === 'ringing') {
+    return {
+      title: isCallee ? `Incoming ${call.type} call` : `${call.type === 'video' ? 'Video' : 'Voice'} call`,
+      detail: isCallee ? 'Swipe up to answer or decline below' : 'Ringing…',
+      accent: '#34C77E',
+    };
+  }
+  if (call.status === 'declined') return { title: 'Call declined', detail: 'The call was declined.', accent: '#F97316' };
+  if (call.status === 'missed') return { title: 'Missed call', detail: 'Nobody answered in time.', accent: '#EF4444' };
+  return { title: 'Call ended', detail: 'Call finished.', accent: '#94A3B8' };
+}
 
 export default function CallScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>(); const callId = Number(id); const router = useRouter(); const colors = useColors(); const { session } = useApp();
-  const [call, setCall] = useState<Call | null>(null); const [error, setError] = useState<string | null>(null); const [muted, setMuted] = useState(false); const [speaker, setSpeaker] = useState(false); const [elapsed, setElapsed] = useState(0); const [busy, setBusy] = useState(false);
-  const connectingRef = useRef(false);
-  const refresh = useCallback(async () => { if (!Number.isInteger(callId)) return; try { setCall(await getCall(callId)); } catch (e) { setError(e instanceof Error ? e.message : 'Call unavailable.'); } }, [callId]);
-  useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 2500); return () => clearInterval(timer); }, [refresh]);
-  useEffect(() => { if (call?.acceptedAt) { const tick = () => setElapsed(Math.max(0, Math.floor(Date.now() / 1000 - call.acceptedAt!))); tick(); const timer = setInterval(tick, 1000); return () => clearInterval(timer); } }, [call?.acceptedAt]);
-  useEffect(() => () => { void audioService.leave(); }, []);
-  const isCallee = call?.calleeId === session?.id; const name = isCallee ? 'Incoming Old Time call' : 'Calling Old Time member';
-  async function connect() { if (connectingRef.current) return; connectingRef.current = true; try { const token = await getCallLiveKitToken(callId); await audioService.join(callId, 'speaker', { ...token, canPublish: true }); } finally { connectingRef.current = false; } }
-  async function accept() { setBusy(true); try { const next = await acceptCall(callId); setCall(next); await connect(); } catch (e) { setError(e instanceof Error ? e.message : 'Could not join call.'); } finally { setBusy(false); } }
-  async function hangup() { setBusy(true); try { if (call?.status === 'ringing' && isCallee) await declineCall(callId); else await endCall(callId); await audioService.leave(); router.back(); } catch (e) { Alert.alert('Call not ended', e instanceof Error ? e.message : 'Please try again.'); } finally { setBusy(false); } }
-  useEffect(() => { if (call?.status === 'accepted') void connect().catch((e) => setError(e instanceof Error ? e.message : 'Audio connection failed.')); }, [call?.status]);
-  useEffect(() => {
-    if (call && ['declined', 'missed', 'ended'].includes(call.status)) {
-      void audioService.leave();
-    }
-  }, [call?.status]);
-  if (!call && !error) return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const callId = Number(id);
+  const router = useRouter();
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const { session } = useApp();
+  const [call, setCall] = useState<ManagedCall | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [speaker, setSpeaker] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [elapsed, setElapsed] = useState(0);
+  const connectStarted = useRef(false);
+  const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session?.id), queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
+
+  const otherUserId = call
+    ? (call.callerId === session?.id ? call.calleeId : call.callerId)
+    : null;
+  const contact = useMemo(
+    () => inbox.data?.find((item) => item.contact.id === otherUserId)?.contact,
+    [inbox.data, otherUserId],
+  );
+  const name = contact?.name ?? 'Old Time';
+  const isCallee = call?.calleeId === session?.id;
   const connected = call?.status === 'accepted';
-  return <View style={[styles.root, { backgroundColor: colors.background }]}><View style={styles.center}><Avatar name={name} size={96} color={colors.primary} /><Text style={[styles.name, { color: colors.foreground }]}>{name}</Text><Text style={[styles.status, { color: colors.mutedForeground }]}>{error ?? (connected ? `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}` : call?.status === 'ringing' ? (isCallee ? 'Incoming call' : 'Ringing…') : `Call ${call?.status ?? ''}`)}</Text></View>
-    {connected ? <View style={styles.controls}><Pressable onPress={() => { const next = !muted; setMuted(next); void audioService.setMuted(next); }} style={[styles.control, { backgroundColor: colors.card }]}><Ionicons name={muted ? 'mic-off' : 'mic'} size={24} color={colors.foreground} /><Text style={{ color: colors.foreground }}>{muted ? 'Unmute' : 'Mute'}</Text></Pressable>{Platform.OS !== 'web' ? <Pressable onPress={() => { const next = !speaker; setSpeaker(next); void audioService.setSpeaker?.(next).catch(() => setError('Audio output could not be changed on this device.')); }} style={[styles.control, { backgroundColor: colors.card }]}><Ionicons name="volume-high" size={24} color={colors.foreground} /><Text style={{ color: colors.foreground }}>{speaker ? 'Speaker' : 'Earpiece'}</Text></Pressable> : null}</View> : null}
-    <View style={styles.bottom}>{call?.status === 'ringing' && isCallee ? <Pressable disabled={busy} onPress={() => void accept()} style={[styles.answer, { backgroundColor: colors.primary }]}><Text style={{ color: colors.primaryForeground }}>Accept</Text></Pressable> : null}<Pressable disabled={busy || !call} onPress={() => void hangup()} style={[styles.end, { backgroundColor: colors.destructive }]}><Ionicons name="call" size={24} color={colors.destructiveForeground} /><Text style={{ color: colors.destructiveForeground }}>{isCallee && call?.status === 'ringing' ? 'Decline' : 'End'}</Text></Pressable></View>
-  </View>;
+  const tone = toneForCall(call, Boolean(isCallee), elapsed);
+
+  const refresh = useCallback(async () => {
+    if (!session?.authToken || !Number.isInteger(callId) || callId <= 0) return;
+    try {
+      setCall(await getManagedCall(session.authToken, callId));
+      setError(null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Call unavailable.');
+    } finally {
+      setLoading(false);
+    }
+  }, [callId, session?.authToken]);
+
+  const connectAudio = useCallback(async () => {
+    if (!session?.authToken || !call || call.status !== 'accepted' || connectStarted.current) return;
+    connectStarted.current = true;
+    try {
+      const token = await getManagedCallToken(session.authToken, call.id);
+      await audioService.join(call.id, 'speaker', { ...token, canPublish: true });
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Call couldn’t connect.');
+    } finally {
+      connectStarted.current = false;
+    }
+  }, [call, session?.authToken]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(() => void refresh(), 2500);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!session?.authToken || !callId) return;
+    const socket = io(apiBaseUrl(), { auth: { token: session.authToken }, transports: ['websocket'] });
+    const handleUpdate = (payload?: ManagedCall | { callId?: number; status?: ManagedCall['status'] }) => {
+      const nextId = typeof payload === 'object' && payload ? ('id' in payload ? payload.id : payload.callId) : null;
+      if (nextId !== callId) return;
+      void refresh();
+    };
+    socket.on('call-updated', handleUpdate);
+    return () => {
+      socket.off('call-updated', handleUpdate);
+      socket.disconnect();
+    };
+  }, [callId, refresh, session?.authToken]);
+
+  useEffect(() => {
+    if (!call?.acceptedAt) return;
+    const tick = () => setElapsed(Math.max(0, Math.floor(Date.now() / 1000 - call.acceptedAt! / 1000)));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [call?.acceptedAt]);
+
+  useEffect(() => {
+    if (call?.status === 'accepted') void connectAudio();
+    if (call && ['declined', 'missed', 'ended'].includes(call.status)) void audioService.leave();
+  }, [call, connectAudio]);
+
+  useEffect(() => () => { void audioService.leave(); }, []);
+
+  async function accept() {
+    if (!session?.authToken || !call) return;
+    setBusy(true);
+    try {
+      const updated = await acceptManagedCall(session.authToken, call.id);
+      setCall(updated);
+      setError(null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Call couldn’t connect.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function hangup() {
+    if (!session?.authToken || !call) return;
+    setBusy(true);
+    try {
+      if (call.status === 'ringing' && isCallee) await declineManagedCall(session.authToken, call.id);
+      else await endManagedCall(session.authToken, call.id);
+      await audioService.leave();
+      router.back();
+    } catch (nextError) {
+      Alert.alert('Call not ended', nextError instanceof Error ? nextError.message : 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleMute() {
+    const nextMuted = !muted;
+    setMuted(nextMuted);
+    await audioService.setMuted(nextMuted).catch(() => {
+      setMuted(!nextMuted);
+      Alert.alert('Microphone unavailable', 'Microphone state could not be changed.');
+    });
+  }
+
+  async function toggleSpeaker() {
+    const nextSpeaker = !speaker;
+    setSpeaker(nextSpeaker);
+    await audioService.setSpeaker?.(nextSpeaker).catch(() => {
+      setSpeaker(!nextSpeaker);
+      Alert.alert('Audio route unavailable', 'Speaker output could not be changed on this device.');
+    });
+  }
+
+  function toggleCamera() {
+    setCameraEnabled((current) => !current);
+    Alert.alert('Video preview coming soon', 'This build keeps the call connected, but camera publishing is not available yet.');
+  }
+
+  function swapCamera() {
+    Alert.alert('Camera switch unavailable', 'Front and back camera switching is not available in the current calling provider yet.');
+  }
+
+  function startScreenShare() {
+    Alert.alert('Screen sharing unavailable', 'The current in-app calling provider does not support screen sharing in this build yet.');
+  }
+
+  if (!session) {
+    return <View style={[styles.center, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
+  }
+
+  if (loading && !call && !error) {
+    return <View style={[styles.center, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
+  }
+
+  return (
+    <View style={[styles.root, { backgroundColor: colors.background, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 18 }]}>
+      <View style={styles.topBar}>
+        <Pressable onPress={() => router.back()} style={[styles.topButton, { backgroundColor: colors.card }]}>
+          <Ionicons name="chevron-down" size={22} color={colors.foreground} />
+        </Pressable>
+        <View style={[styles.callTypeChip, { backgroundColor: colors.card }]}>
+          <View style={[styles.statusDot, { backgroundColor: tone.accent }]} />
+          <Text style={[styles.callTypeText, { color: colors.foreground }]}>{call?.type === 'video' ? 'Video call' : 'Voice call'}</Text>
+        </View>
+        <Pressable onPress={startScreenShare} style={[styles.topButton, { backgroundColor: colors.card }]}>
+          <Ionicons name="phone-portrait-outline" size={18} color={colors.foreground} />
+        </Pressable>
+      </View>
+
+      <View style={styles.hero}>
+        <Avatar name={name} size={112} />
+        <Text style={[styles.name, { color: colors.foreground }]}>{name}</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>{error ?? tone.title}</Text>
+        <Text style={[styles.detail, { color: colors.mutedForeground }]}>{error ? 'Please try again.' : tone.detail}</Text>
+      </View>
+
+      <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.previewBadge, { backgroundColor: connected && call?.type === 'video' && cameraEnabled ? '#DCFCE7' : colors.secondary }]}>
+          <Ionicons
+            name={call?.type === 'video' && cameraEnabled ? 'videocam' : 'person'}
+            size={18}
+            color={call?.type === 'video' && cameraEnabled ? '#166534' : colors.foreground}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.previewTitle, { color: colors.foreground }]}>
+            {call?.type === 'video' ? (cameraEnabled ? 'Video ready' : 'Camera off') : 'Audio connected'}
+          </Text>
+          <Text style={[styles.previewMeta, { color: colors.mutedForeground }]}>
+            {call?.type === 'video'
+              ? 'Video controls are prepared here without leaving chat flow.'
+              : 'Muted, speaker, and call controls stay in one place.'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.controlsGrid}>
+        <Pressable onPress={() => void toggleMute()} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
+          <Ionicons name={muted ? 'mic-off' : 'mic'} size={22} color={colors.foreground} />
+          <Text style={[styles.controlLabel, { color: colors.foreground }]}>{muted ? 'Unmute' : 'Mute'}</Text>
+        </Pressable>
+        <Pressable onPress={() => void toggleSpeaker()} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
+          <Ionicons name={speaker ? 'volume-high' : 'volume-mute'} size={22} color={colors.foreground} />
+          <Text style={[styles.controlLabel, { color: colors.foreground }]}>{speaker ? 'Speaker' : 'Earpiece'}</Text>
+        </Pressable>
+        <Pressable onPress={toggleCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
+          <Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={22} color={colors.foreground} />
+          <Text style={[styles.controlLabel, { color: colors.foreground }]}>{cameraEnabled ? 'Camera on' : 'Camera off'}</Text>
+        </Pressable>
+        <Pressable onPress={swapCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
+          <Ionicons name="camera-reverse" size={22} color={colors.foreground} />
+          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Switch</Text>
+        </Pressable>
+        <Pressable onPress={startScreenShare} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
+          <Ionicons name="desktop-outline" size={22} color={colors.foreground} />
+          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Share screen</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.bottomActions}>
+        {call?.status === 'ringing' && isCallee ? (
+          <Pressable disabled={busy} onPress={() => void accept()} style={[styles.answerButton, { backgroundColor: '#34C77E' }]}>
+            <Ionicons name="call" size={20} color="#fff" />
+            <Text style={styles.answerText}>Answer</Text>
+          </Pressable>
+        ) : null}
+        <Pressable disabled={busy || !call} onPress={() => void hangup()} style={[styles.endButton, { backgroundColor: colors.destructive }]}>
+          <Ionicons name="call" size={20} color={colors.destructiveForeground} />
+          <Text style={[styles.endText, { color: colors.destructiveForeground }]}>{isCallee && call?.status === 'ringing' ? 'Decline' : 'End'}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
-const styles = StyleSheet.create({ root: { flex: 1, padding: 28 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }, name: { fontSize: 23, fontWeight: '700', marginTop: 12 }, status: { fontSize: 15 }, controls: { flexDirection: 'row', justifyContent: 'center', gap: 16 }, control: { width: 96, height: 78, alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 18 }, bottom: { flexDirection: 'row', justifyContent: 'center', gap: 18, paddingBottom: 35 }, answer: { minWidth: 110, padding: 17, borderRadius: 28, alignItems: 'center' }, end: { minWidth: 110, padding: 17, borderRadius: 28, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 } });
+
+const styles = StyleSheet.create({
+  root: { flex: 1, paddingHorizontal: 20 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  callTypeChip: { minHeight: 42, borderRadius: 21, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  callTypeText: { fontSize: 13, fontWeight: '800' },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  name: { fontSize: 30, fontWeight: '800', marginTop: 18 },
+  title: { fontSize: 18, fontWeight: '700' },
+  detail: { fontSize: 14, textAlign: 'center' },
+  previewCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 22 },
+  previewBadge: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  previewTitle: { fontSize: 15, fontWeight: '800' },
+  previewMeta: { fontSize: 12.5, marginTop: 2 },
+  controlsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', marginBottom: 28 },
+  controlButton: { width: '31%', minHeight: 92, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 8 },
+  controlLabel: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
+  bottomActions: { flexDirection: 'row', justifyContent: 'center', gap: 14 },
+  answerButton: { minWidth: 132, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  answerText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  endButton: { minWidth: 132, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  endText: { fontSize: 15, fontWeight: '800' },
+});

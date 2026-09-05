@@ -1633,7 +1633,7 @@ router.post("/messages/:messageId/save", async (req, res): Promise<void> => {
 });
 
 router.patch("/messages/:messageId", async (req, res): Promise<void> => {
-  const messageId = readParam(req.params.messageId);
+  const messageId = Number(readParam(req.params.messageId));
   const userId = typeof req.body?.userId === "number" ? req.body.userId : Number(req.body?.userId);
   if (!Number.isInteger(messageId) || !Number.isInteger(userId) || userId <= 0) {
     res.status(400).json({ error: "A valid message and user are required." });
@@ -1707,7 +1707,7 @@ router.patch("/messages/:messageId", async (req, res): Promise<void> => {
 });
 
 router.put("/messages/:messageId/reaction", async (req, res): Promise<void> => {
-  const messageId = readParam(req.params.messageId);
+  const messageId = Number(readParam(req.params.messageId));
   const userId = typeof req.body?.userId === "number" ? req.body.userId : Number(req.body?.userId);
   const emoji = reactionChoices(req.body?.emoji);
   if (!Number.isInteger(messageId) || !Number.isInteger(userId) || userId <= 0 || !emoji) {
@@ -1746,7 +1746,7 @@ router.put("/messages/:messageId/reaction", async (req, res): Promise<void> => {
 });
 
 router.post("/messages/:messageId/play", async (req, res): Promise<void> => {
-  const messageId = readParam(req.params.messageId);
+  const messageId = Number(readParam(req.params.messageId));
   const userId = typeof req.body?.userId === "number" ? req.body.userId : Number(req.body?.userId);
   if (!Number.isInteger(messageId) || !Number.isInteger(userId) || userId <= 0) {
     res.status(400).json({ error: "A valid message and user are required." });
