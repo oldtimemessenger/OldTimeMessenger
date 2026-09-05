@@ -9321,10 +9321,3 @@ export function useGetStorageObject<TData = Awaited<ReturnType<typeof getStorage
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
-

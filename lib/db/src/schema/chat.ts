@@ -26,6 +26,7 @@ export const usersTable = pgTable("chat_users", {
   name: text("name").notNull(),
   username: text("username").notNull().unique(),
   bio: text("bio").notNull().default(""),
+  avatarObjectPath: text("avatar_object_path"),
   birthday: date("birthday", { mode: "string" }),
   contactPermission: text("contact_permission").notNull().default("everyone"),
   online: boolean("online").notNull().default(false),

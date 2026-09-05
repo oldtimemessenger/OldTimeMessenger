@@ -65,6 +65,7 @@ export const FirebaseSignInResponse = zod.union([zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
@@ -105,6 +106,7 @@ export const VerifyOtpResponse = zod.union([zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
@@ -138,6 +140,7 @@ export const CompleteBirthdayResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
@@ -220,6 +223,7 @@ export const ListUsersResponseItem = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
@@ -256,6 +260,7 @@ export const DiscoverContactsResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
@@ -332,6 +337,7 @@ export const UpdateUserProfileBody = zod.object({
   "name": zod.string().min(1).max(updateUserProfileBodyNameMax).optional(),
   "username": zod.string().min(updateUserProfileBodyUsernameMin).max(updateUserProfileBodyUsernameMax).regex(updateUserProfileBodyUsernameRegExp).optional(),
   "bio": zod.string().max(updateUserProfileBodyBioMax).optional(),
+  "avatarObjectPath": zod.string().optional().describe('Object path returned by the authenticated upload flow for the user\'s profile image'),
   "birthday": zod.coerce.date().optional().describe('Private date of birth; only returned to the signed-in user'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']).optional(),
   "phoneNumber": zod.string().nullish().describe('Optional phone number for finding friends'),
@@ -347,6 +353,7 @@ export const UpdateUserProfileResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
@@ -392,6 +399,7 @@ export const GetInboxResponseItem = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
   "online": zod.boolean(),
@@ -833,7 +841,8 @@ export const GetSocialFeedResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -919,7 +928,8 @@ export const CreateSocialPostResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -1074,7 +1084,8 @@ export const GetSocialPostCommentsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "liked": zod.boolean()
 })
@@ -1111,7 +1122,8 @@ export const CreateSocialPostCommentResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "liked": zod.boolean()
 })
@@ -1186,7 +1198,8 @@ export const SearchSocialResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 })),
   "posts": zod.array(zod.object({
   "id": zod.number(),
@@ -1217,7 +1230,8 @@ export const SearchSocialResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -1249,7 +1263,8 @@ export const GetSocialUserCardResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }).and(zod.object({
   "followerCount": zod.number(),
   "followingCount": zod.number(),
@@ -1311,7 +1326,8 @@ export const GetSocialUserPostsResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -1379,13 +1395,15 @@ export const ListMessageRequestsResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "recipient": zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "status": zod.enum(['pending', 'accepted', 'declined']),
   "chatId": zod.number().nullable(),
@@ -1411,13 +1429,15 @@ export const CreateMessageRequestResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "recipient": zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "status": zod.enum(['pending', 'accepted', 'declined']),
   "chatId": zod.number().nullable(),
@@ -1465,7 +1485,8 @@ export const GetSocialPrivacyExclusionsResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }))
 })
 
@@ -1628,7 +1649,8 @@ export const GetSavedSocialPostsResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
   "likes": zod.number(),
@@ -1691,7 +1713,8 @@ export const GetStoriesResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 })).optional(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
@@ -1699,7 +1722,8 @@ export const GetStoriesResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
@@ -1802,7 +1826,8 @@ export const CreateStoryResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 })).optional(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
@@ -1810,7 +1835,8 @@ export const CreateStoryResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
@@ -1844,7 +1870,8 @@ export const GetNotesResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
   "isOwner": zod.boolean()
@@ -1874,7 +1901,8 @@ export const CreateNoteResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
   "isOwner": zod.boolean()
@@ -1910,7 +1938,8 @@ export const UpdateNoteResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
   "isOwner": zod.boolean()
@@ -2000,7 +2029,8 @@ export const GetNearbyStoriesResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 })).optional(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
@@ -2008,7 +2038,8 @@ export const GetNearbyStoriesResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
@@ -2083,7 +2114,8 @@ export const GetStoryResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 })).optional(),
   "createdAt": zod.number(),
   "expiresAt": zod.number(),
@@ -2091,7 +2123,8 @@ export const GetStoryResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
   "viewed": zod.boolean(),
@@ -2198,7 +2231,8 @@ export const GetStoryRepliesResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 })
 }))
 })
@@ -2232,7 +2266,8 @@ export const ReplyToStoryResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 })
 })
 
@@ -2260,7 +2295,8 @@ export const GetCloseFriendsResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "username": zod.string(),
-  "bio": zod.string()
+  "bio": zod.string(),
+  "avatarObjectPath": zod.string().nullable()
 }))
 })
 
@@ -3466,5 +3502,3 @@ export const GetStorageObjectParams = zod.object({
 })
 
 export const GetStorageObjectResponse = zod.unknown()
-
-

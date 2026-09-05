@@ -16,6 +16,7 @@ import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { createMapPin, createMapPinComment, deleteMapPin, discoveryEmbedUrl, getMapPinComments, getNearbyDiscoveryItems, getNearbyPins, getNearbyPlaces, reportMapPin, setMapPinRelation, type DiscoveryItem, type MapComment, type MapPin, type MapVisibility, type NearbyPlace } from '@/lib/map-api';
 import { getNearbyStories, setUserBlocked, type Story } from '@/lib/social-api';
+import { getPaceLiveNow } from '@/lib/pace-api';
 import CurrentEventsHome from '@/components/current-events-home';
 import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
 import { adManager } from '@/lib/ad-manager';
@@ -43,6 +44,8 @@ function categoryLabel(category: PlaceCategory) {
 function seasonalMapMessage(now = new Date()) {
   const month = now.getMonth();
   const day = now.getDate();
+  const isMotherDay = month === 4 && now.getDay() === 0 && day >= 8 && day <= 14;
+  if (isMotherDay) return 'Happy Mother’s Day';
   if (month === 8 && day >= 4 && day <= 8) return 'Happy Labor Day';
   if ((month === 11 && day === 31) || (month === 0 && day <= 2)) return 'Happy New Year';
   return null;
@@ -97,6 +100,8 @@ export default function MapScreen() {
   const [currentEventsMode, setCurrentEventsMode] = useState(false);
   const [currentEventRooms, setCurrentEventRooms] = useState<CurrentEventRoom[]>([]);
   const [currentEventsError, setCurrentEventsError] = useState<string | null>(null);
+  const [paceLayerEnabled, setPaceLayerEnabled] = useState(false);
+  const [paceNearby, setPaceNearby] = useState<Array<{ activityType: string; count: number }>>([]);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[] }>());
   const discoveryRequestId = useRef(0);
@@ -160,6 +165,24 @@ export default function MapScreen() {
   useEffect(() => {
     void loadCurrentEventRooms();
   }, [loadCurrentEventRooms]);
+
+  useEffect(() => {
+    if (!session?.authToken || !paceLayerEnabled) {
+      setPaceNearby([]);
+      return;
+    }
+    let active = true;
+    void getPaceLiveNow(session.authToken)
+      .then((result) => {
+        if (active) setPaceNearby(result.items);
+      })
+      .catch(() => {
+        if (active) setPaceNearby([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [paceLayerEnabled, session?.authToken]);
 
   const loadRegion = useCallback(async (nextRegion: SocialMapRegion, force = false) => {
     if (!session?.authToken) return;
@@ -402,6 +425,14 @@ export default function MapScreen() {
           <Ionicons name="mic" size={21} color={colors.foreground} />
           {currentEventRooms.length > 0 ? <View style={styles.liveCount}><Text style={styles.liveCountText}>{currentEventRooms.length}</Text></View> : null}
         </Pressable>
+        <Pressable
+          onPress={() => setPaceLayerEnabled((value) => !value)}
+          accessibilityRole="button"
+          accessibilityLabel={paceLayerEnabled ? 'Hide PACE layer' : 'Show PACE layer'}
+          style={[styles.paceLayerButton, { top: insets.top + 60, backgroundColor: paceLayerEnabled ? colors.primary : colors.card, borderColor: paceLayerEnabled ? colors.primary : colors.border }]}
+        >
+          <Ionicons name="fitness" size={20} color={paceLayerEnabled ? colors.primaryForeground : colors.foreground} />
+        </Pressable>
         {currentEventsError ? <Pressable onPress={() => void loadCurrentEventRooms()} style={[styles.currentEventsError, { top: insets.top + 56, backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Retry loading Access"><Ionicons name="cloud-offline-outline" size={15} color={colors.destructive} /><Text style={{ color: colors.destructive, fontSize: 12, fontWeight: '700' }}>Retry Access</Text></Pressable> : null}
         <SocialMap
           center={location}
@@ -474,6 +505,17 @@ export default function MapScreen() {
         ) : null}
         {loading ? <View style={[styles.loadingPill, { top: insets.top + 10, backgroundColor: colors.card }]}><ActivityIndicator size="small" color={colors.primary} /></View> : null}
         {error ? <Pressable onPress={() => void loadRegion(region, true)} style={[styles.errorPill, { top: insets.top + 10, backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name="cloud-offline-outline" size={17} color={colors.destructive} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Retry area</Text></Pressable> : null}
+        {paceLayerEnabled ? (
+          <View style={[styles.paceLayerPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.paceLayerTitle, { color: colors.foreground }]}>PACE live now</Text>
+            {paceNearby.length === 0 ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>No public live activity nearby yet.</Text> : paceNearby.map((item) => (
+              <Text key={item.activityType} style={{ color: colors.foreground, fontSize: 12 }}>
+                {item.count} {item.activityType}
+              </Text>
+            ))}
+            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 6 }}>Route and segment discovery map cards are scaffolded for next phase.</Text>
+          </View>
+        ) : null}
         {discoveryCoordinate ? (
           <DiscoveryPanel
             pins={discoveryPins ?? []}
@@ -827,6 +869,9 @@ function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; to
 const styles = StyleSheet.create({
   mapCanvas: { flex: 1, position: 'relative', overflow: 'hidden' },
   currentEventsButton: { position: 'absolute', zIndex: 11, right: 14, width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
+  paceLayerButton: { position: 'absolute', zIndex: 11, right: 14, width: 42, height: 42, borderRadius: 21, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 7, elevation: 4 },
+  paceLayerPanel: { position: 'absolute', zIndex: 9, left: 14, top: 110, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingVertical: 10, minWidth: 170, gap: 2 },
+  paceLayerTitle: { fontSize: 13, fontWeight: '800' },
   liveCount: { position: 'absolute', right: -3, top: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   liveCountText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   currentEventsError: { position: 'absolute', zIndex: 8, alignSelf: 'center', minHeight: 32, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11 },

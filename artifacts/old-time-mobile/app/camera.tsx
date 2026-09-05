@@ -355,7 +355,6 @@ export default function CameraScreen() {
           </Pressable>
           <View style={styles.identityLockup}>
             <Text style={styles.identityName}>OLD TIME</Text>
-            <Text style={styles.identitySubtitle}>CAPTURE WHAT STAYS</Text>
           </View>
           {!isWeb && (
             <View style={styles.topActions}>
@@ -406,7 +405,6 @@ export default function CameraScreen() {
               placeholderTextColor="rgba(255,255,255,0.55)"
               style={styles.textModeInput}
             />
-            <Text style={styles.textModeHint}>Your note appears in Messages and in chats for 24 hours.</Text>
           </View>
         ) : null}
 
@@ -419,11 +417,6 @@ export default function CameraScreen() {
               </Pressable>
             ))}
           </View>
-          {cameraMode !== 'text' && !isWeb ? (
-            <Text style={styles.captureHint}>
-              Tap to capture · hold to record · drag up/down to zoom
-            </Text>
-          ) : null}
           <View style={styles.captureRow}>
             <Pressable onPress={openGallery} style={styles.gallery} testID="gallery-button">
               {shots[0] ? (

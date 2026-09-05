@@ -15,6 +15,7 @@ import {
   socialSharingExclusionsTable,
   socialStoriesTable,
   uploadSlotsTable,
+  usersTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
 import { fileForObjectPath, MAX_UPLOAD_BYTES } from "../lib/chat-storage";
@@ -167,6 +168,39 @@ router.put("/storage/uploads/:uploadId", async (req, res): Promise<void> => {
     }
     req.log.error({ err: error }, "Unable to store media upload");
     res.status(500).json({ error: "Unable to store media upload." });
+  }
+});
+
+// Profile images are deliberately readable without a session so native image
+// components can render social cards. Uploading and assigning the object path
+// remain authenticated and ownership-checked by the profile endpoint.
+router.get("/storage/profile-images/*objectPath", async (req, res): Promise<void> => {
+  const raw = req.params.objectPath;
+  const key = Array.isArray(raw) ? raw.join("/") : raw;
+  const objectPath = `/objects/${key}`;
+  const [owner] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.avatarObjectPath, objectPath))
+    .limit(1);
+  if (!owner) {
+    res.status(404).json({ error: "Profile image not found." });
+    return;
+  }
+  try {
+    const file = fileForObjectPath(objectPath);
+    const [exists] = await file.exists();
+    if (!exists) {
+      res.status(404).json({ error: "Profile image not found." });
+      return;
+    }
+    const [metadata] = await file.getMetadata();
+    res.setHeader("Content-Type", metadata.contentType || "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    file.createReadStream().pipe(res);
+  } catch (error) {
+    req.log.error({ err: error, objectPath }, "Unable to serve profile image");
+    res.status(500).json({ error: "Unable to serve profile image." });
   }
 });
 

@@ -32,7 +32,7 @@ router.delete("/account", async (req, res): Promise<void> => {
   const userId = await requireChatAuth(req, res);
   if (userId === null) return;
   try {
-    const [user] = await db.select({ firebaseUid: usersTable.firebaseUid, phone: usersTable.phone })
+    const [user] = await db.select({ firebaseUid: usersTable.firebaseUid, phone: usersTable.phone, avatarObjectPath: usersTable.avatarObjectPath })
       .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     if (!user?.firebaseUid) {
       res.status(409).json({ error: "This account cannot be deleted because its Firebase identity is unavailable." });
@@ -67,6 +67,7 @@ router.delete("/account", async (req, res): Promise<void> => {
     ]);
     const paths = new Set<string>([
       ...slots.map((row) => row.objectPath),
+      ...(user.avatarObjectPath ? [user.avatarObjectPath] : []),
       ...privatePosts.flatMap((row) => row.media?.map((media) => media.objectPath) ?? []),
       ...privateStories.flatMap((row) => row.media?.objectPath ? [row.media.objectPath] : []),
     ]);
@@ -145,7 +146,7 @@ router.delete("/account", async (req, res): Promise<void> => {
     await db.transaction(async (tx) => {
       await tx.delete(authSessionsTable).where(eq(authSessionsTable.userId, userId));
       await tx.delete(authChallengesTable).where(eq(authChallengesTable.phone, user.phone));
-      await tx.update(usersTable).set({ phone: `deleted:${userId}`, phoneDiscoveryHash: null, phoneVerified: false, firebaseUid: null, email: null, name: "Deleted user", username: `deleted-${userId}`, bio: "", birthday: null, contactPermission: "nobody", online: false, lastSeenVisible: false }).where(eq(usersTable.id, userId));
+      await tx.update(usersTable).set({ phone: `deleted:${userId}`, phoneDiscoveryHash: null, phoneVerified: false, firebaseUid: null, email: null, name: "Deleted user", username: `deleted-${userId}`, bio: "", avatarObjectPath: null, birthday: null, contactPermission: "nobody", online: false, lastSeenVisible: false }).where(eq(usersTable.id, userId));
     });
     res.status(204).end();
   } catch (error) {

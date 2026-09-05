@@ -278,7 +278,7 @@ export default function CurrentEventRoomScreen() {
   const speakers = useMemo(() => room?.participants.filter((participant) => ['host', 'moderator', 'speaker'].includes(participant.role)) ?? [], [room]);
   const listeners = useMemo(() => room?.participants.filter((participant) => participant.role === 'listener') ?? [], [room]);
   const canModerate = room?.viewer.role === 'host' || room?.viewer.role === 'moderator';
-  const activeRecipientId = giftRecipientId ?? speakers.find((participant) => participant.user.id !== room?.viewer.participantId)?.user.id ?? speakers[0]?.user.id ?? null;
+  const activeRecipientId = giftRecipientId ?? speakers.find((participant) => participant.user.id !== session?.id)?.user.id ?? null;
 
   useEffect(() => {
     if (room?.viewer.role === 'host' && !session?.phoneVerified && !verifyPromptDismissed) {
@@ -414,11 +414,11 @@ export default function CurrentEventRoomScreen() {
           </Pressable>
         </View>
 
-        {audioState !== 'live' ? (
+        {audioState === 'error' ? (
           <View style={[styles.audioNotice, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-            <Ionicons name={audioState === 'error' ? 'warning-outline' : 'volume-high-outline'} size={18} color={colors.mutedForeground} />
-            <Text style={[styles.audioNoticeText, { color: colors.mutedForeground }]}>{audioState === 'connecting' ? 'Connecting audio…' : audioState === 'error' ? 'Audio did not connect.' : 'Preparing audio…'}</Text>
-            {audioState === 'error' ? <Pressable onPress={() => void connectAudio()}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Retry</Text></Pressable> : null}
+            <Ionicons name="warning-outline" size={18} color={colors.mutedForeground} />
+            <Text style={[styles.audioNoticeText, { color: colors.mutedForeground }]}>Audio did not connect.</Text>
+            <Pressable onPress={() => void connectAudio()}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Retry</Text></Pressable>
           </View>
         ) : null}
         {feedback ? (
@@ -628,7 +628,6 @@ export default function CurrentEventRoomScreen() {
       <Modal visible={giftOpen} transparent animationType="slide" onRequestClose={() => setGiftOpen(false)}>
         <View style={styles.modalShadeRoot}><View style={styles.modalShade} /><View style={[styles.giftSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20 }]}>
           <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Send a gift</Text><Pressable onPress={() => setGiftOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
-          <Text style={[styles.sheetHint, { color: colors.mutedForeground }]}>{activeRecipientId ? 'Choose a gift.' : 'Choose a speaker.'}</Text>
           <View style={styles.giftGrid}>{gifts.map((gift) => <Pressable key={gift.key} accessibilityRole="button" accessibilityLabel={`Send ${gift.label} gift for ${gift.cost} coins`} disabled={!activeRecipientId || sendingGiftKey !== null} onPress={() => void sendGift(gift)} style={[styles.giftItem, { backgroundColor: colors.muted }, gift.premium && [styles.premiumGiftItem, { borderColor: colors.primary }], (!activeRecipientId || (sendingGiftKey !== null && sendingGiftKey !== gift.key)) && { opacity: 0.45 }]}>
             <Image source={gift.image} resizeMode="contain" style={[styles.giftItemImage, gift.premium && styles.premiumGiftItemImage]} />
             {gift.premium ? (
@@ -646,7 +645,7 @@ export default function CurrentEventRoomScreen() {
               </>
             )}
           </Pressable>)}</View>
-            <View style={styles.walletBalanceRow}><Image source={coinLogo} resizeMode="contain" style={styles.coinLogoTiny} /><Text style={[styles.walletBalance, { color: colors.mutedForeground }]}>Balance {wallet.coins}</Text></View>
+             <View style={[styles.walletBalanceRow, { backgroundColor: colors.muted, borderColor: colors.border }]}><Image source={coinLogo} resizeMode="contain" style={styles.coinLogoTiny} /><Text style={[styles.walletBalance, { color: colors.mutedForeground }]}>Balance {wallet.coins}</Text></View>
         </View></View>
       </Modal>
 
@@ -819,7 +818,7 @@ const styles = StyleSheet.create({
   giftCost: { fontSize: 10, fontWeight: '400' },
   walletLink: { alignItems: 'center', paddingTop: 19 },
   walletLinkText: { fontSize: 12, fontWeight: '600' },
-  walletBalanceRow: { justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 3, paddingTop: 18 },
+  walletBalanceRow: { minHeight: 38, marginTop: 12, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 3, paddingHorizontal: 14 },
   walletBalance: { textAlign: 'center', fontSize: 12 },
   packRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 14, padding: 13, marginTop: 8 },
   packName: { fontSize: 14, fontWeight: '600' },

@@ -17,6 +17,8 @@ export interface User {
   name: string;
   username: string;
   bio: string;
+  /** @nullable */
+  avatarObjectPath: string | null;
   /**
      * Private date of birth; null for other users
      * @nullable

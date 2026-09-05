@@ -1,4 +1,4 @@
-import { AudioSession } from '@livekit/react-native';
+import { AndroidAudioTypePresets, AudioSession } from '@livekit/react-native';
 import { Room, RoomEvent } from 'livekit-client';
 
 export type AudioProvider = 'unconfigured' | 'livekit' | 'agora' | 'daily';
@@ -12,6 +12,13 @@ class LiveKitAudioService {
   async join(roomId: number, _role: Role, credentials?: { url: string; token: string; canPublish: boolean }): Promise<AudioSessionState> {
     if (!credentials) throw new Error('Audio credentials are unavailable.');
     await this.leave();
+    await AudioSession.configureAudio({
+      android: {
+        preferredOutputList: ['speaker', 'earpiece'],
+        audioTypeOptions: AndroidAudioTypePresets.communication,
+      },
+      ios: { defaultOutput: 'speaker' },
+    });
     await AudioSession.startAudioSession();
     const room = new Room();
     room.on(RoomEvent.Disconnected, () => { if (this.room === room) this.room = null; });
@@ -40,9 +47,17 @@ class LiveKitAudioService {
   }
 
   async setSpeaker(speaker: boolean) {
-    // This is supported by the native audio session; keep it deliberately
-    // best-effort because some Android devices do not expose an earpiece.
-    await (AudioSession as any).configureAudio({ android: { preferredOutputList: speaker ? ['speaker'] : ['earpiece'] } });
+    const requestedOutput = speaker ? 'speaker' : 'earpiece';
+    const outputs = await AudioSession.getAudioOutputs();
+    // iOS exposes "default" and "force_speaker"; the default route lets iOS
+    // correctly choose an earpiece, wired device, or Bluetooth device.
+    const output = speaker
+      ? (outputs.includes('force_speaker') ? 'force_speaker' : requestedOutput)
+      : (outputs.includes('default') ? 'default' : requestedOutput);
+    if (!outputs.includes(output)) {
+      throw new Error(speaker ? 'The speaker is not available on this device.' : 'An earpiece route is not available on this device.');
+    }
+    await AudioSession.selectAudioOutput(output);
   }
 }
 

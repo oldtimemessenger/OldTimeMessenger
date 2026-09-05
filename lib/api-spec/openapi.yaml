@@ -405,6 +405,9 @@ paths:
                 bio:
                   type: string
                   maxLength: 150
+                avatarObjectPath:
+                  type: string
+                  description: Object path returned by the authenticated upload flow for the user's profile image
                 birthday:
                   type: string
                   format: date
@@ -1970,6 +1973,8 @@ components:
           type: string
         bio:
           type: string
+        avatarObjectPath:
+          type: [string, "null"]
         birthday:
           type: [string, "null"]
           format: date
@@ -1983,7 +1988,7 @@ components:
           type: number
         lastSeenVisible:
           type: boolean
-      required: [id, phone, hasRegisteredPhone, phoneVerified, phoneDiscoveryPermission, name, username, bio, birthday, contactPermission, online, lastSeen, lastSeenVisible]
+      required: [id, phone, hasRegisteredPhone, phoneVerified, phoneDiscoveryPermission, name, username, bio, avatarObjectPath, birthday, contactPermission, online, lastSeen, lastSeenVisible]
     ContactDiscoveryMatch:
       type: object
       properties:
@@ -2197,7 +2202,9 @@ components:
           type: string
         bio:
           type: string
-      required: [id, name, username, bio]
+        avatarObjectPath:
+          type: [string, "null"]
+      required: [id, name, username, bio, avatarObjectPath]
     SocialMedia:
       type: object
       properties:
@@ -2932,4 +2939,3 @@ components:
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/CreatorWithdrawal" } }
       required: [items]
-

@@ -11,4 +11,6 @@ export interface SocialUser {
   name: string;
   username: string;
   bio: string;
+  /** @nullable */
+  avatarObjectPath: string | null;
 }

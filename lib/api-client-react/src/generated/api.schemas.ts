@@ -107,6 +107,8 @@ export interface User {
   name: string;
   username: string;
   bio: string;
+  /** @nullable */
+  avatarObjectPath: string | null;
   /**
      * Private date of birth; null for other users
      * @nullable
@@ -249,6 +251,8 @@ export interface SocialUser {
   name: string;
   username: string;
   bio: string;
+  /** @nullable */
+  avatarObjectPath: string | null;
 }
 
 export type SocialMediaType = typeof SocialMediaType[keyof typeof SocialMediaType];
@@ -1370,6 +1374,8 @@ export type UpdateUserProfileBody = {
   username?: string;
   /** @maxLength 150 */
   bio?: string;
+  /** Object path returned by the authenticated upload flow for the user's profile image */
+  avatarObjectPath?: string;
   /** Private date of birth; only returned to the signed-in user */
   birthday?: string;
   contactPermission?: UpdateUserProfileBodyContactPermission;

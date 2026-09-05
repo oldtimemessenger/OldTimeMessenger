@@ -116,6 +116,7 @@ function parseUser(user: ChatUser, viewerId = user.id) {
     name: user.name,
     username: user.username,
     bio: user.bio,
+    avatarObjectPath: user.avatarObjectPath,
     birthday: viewerId === user.id ? user.birthday : null,
     contactPermission: user.contactPermission,
     online: revealPresence && user.online,
@@ -933,14 +934,16 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   const phoneNumber = body.phoneNumber;
   const phoneDiscoveryPermission = body.phoneDiscoveryPermission;
   const chatPresence = body.chatPresence;
+  const avatarObjectPath = typeof body.avatarObjectPath === "string" ? body.avatarObjectPath : undefined;
   const validBirthday = birthday === undefined || isValidBirthday(birthday);
   if (
     !Number.isInteger(userId) ||
     userId <= 0 ||
-    (name === undefined && username === undefined && bio === undefined && birthday === undefined && contactPermission === undefined && phoneNumber === undefined && phoneDiscoveryPermission === undefined && chatPresence === undefined) ||
+    (name === undefined && username === undefined && bio === undefined && birthday === undefined && contactPermission === undefined && phoneNumber === undefined && phoneDiscoveryPermission === undefined && chatPresence === undefined && avatarObjectPath === undefined) ||
     (name !== undefined && (name.length < 1 || name.length > 80)) ||
     (username !== undefined && !/^[a-z0-9_]{3,24}$/.test(username)) ||
     (bio !== undefined && bio.length > 150) ||
+    (avatarObjectPath !== undefined && !/^\/objects\/uploads\/[0-9a-f-]{36}$/i.test(avatarObjectPath)) ||
     !validBirthday ||
     (contactPermission !== undefined &&
       !["everyone", "followers", "nobody"].includes(contactPermission)) ||
@@ -957,6 +960,28 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   if (!currentUser) {
     res.status(404).json({ error: "User not found." });
     return;
+  }
+  if (avatarObjectPath !== undefined) {
+    const [slot] = await db
+      .update(uploadSlotsTable)
+      .set({ status: "committing" })
+      .where(and(
+        eq(uploadSlotsTable.objectPath, avatarObjectPath),
+        eq(uploadSlotsTable.userId, userId),
+        eq(uploadSlotsTable.status, "uploaded"),
+        gt(uploadSlotsTable.expiresAt, Date.now()),
+      ))
+      .returning();
+    if (!slot || !slot.contentType.startsWith("image/")) {
+      res.status(400).json({ error: "Profile photo must be an uploaded image owned by you." });
+      return;
+    }
+    const [exists] = await fileForObjectPath(slot.objectPath).exists();
+    if (!exists) {
+      await db.update(uploadSlotsTable).set({ status: "uploaded" }).where(eq(uploadSlotsTable.id, slot.id));
+      res.status(400).json({ error: "The uploaded profile photo could not be found." });
+      return;
+    }
   }
   let normalizedPhone: string | null | undefined;
   if (phoneNumber !== undefined) {
@@ -995,6 +1020,7 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
       ...(name !== undefined ? { name } : {}),
       ...(username !== undefined ? { username } : {}),
       ...(bio !== undefined ? { bio } : {}),
+      ...(avatarObjectPath !== undefined ? { avatarObjectPath } : {}),
       ...(birthday !== undefined ? { birthday } : {}),
       ...(contactPermission !== undefined ? { contactPermission } : {}),
       ...(chatPresence !== undefined ? { chatPresence } : {}),
@@ -1014,6 +1040,15 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   if (!updated) {
     res.status(404).json({ error: "User not found." });
     return;
+  }
+  if (avatarObjectPath !== undefined) {
+    await db.update(uploadSlotsTable)
+      .set({ status: "committed", referenceType: "profile_avatar", referenceId: userId })
+      .where(and(
+        eq(uploadSlotsTable.objectPath, avatarObjectPath),
+        eq(uploadSlotsTable.userId, userId),
+        eq(uploadSlotsTable.status, "committing"),
+      ));
   }
   if (updated.firebaseUid && updated.email) {
     try {

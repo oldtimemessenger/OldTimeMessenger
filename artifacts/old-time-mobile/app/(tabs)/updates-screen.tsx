@@ -24,8 +24,10 @@ import { VideoSurface } from '@/components/video-surface';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { userStoryViewerItem, userStoryViewerItemId } from '@/components/story-viewer-content';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
+import PaceSheet from '@/components/pace-sheet';
 import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
 import { AdMobBanner } from '@/components/admob-banner';
+import { ChatComposer } from '@/components/chat-composer';
 import { adManager } from '@/lib/ad-manager';
 import { createChat, createMessage, getDirectChat, listUsers, useRequestUploadUrl, type User } from '@workspace/api-client-react';
 import {
@@ -57,6 +59,7 @@ import {
   setPostRelation,
   setSharingExcluded,
   socialMediaUrl,
+   socialAvatarUrl,
   viewStory,
   type SocialNotification,
   type SocialComment,
@@ -108,6 +111,7 @@ function MediaFeedFloatingHeader({
   onSelectTab,
   onOpenHub,
   onOpenCommunity,
+  onOpenPace,
   onOpenSearch,
   onOpenMessages,
   onOpenProfile,
@@ -119,6 +123,7 @@ function MediaFeedFloatingHeader({
   onSelectTab: (tab: FeedTab) => void;
   onOpenHub: () => void;
   onOpenCommunity: () => void;
+  onOpenPace: () => void;
   onOpenSearch: () => void;
   onOpenMessages: () => void;
   onOpenProfile: () => void;
@@ -148,6 +153,14 @@ function MediaFeedFloatingHeader({
           >
             <Ionicons name="albums" size={21} color="#fff" />
           </Pressable>
+          <Pressable
+            onPress={onOpenPace}
+            accessibilityRole="button"
+            accessibilityLabel="Open PACE"
+            style={styles.floatingIconButton}
+          >
+            <Ionicons name="fitness" size={21} color="#fff" />
+          </Pressable>
         </View>
         <View style={styles.mediaFeedHeaderGroup}>
           <Pressable onPress={onOpenSearch} accessibilityRole="button" accessibilityLabel="Search people" style={styles.floatingIconButton}>
@@ -158,7 +171,7 @@ function MediaFeedFloatingHeader({
             {unreadRequests > 0 && <View style={[styles.headerUnreadDot, styles.floatingUnreadDot]} />}
           </Pressable>
           <Pressable onPress={onOpenProfile} accessibilityRole="button" accessibilityLabel="Open your profile">
-            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={32} color="#4C63F5" />
+            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={32} color="#4C63F5" uri={socialAvatarUrl(ownCard?.avatarObjectPath ?? session?.avatarObjectPath)} />
           </Pressable>
         </View>
       </View>
@@ -189,6 +202,7 @@ export default function UpdatesScreen() {
 
   const [viewMode, setViewMode] = useState<'media-feed' | 'landing' | 'feed' | 'creator-feed' | 'status'>('media-feed');
   const [showCommunity, setShowCommunity] = useState(false);
+  const [showPace, setShowPace] = useState(false);
   const [communityFilter, setCommunityFilter] = useState<CommunityFilter>('friends');
   const [tab, setTab] = useState<FeedTab>('for-you');
   const [feedIndex, setFeedIndex] = useState(0);
@@ -530,6 +544,7 @@ export default function UpdatesScreen() {
              onSelectTab={selectFeedTab}
              onOpenHub={() => setViewMode('landing')}
              onOpenCommunity={openCommunity}
+             onOpenPace={() => setShowPace(true)}
              onOpenSearch={() => setShowPeopleSearch(true)}
              onOpenMessages={openMessagesInbox}
              onOpenProfile={() => setProfileUserId(session?.id ?? 0)}
@@ -559,8 +574,9 @@ export default function UpdatesScreen() {
                  {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
                </View>
                <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
+               <IconButton name="fitness-outline" label="Open PACE" onPress={() => setShowPace(true)} />
                <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
-                 <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} />
+                  <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} uri={socialAvatarUrl(ownCard?.avatarObjectPath ?? session?.avatarObjectPath)} />
                </Pressable>
                <IconButton
                  name="add"
@@ -635,6 +651,7 @@ export default function UpdatesScreen() {
                      if (item.starterAction === 'map') router.push('/(tabs)/map');
                      else if (item.starterAction === 'story') setCompose('status');
                      else if (item.starterAction === 'interests') setTab('interests');
+                     else if (item.starterAction === 'pace') setShowPace(true);
                      else openCommunity();
                      return;
                    }
@@ -705,6 +722,8 @@ export default function UpdatesScreen() {
            </Screen>
          </View>
        </Modal>
+
+      <PaceSheet visible={showPace} token={session?.authToken ?? ''} colors={colors} onClose={() => setShowPace(false)} />
 
       <Modal visible={viewMode === 'feed'} transparent animationType="slide" onRequestClose={() => setViewMode('landing')}>
         {viewMode === 'feed' ? (
@@ -1072,7 +1091,7 @@ export default function UpdatesScreen() {
 
 type StarterCard = {
   id: string;
-  starterAction: 'map' | 'story' | 'interests' | 'community';
+  starterAction: 'map' | 'story' | 'interests' | 'community' | 'pace';
   eyebrow: string;
   title: string;
   detail: string;
@@ -1083,8 +1102,9 @@ type StarterCard = {
 const FOR_YOU_STARTERS: StarterCard[] = [
   { id: 'whats-happening', starterAction: 'map', eyebrow: 'NEAR YOU', title: 'See what’s happening', detail: 'Explore Stories, live rooms, and trending moments on the Map.', icon: 'map', colors: ['#172554', '#2563EB'] },
   { id: 'create-story', starterAction: 'story', eyebrow: 'YOUR MOMENT', title: 'Share your first Story', detail: 'Post a photo or video that disappears after 24 hours.', icon: 'camera', colors: ['#4C1D95', '#C026D3'] },
-  { id: 'choose-interests', starterAction: 'interests', eyebrow: 'FOR YOU', title: 'Choose what you enjoy', detail: 'Pick topics so Old Time can personalize your feed.', icon: 'sparkles', colors: ['#7C2D12', '#F97316'] },
+  { id: 'choose-interests', starterAction: 'interests', eyebrow: 'FOR YOU', title: 'Choose what you enjoy', detail: 'Pick topics so Old Time can personalize your feed.', icon: 'options', colors: ['#7C2D12', '#F97316'] },
   { id: 'open-community', starterAction: 'community', eyebrow: 'COMMUNITY', title: 'Join the conversation', detail: 'Find posts from friends, people you follow, and shared interests.', icon: 'people', colors: ['#064E3B', '#10B981'] },
+  { id: 'start-pace', starterAction: 'pace', eyebrow: 'PACE', title: 'Track your activity', detail: 'Start running, walking, cycling, and share your activity story.', icon: 'fitness', colors: ['#1E3A8A', '#4F46E5'] },
 ];
 
 type CreatorGridItem = SocialPost | DiscoveryItem | StarterCard;
@@ -2241,7 +2261,7 @@ function SocialPostCard({ post, colors, token, onOpenProfile, onShare, onComment
     <View style={[styles.socialPostCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.socialPostHeader}>
         <Pressable onPress={onOpenProfile} style={styles.socialAuthor} accessibilityRole="button" accessibilityLabel={`Open ${post.author.name}'s profile`}>
-          <Avatar name={post.author.name} size={38} color={colors.primary} />
+          <Avatar name={post.author.name} size={38} color={colors.primary} uri={socialAvatarUrl(post.author.avatarObjectPath)} />
           <View>
             <Text style={[styles.socialAuthorName, { color: colors.foreground }]}>{post.author.name}</Text>
             <Text style={[styles.socialAuthorMeta, { color: colors.mutedForeground }]}>{audienceLabel(post.visibility)}</Text>
@@ -2527,7 +2547,7 @@ function SocialProfileSheet({ userId, own, token, colors, onClose, onMessageRequ
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            <Avatar name={card.name} size={86} color={colors.primary} />
+            <Avatar name={card.name} size={86} color={colors.primary} uri={socialAvatarUrl(card.avatarObjectPath)} />
             <Text style={[styles.socialProfileName, { color: colors.foreground }]}>{own ? 'You' : card.name}</Text>
             <Text style={[styles.socialProfileHandle, { color: colors.mutedForeground }]}>{card.username}</Text>
             {card.bio ? <Text style={[styles.socialProfileBio, { color: colors.foreground }]}>{card.bio}</Text> : null}
@@ -2685,8 +2705,8 @@ function SocialCommentsSheet({ post, token, colors, onClose, onPostChanged }: { 
     return grouped;
   }, [comments]);
 
-  async function submit() {
-    const content = text.trim();
+  async function submit(value = text) {
+    const content = value.trim();
     if (!content || sending) return;
     setSending(true);
     try {
@@ -2739,7 +2759,7 @@ function SocialCommentsSheet({ post, token, colors, onClose, onPostChanged }: { 
     return (
       <View key={comment.id} style={{ marginLeft: indent }}>
         <View style={[styles.commentRow, { borderBottomColor: colors.border }]}>
-          <Avatar name={comment.author.name} size={depth ? 29 : 34} color={colors.primary} />
+          <Avatar name={comment.author.name} size={depth ? 29 : 34} color={colors.primary} uri={socialAvatarUrl(comment.author.avatarObjectPath)} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.commentAuthor, { color: colors.foreground }]}>{comment.author.name} <Text style={{ color: colors.mutedForeground, fontWeight: '400' }}>@{comment.author.username}</Text></Text>
             <Text style={[styles.commentContent, { color: colors.foreground }]}>{comment.content}</Text>
@@ -2804,19 +2824,18 @@ function SocialCommentsSheet({ post, token, colors, onClose, onPostChanged }: { 
           </View>
         ) : null}
         <View style={[styles.commentComposer, { borderTopColor: colors.border }]}>
-          <TextInput
+          <ChatComposer
             value={text}
             onChangeText={setText}
+            onSendText={(value) => void submit(value)}
+            onOpenAttachments={() => undefined}
+            onRecordVoice={() => undefined}
+            colors={colors}
             placeholder={replyingTo ? 'Write a reply…' : 'Write a comment…'}
-            placeholderTextColor={colors.mutedForeground}
-            multiline
-            maxLength={1000}
-            style={[styles.commentInput, { color: colors.foreground, backgroundColor: colors.muted }]}
-            accessibilityLabel="Comment"
+            showAttachments={false}
+            idleAction="send"
+            disabled={sending}
           />
-          <Pressable onPress={() => void submit()} disabled={!text.trim() || sending} style={{ opacity: !text.trim() || sending ? 0.4 : 1 }} accessibilityRole="button" accessibilityLabel="Post comment">
-            <Ionicons name="send" size={22} color={colors.primary} />
-          </Pressable>
         </View>
       </View>
     </KeyboardAvoidingView>

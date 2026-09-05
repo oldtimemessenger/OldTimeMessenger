@@ -224,6 +224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           name: user.name,
           username: user.username,
           bio: user.bio,
+          avatarUri: user.avatarObjectPath ? `${process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : ''}/api/storage/profile-images${user.avatarObjectPath.replace(/^\/objects/, '')}` : undefined,
           phone: user.phone,
           birthday: user.birthday,
         }));
