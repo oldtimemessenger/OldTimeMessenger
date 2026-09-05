@@ -1,406 +1,305 @@
 import { Ionicons } from '@expo/vector-icons';
-import { getGetCurrentEventWalletQueryOptions, type CurrentEventWallet, useGetCurrentEventWallet } from '@workspace/api-client-react';
+import {
+  getGetCurrentEventWalletQueryOptions,
+  type CurrentEventWallet,
+  useGetCurrentEventWallet,
+} from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { PrimaryButton, Screen } from '@/components/ui';
-import { currentEventGifts } from '@/constants/current-event-gifts';
+import { Image } from 'expo-image';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useRevenueCat } from '@/lib/revenuecat';
 
+const COINS_PER_DOLLAR = 90;
+const RECOMMENDED_AMOUNTS = [1_000, 5_000, 10_000, 25_000, 50_000, 100_000];
 const emptyWallet: CurrentEventWallet = { coins: 0, gold: 0, pendingGold: 0 };
+const balanceArt = require('../assets/coins/balance-bag.jpeg');
+const coinStackArt = require('../assets/coins/coin-stack.jpeg');
 
-function revenueCatErrorDetails(error: unknown) {
-  if (!error || typeof error !== 'object') {
-    return { message: error instanceof Error ? error.message : null, userCancelled: false };
-  }
-  const candidate = error as { message?: unknown; userCancelled?: unknown };
-  return {
-    message: typeof candidate.message === 'string'
-      ? candidate.message
-      : error instanceof Error ? error.message : null,
-    userCancelled: candidate.userCancelled === true,
-  };
+function coinAmountFromProduct(item: { product: { identifier: string; title: string; description: string; price: number } }) {
+  const text = `${item.product.identifier} ${item.product.title} ${item.product.description}`;
+  const match = text.match(/(\d[\d,_]*)\s*(?:coins?)?/i);
+  if (match) return Number(match[1].replace(/[,_]/g, ''));
+  return Math.round(item.product.price * COINS_PER_DOLLAR);
+}
+
+function purchaseError(error: unknown) {
+  if (error && typeof error === 'object' && 'userCancelled' in error && error.userCancelled === true) return null;
+  return error instanceof Error ? error.message : 'The purchase could not be completed.';
 }
 
 export default function WalletScreen() {
   const colors = useColors();
   const router = useRouter();
+  const params = useLocalSearchParams<{ showCoins?: string }>();
   const queryClient = useQueryClient();
   const { session } = useApp();
   const revenueCat = useRevenueCat();
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [restoring, setRestoring] = useState(false);
-  const [purchasingIdentifier, setPurchasingIdentifier] = useState<string | null>(null);
-  const loadFailureMessageRef = useRef<string | null>(null);
+  const walletOptions = getGetCurrentEventWalletQueryOptions();
   const walletQuery = useGetCurrentEventWallet({
     query: {
+      queryKey: walletOptions.queryKey,
       enabled: Boolean(session?.authToken),
       retry: 1,
     },
   });
   const wallet = walletQuery.data ?? emptyWallet;
-  const loading = walletQuery.isLoading;
-  const refreshing = walletQuery.isFetching && !walletQuery.isLoading;
-  const purchaseInFlight = revenueCat.purchasing || purchasingIdentifier !== null;
+  const [storeOpen, setStoreOpen] = useState(params.showCoins === '1');
+  const [selectedAmount, setSelectedAmount] = useState(5_000);
+  const [customAmount, setCustomAmount] = useState('');
+  const [purchasingId, setPurchasingId] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
 
-  useEffect(() => {
-    if (walletQuery.error && !walletQuery.data) {
-      const message = walletQuery.error instanceof Error ? walletQuery.error.message : 'Wallet unavailable.';
-      if (loadFailureMessageRef.current !== message) {
-        loadFailureMessageRef.current = message;
-        setFeedback(message);
-      }
-      return;
-    }
-    if (walletQuery.data && loadFailureMessageRef.current) {
-      const lastFailure = loadFailureMessageRef.current;
-      loadFailureMessageRef.current = null;
-      setFeedback((current) => current === lastFailure ? null : current);
-    }
-  }, [walletQuery.data, walletQuery.error]);
+  const packages = useMemo(
+    () => revenueCat.packages
+      .map((item) => ({ item, coins: coinAmountFromProduct(item) }))
+      .sort((a, b) => a.coins - b.coins),
+    [revenueCat.packages],
+  );
+  const selectedPackage = packages.find(({ coins }) => coins === selectedAmount);
+  const estimatedBalance = wallet.coins / COINS_PER_DOLLAR;
 
   async function refreshWallet() {
-    if (!session?.authToken) {
-      return {
-        ok: false as const,
-        message: 'Sign in again to refresh your wallet.',
-      };
-    }
-    try {
-      const nextWallet = await queryClient.fetchQuery(getGetCurrentEventWalletQueryOptions());
-      return {
-        ok: true as const,
-        data: nextWallet,
-      };
-    } catch (error) {
-      return {
-        ok: false as const,
-        message: error instanceof Error ? error.message : 'Wallet unavailable.',
-      };
-    }
+    await queryClient.fetchQuery(getGetCurrentEventWalletQueryOptions());
   }
 
-  async function handlePurchase(item: (typeof revenueCat.packages)[number]) {
+  async function buySelected() {
     if (!session?.authToken) {
-      setFeedback('Sign in again to buy coin packs and refresh this wallet.');
+      Alert.alert('Sign in required', 'Sign in again before purchasing coins.');
       return;
     }
-    setPurchasingIdentifier(item.identifier);
-    try {
-      const credited = await revenueCat.purchase(item);
-      const refreshed = await refreshWallet();
-      if (!refreshed.ok) {
-        setFeedback(credited > 0
-          ? `${credited} coins added. The wallet balance will refresh when the connection returns.`
-          : 'Purchase confirmed. The wallet balance will refresh when the connection returns.');
-        return;
-      }
-      setFeedback(credited > 0 ? `${credited} coins added.` : 'Purchase confirmed. Your wallet is already up to date.');
-    } catch (error) {
-      const details = revenueCatErrorDetails(error);
-      if (!details.userCancelled) setFeedback(details.message ?? 'Purchase unavailable.');
-    } finally {
-      setPurchasingIdentifier(null);
-    }
-  }
-
-  async function handleRestore() {
-    if (!session?.authToken) {
-      setFeedback('Sign in again to restore purchases and refresh this wallet.');
+    if (!selectedPackage) {
+      Alert.alert(
+        'Pack not available yet',
+        `${selectedAmount.toLocaleString()} coins will be available after its App Store product is connected.`,
+      );
       return;
     }
-    if (restoring) return;
-    setRestoring(true);
+    setPurchasingId(selectedPackage.item.identifier);
     try {
-      const credited = await revenueCat.restore();
-      const refreshed = await refreshWallet();
-      if (!refreshed.ok) {
-        setFeedback(credited
-          ? `${credited} coins restored. The wallet balance will refresh when the connection returns.`
-          : 'Wallet is up to date. The balance will refresh when the connection returns.');
-        return;
-      }
-      setFeedback(credited ? `${credited} coins restored.` : 'Wallet is up to date.');
+      const credited = await revenueCat.purchase(selectedPackage.item);
+      await refreshWallet();
+      setStoreOpen(false);
+      Alert.alert('Coins added', `${credited.toLocaleString()} coins were added to your balance.`);
     } catch (error) {
-      const details = revenueCatErrorDetails(error);
-      if (!details.userCancelled) setFeedback(details.message ?? 'Restore unavailable.');
+      const message = purchaseError(error);
+      if (message) Alert.alert('Purchase unavailable', message);
     } finally {
-      setRestoring(false);
+      setPurchasingId(null);
     }
   }
 
-  async function handleRefresh() {
-    setFeedback(null);
-    const refreshed = await refreshWallet();
-    if (!refreshed.ok) Alert.alert('Wallet not updated', refreshed.message);
+  function applyCustomAmount() {
+    const amount = Number(customAmount.replace(/[^\d]/g, ''));
+    if (!Number.isInteger(amount) || amount < 450 || amount % 450 !== 0) {
+      Alert.alert('Enter a coin amount', 'Choose at least 450 coins and use 450-coin increments.');
+      return;
+    }
+    setSelectedAmount(amount);
   }
 
   return (
-    <Screen
-      title="Wallet"
-      left={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color={colors.primary} />
+    <Screen>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Pressable onPress={() => router.back()} style={styles.iconButton}>
+          <Ionicons name="chevron-back" size={28} color={colors.foreground} />
         </Pressable>
-      )}
-      right={(
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh wallet" accessibilityState={{ disabled: loading || refreshing || purchaseInFlight || restoring || !session?.authToken }} disabled={loading || refreshing || purchaseInFlight || restoring || !session?.authToken} onPress={() => { void handleRefresh(); }} style={({ pressed }) => [{ opacity: loading || refreshing || purchaseInFlight || restoring || !session?.authToken ? 0.45 : pressed ? 0.65 : 1 }]}>
-          <Text style={[styles.refreshText, { color: colors.primary }]}>{refreshing ? 'Refreshing…' : 'Refresh'}</Text>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Balance</Text>
+        <Pressable disabled={walletQuery.isFetching} onPress={() => void refreshWallet()} style={styles.iconButton}>
+          {walletQuery.isFetching
+            ? <ActivityIndicator size="small" color={colors.primary} />
+            : <Ionicons name="refresh" size={21} color={colors.primary} />}
         </Pressable>
-      )}
-    >
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-        <View style={[styles.balanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Access balance</Text>
-          {loading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginVertical: 18 }} />
-          ) : (
-            <>
-              <Text style={[styles.balanceCoins, { color: colors.foreground }]}>◈ {wallet.coins}</Text>
-              <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>Use coins in Access rooms to support speakers and unlock gifts.</Text>
-              <View style={styles.summaryRow}>
-                <View style={[styles.summaryChip, { backgroundColor: colors.muted }]}>
-                  <Text style={[styles.summaryValue, { color: colors.foreground }]}>{wallet.gold}</Text>
-                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Gold</Text>
-                </View>
-                <View style={[styles.summaryChip, { backgroundColor: colors.muted }]}>
-                  <Text style={[styles.summaryValue, { color: colors.foreground }]}>{wallet.pendingGold}</Text>
-                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending gold</Text>
-                </View>
-              </View>
-              <View style={styles.restoreButtonWrap}>
-                <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.loading || purchaseInFlight || restoring || !session?.authToken} />
-              </View>
-              {!session?.authToken ? <Text style={[styles.authHint, { color: colors.mutedForeground }]}>Sign in again to restore purchases and refresh this wallet.</Text> : null}
-            </>
-          )}
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        <Image source={balanceArt} contentFit="contain" style={styles.balanceArt} />
+        <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Estimated balance</Text>
+        <Text style={[styles.estimatedValue, { color: colors.foreground }]}>
+          ${estimatedBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </Text>
+        <View style={[styles.coinPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.coinPillText, { color: colors.foreground }]}>
+            Coins <Text style={{ color: colors.primary }}>{wallet.coins.toLocaleString()}</Text>
+          </Text>
+          <View style={[styles.pillDivider, { backgroundColor: colors.border }]} />
+          <Pressable onPress={() => setStoreOpen(true)} hitSlop={8}>
+            <Text style={[styles.getCoinsText, { color: colors.foreground }]}>Get Coins →</Text>
+          </Pressable>
         </View>
 
-        {feedback ? (
-          <View style={[styles.feedbackCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-            <Text style={[styles.feedbackText, { color: colors.foreground }]}>{feedback}</Text>
+        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.infoIcon, { backgroundColor: `${colors.primary}18` }]}>
+            <Ionicons name="wallet-outline" size={22} color={colors.primary} />
           </View>
-        ) : null}
-
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>GET COINS</Text>
-        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.sectionIntro, { color: colors.mutedForeground }]}>Store pricing appears here when coin packs are available for this device.</Text>
-          {!session?.authToken ? <Text style={[styles.sectionIntro, { color: colors.mutedForeground, paddingTop: 0 }]}>Sign in again to buy coin packs from this wallet.</Text> : null}
-          {revenueCat.loading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginVertical: 18 }} />
-          ) : revenueCat.packages.length > 0 ? revenueCat.packages.map((item, index) => (
-            <Pressable
-              key={item.identifier}
-              accessibilityRole="button"
-              accessibilityLabel={`Buy ${item.product.title}`}
-              accessibilityState={{ disabled: purchaseInFlight || !session?.authToken, busy: purchasingIdentifier === item.identifier }}
-              disabled={purchaseInFlight || !session?.authToken}
-              onPress={() => void handlePurchase(item)}
-              style={({ pressed }) => [
-                styles.packageRow,
-                {
-                  backgroundColor: pressed ? colors.muted : 'transparent',
-                  borderBottomColor: index === revenueCat.packages.length - 1 ? 'transparent' : colors.border,
-                  opacity: purchaseInFlight ? 0.55 : 1,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.packageTitle, { color: colors.foreground }]}>{item.product.title}</Text>
-                <Text style={[styles.packageSubtitle, { color: colors.mutedForeground }]}>
-                  {purchasingIdentifier === item.identifier ? 'Processing purchase…' : item.product.description || 'Access coins'}
-                </Text>
-              </View>
-              {purchasingIdentifier === item.identifier ? (
-                <ActivityIndicator color={colors.primary} />
-              ) : (
-                <Text style={[styles.packagePrice, { color: colors.primary }]}>{item.product.priceString}</Text>
-              )}
-            </Pressable>
-          )) : (
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Coin packs are not available from this store yet.</Text>
-          )}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.infoTitle, { color: colors.foreground }]}>Transactions</Text>
+            <Text style={[styles.infoHint, { color: colors.mutedForeground }]}>Your coin activity will appear here.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.mutedForeground} />
         </View>
 
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>HOW COINS WORK</Text>
-        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {currentEventGifts.map((gift, index) => (
-            <View key={gift.key} style={[styles.giftRow, { borderBottomColor: index === currentEventGifts.length - 1 ? 'transparent' : colors.border }]}>
-              <View style={[styles.giftIcon, { backgroundColor: colors.muted }]}>
-                <Ionicons name={gift.icon} size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.giftLabel, { color: colors.foreground }]}>{gift.label}</Text>
-                <Text style={[styles.giftHint, { color: colors.mutedForeground }]}>Support a speaker in a live Access room.</Text>
-              </View>
-              <Text style={[styles.giftCost, { color: colors.mutedForeground }]}>◈ {gift.cost}</Text>
-            </View>
-          ))}
-        </View>
+        <Pressable onPress={() => setStoreOpen(true)} style={[styles.rechargeCard, { backgroundColor: `${colors.primary}12` }]}>
+          <View style={[styles.infoIcon, { backgroundColor: `${colors.primary}20` }]}>
+            <Ionicons name="cash-outline" size={21} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.infoTitle, { color: colors.foreground }]}>Get more coins</Text>
+            <Text style={[styles.infoHint, { color: colors.mutedForeground }]}>90 coins for every $1 of value.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+        </Pressable>
       </ScrollView>
+
+      <Modal visible={storeOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setStoreOpen(false)}>
+        <View style={[styles.store, { backgroundColor: colors.background }]}>
+          <View style={styles.storeHeader}>
+            <Pressable onPress={() => setStoreOpen(false)} style={styles.iconButton}>
+              <Ionicons name="close" size={26} color={colors.foreground} />
+            </Pressable>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Get Coins</Text>
+            <Pressable
+              disabled={restoring || revenueCat.purchasing}
+              onPress={() => {
+                setRestoring(true);
+                void revenueCat.restore()
+                  .then(refreshWallet)
+                  .then(() => Alert.alert('Restored', 'Your wallet is up to date.'))
+                  .catch((error) => Alert.alert('Restore unavailable', purchaseError(error) ?? 'Please try again.'))
+                  .finally(() => setRestoring(false));
+              }}
+              style={styles.iconButton}
+            >
+              {restoring ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="receipt-outline" size={22} color={colors.primary} />}
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.storeContent} keyboardShouldPersistTaps="handled">
+            <Image source={balanceArt} contentFit="contain" style={styles.storeArt} />
+            <Text style={[styles.storeBalanceLabel, { color: colors.mutedForeground }]}>Coin balance</Text>
+            <Text style={[styles.storeBalance, { color: colors.foreground }]}>{wallet.coins.toLocaleString()}</Text>
+            <Text style={[styles.ratioText, { color: colors.mutedForeground }]}>90 coins = $1 value</Text>
+
+            <View style={styles.packGrid}>
+              {RECOMMENDED_AMOUNTS.map((amount) => {
+                const pack = packages.find(({ coins }) => coins === amount);
+                const selected = selectedAmount === amount;
+                return (
+                  <Pressable
+                    key={amount}
+                    onPress={() => setSelectedAmount(amount)}
+                    style={[
+                      styles.packCard,
+                      {
+                        backgroundColor: selected ? `${colors.primary}12` : colors.card,
+                        borderColor: selected ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <Image source={coinStackArt} contentFit="contain" style={styles.packArt} />
+                    <Text style={[styles.packCoins, { color: colors.foreground }]}>{amount.toLocaleString()}</Text>
+                    <Text style={[styles.packPrice, { color: selected ? colors.primary : colors.mutedForeground }]}>
+                      {pack?.item.product.priceString ?? `≈ $${(amount / COINS_PER_DOLLAR).toFixed(2)}`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={[styles.customCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.customTitle, { color: colors.foreground }]}>Custom recharge</Text>
+                <Text style={[styles.infoHint, { color: colors.mutedForeground }]}>Starts at 450 coins ($5), in 450-coin steps.</Text>
+              </View>
+              <TextInput
+                value={customAmount}
+                onChangeText={setCustomAmount}
+                onSubmitEditing={applyCustomAmount}
+                keyboardType="number-pad"
+                placeholder="450"
+                placeholderTextColor={colors.mutedForeground}
+                style={[styles.customInput, { color: colors.foreground, borderColor: colors.border }]}
+              />
+              <Pressable onPress={applyCustomAmount} style={[styles.customApply, { backgroundColor: colors.primary }]}>
+                <Ionicons name="checkmark" size={20} color="#fff" />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.disclaimer, { color: colors.mutedForeground }]}>
+              Purchases are processed securely by the App Store. The final price is shown before confirmation.
+            </Text>
+          </ScrollView>
+          <View style={[styles.purchaseBar, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+            <View>
+              <Text style={[styles.purchaseAmount, { color: colors.foreground }]}>{selectedAmount.toLocaleString()} coins</Text>
+              <Text style={[styles.purchaseEstimate, { color: colors.mutedForeground }]}>
+                {selectedPackage?.item.product.priceString ?? `About $${(selectedAmount / COINS_PER_DOLLAR).toFixed(2)}`}
+              </Text>
+            </View>
+            <Pressable
+              disabled={Boolean(purchasingId) || revenueCat.purchasing}
+              onPress={() => void buySelected()}
+              style={[styles.rechargeButton, { backgroundColor: colors.primary, opacity: purchasingId ? 0.6 : 1 }]}
+            >
+              {purchasingId ? <ActivityIndicator color="#fff" /> : <Text style={styles.rechargeText}>Recharge</Text>}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  backButton: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: -8,
-  },
-  refreshText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 100,
-  },
-  balanceCard: {
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 20,
-    alignItems: 'center',
-  },
-  balanceLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  balanceCoins: {
-    fontSize: 40,
-    fontWeight: '800',
-    marginTop: 10,
-  },
-  balanceHint: {
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 18,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-    marginBottom: 18,
-  },
-  summaryChip: {
-    flex: 1,
-    minHeight: 72,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  summaryLabel: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  restoreButtonWrap: {
-    width: '100%',
-    marginTop: 4,
-  },
-  authHint: {
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  feedbackCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginTop: 14,
-  },
-  feedbackText: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '500',
-  },
-  sectionTitle: {
-    textTransform: 'uppercase',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginLeft: 4,
-    marginTop: 24,
-    marginBottom: 6,
-  },
-  sectionCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  sectionIntro: {
-    fontSize: 12,
-    lineHeight: 17,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 4,
-  },
-  packageRow: {
-    minHeight: 68,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  packageTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  packageSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 3,
-  },
-  packagePrice: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  emptyText: {
-    fontSize: 13,
-    lineHeight: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  giftRow: {
-    minHeight: 68,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  giftIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  giftLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  giftHint: {
-    fontSize: 12,
-    marginTop: 3,
-  },
-  giftCost: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  header: { height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10 },
+  storeHeader: { height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10 },
+  headerTitle: { fontSize: 20, fontWeight: '800' },
+  iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  content: { alignItems: 'center', paddingHorizontal: 20, paddingBottom: 100 },
+  balanceArt: { width: 260, height: 245, marginTop: 8 },
+  balanceLabel: { fontSize: 19, fontWeight: '600' },
+  estimatedValue: { fontSize: 45, fontWeight: '800', letterSpacing: -1.5, marginTop: 2 },
+  coinPill: { minHeight: 48, borderRadius: 24, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 18 },
+  coinPillText: { fontSize: 16, fontWeight: '700' },
+  pillDivider: { width: 1, height: 22, marginHorizontal: 15 },
+  getCoinsText: { fontSize: 16, fontWeight: '700' },
+  infoCard: { width: '100%', minHeight: 92, borderWidth: 1, borderRadius: 20, marginTop: 28, padding: 16, flexDirection: 'row', gap: 13, alignItems: 'center' },
+  rechargeCard: { width: '100%', minHeight: 86, borderRadius: 20, marginTop: 14, padding: 16, flexDirection: 'row', gap: 13, alignItems: 'center' },
+  infoIcon: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  infoTitle: { fontSize: 17, fontWeight: '700' },
+  infoHint: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  store: { flex: 1 },
+  storeContent: { paddingHorizontal: 18, paddingBottom: 130, alignItems: 'center' },
+  storeArt: { width: 180, height: 150 },
+  storeBalanceLabel: { fontSize: 16, fontWeight: '600' },
+  storeBalance: { fontSize: 38, fontWeight: '800', marginTop: 2 },
+  ratioText: { fontSize: 13, marginTop: 4, marginBottom: 20 },
+  packGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  packCard: { width: '31%', minWidth: 96, flexGrow: 1, borderRadius: 16, borderWidth: 1.5, paddingVertical: 12, alignItems: 'center' },
+  packArt: { width: 70, height: 54 },
+  packCoins: { fontSize: 16, fontWeight: '800' },
+  packPrice: { fontSize: 13, fontWeight: '600', marginTop: 3 },
+  customCard: { width: '100%', borderWidth: 1, borderRadius: 18, marginTop: 14, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  customTitle: { fontSize: 15, fontWeight: '700' },
+  customInput: { width: 84, height: 42, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, fontSize: 14 },
+  customApply: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  disclaimer: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 18, paddingHorizontal: 18 },
+  purchaseBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 92, borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 18, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  purchaseAmount: { fontSize: 16, fontWeight: '800' },
+  purchaseEstimate: { fontSize: 12, marginTop: 3 },
+  rechargeButton: { minWidth: 160, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  rechargeText: { color: '#fff', fontSize: 17, fontWeight: '800' },
 });
