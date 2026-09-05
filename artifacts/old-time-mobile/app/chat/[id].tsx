@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
+import { fetch as expoFetch } from 'expo/fetch';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Image } from 'expo-image';
@@ -309,6 +310,9 @@ export default function ChatDetailScreen() {
   const recordingLocked = useRef(false);
   const recordGestureState = useRef<'idle' | 'cancel' | 'lock'>('idle');
   const recordStartedRef = useRef(false);
+  const recordingStarting = useRef(false);
+  const recordingCancelRequested = useRef(false);
+  const recordingStopping = useRef(false);
   const audioPlayedRef = useRef<number | null>(null);
   const chatSocketRef = useRef<ReturnType<typeof io> | null>(null);
   const shouldAutoScrollRef = useRef(true);
@@ -496,7 +500,7 @@ export default function ChatDetailScreen() {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState !== 'active') {
         audioPlayer.pause();
-        if (recordingMode !== 'idle') {
+        if (recordingMode !== 'idle' || recordingStarting.current) {
           void finishRecording(true).catch(() => undefined);
         }
       }
@@ -506,6 +510,16 @@ export default function ChatDetailScreen() {
       audioPlayer.pause();
     };
   }, [audioPlayer, recordingMode]);
+
+  useEffect(() => {
+    return () => {
+      recordingCancelRequested.current = true;
+      if (recordStartedRef.current || recorder.isRecording) {
+        void recorder.stop().catch(() => undefined);
+      }
+      void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    };
+  }, [recorder]);
 
   useEffect(() => {
     if (!mediaUri || handledCameraUri.current === mediaUri) return;
@@ -636,7 +650,7 @@ export default function ChatDetailScreen() {
       const upload = await requestUploadUrl.mutateAsync({ data: { name: asset.name, size, contentType: asset.mimeType } });
       setUploadLabel('Uploading…');
       const uploadUrl = upload.uploadURL.startsWith('/') ? `${apiBaseUrl()}${upload.uploadURL}` : upload.uploadURL;
-      const response = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': asset.mimeType, Authorization: 'Bearer ' + session.authToken }, body: localFile as unknown as BodyInit });
+      const response = await expoFetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': asset.mimeType, Authorization: 'Bearer ' + session.authToken }, body: localFile });
       if (!response.ok) throw new Error(`Upload failed with ${response.status}`);
       await queueMessage({
         content: caption?.trim() || undefined,
@@ -721,59 +735,69 @@ export default function ChatDetailScreen() {
   }
 
   async function beginRecording() {
-    if (uploadInFlight.current || recordingMode !== 'idle') return;
-    const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Microphone access needed', permission.canAskAgain ? 'Allow microphone access to record a voice note.' : 'Microphone access is off. Enable it in Settings to record a voice note.');
-      return;
+    if (uploadInFlight.current || recordingMode !== 'idle' || recordingStarting.current) return;
+    recordingStarting.current = true;
+    recordingCancelRequested.current = false;
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Microphone access needed', permission.canAskAgain ? 'Allow microphone access to record a voice note.' : 'Microphone access is off. Enable it in Settings to record a voice note.');
+        return;
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      if (recordingCancelRequested.current) {
+        await setAudioModeAsync({ allowsRecording: false });
+        return;
+      }
+      recorder.record();
+      recordStartedRef.current = true;
+      recordingLocked.current = false;
+      recordGestureState.current = 'idle';
+      setRecordingMode('recording');
+      emitTypingState('recording');
+    } catch {
+      Alert.alert('Voice note failed', 'Recording could not be started.');
+      void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    } finally {
+      recordingStarting.current = false;
     }
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    await recorder.prepareToRecordAsync();
-    recorder.record();
-    recordStartedRef.current = true;
-    recordingLocked.current = false;
-    recordGestureState.current = 'idle';
-    setRecordingMode('recording');
-    emitTypingState('recording');
-  }
-
-  async function finalizeVoiceMessage(cancelled = false) {
-    if (!recordStartedRef.current) return;
-    const uri = recorder.uri;
-    const duration = Math.max(recorder.currentTime, recorderState.durationMillis / 1000);
-    await setAudioModeAsync({ allowsRecording: false });
-    if (!cancelled && uri && duration >= 0.2) {
-      await uploadAsset({ uri, name: `voice-note-${Date.now()}.m4a`, mimeType: 'audio/mp4', size: new File(uri).size || 1, type: 'audio', duration }, undefined, replyTarget);
-    }
-    recordStartedRef.current = false;
-    recordingLocked.current = false;
-    setRecordingMode('idle');
-    emitTypingState('idle');
   }
 
   async function finishRecording(cancelled = false) {
-    try {
-      if (recordingMode === 'paused') {
-        const uri = recorder.uri;
-        const duration = Math.max(recorder.currentTime, recorderState.durationMillis / 1000);
-        await recorder.stop();
-        await setAudioModeAsync({ allowsRecording: false });
-        if (!cancelled && uri && duration >= 0.2) {
-          await uploadAsset({ uri, name: `voice-note-${Date.now()}.m4a`, mimeType: 'audio/mp4', size: new File(uri).size || 1, type: 'audio', duration }, undefined, replyTarget);
-        }
-        recordStartedRef.current = false;
-        recordingLocked.current = false;
+    if (cancelled) recordingCancelRequested.current = true;
+    if (recordingStopping.current) return;
+    if (!recordStartedRef.current && !recorder.isRecording) {
+      if (!recordingStarting.current) {
         setRecordingMode('idle');
         emitTypingState('idle');
-        return;
       }
+      return;
+    }
+    recordingStopping.current = true;
+    try {
       await recorder.stop();
-      await finalizeVoiceMessage(cancelled);
+      const uri = recorder.uri;
+      const duration = Math.max(recorder.currentTime, recorderState.durationMillis / 1000);
+      await setAudioModeAsync({ allowsRecording: false });
+      if (!cancelled && !recordingCancelRequested.current && uri && duration >= 0.2) {
+        await uploadAsset({
+          uri,
+          name: `voice-note-${Date.now()}.${Platform.OS === 'web' ? 'webm' : 'm4a'}`,
+          mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
+          size: new File(uri).size || 1,
+          type: 'audio',
+          duration,
+        }, undefined, replyTarget);
+      }
     } catch {
-      setRecordingMode('idle');
-      recordStartedRef.current = false;
-      emitTypingState('idle');
       if (!cancelled) Alert.alert('Voice note failed', 'Couldn’t send voice message.');
+    } finally {
+      recordStartedRef.current = false;
+      recordingLocked.current = false;
+      recordingStopping.current = false;
+      setRecordingMode('idle');
+      emitTypingState('idle');
     }
   }
 
@@ -799,7 +823,7 @@ export default function ChatDetailScreen() {
     onStartShouldSetPanResponder: () => true,
     onPanResponderGrant: () => { void beginRecording(); },
     onPanResponderMove: (_, gesture) => {
-      if (recordingMode === 'idle') return;
+      if (!recordStartedRef.current) return;
       if (gesture.dx < -80) recordGestureState.current = 'cancel';
       else if (gesture.dy < -90) {
         recordGestureState.current = 'lock';
@@ -810,7 +834,8 @@ export default function ChatDetailScreen() {
       } else recordGestureState.current = 'idle';
     },
     onPanResponderRelease: () => {
-      if (recordGestureState.current === 'cancel') void finishRecording(true);
+      if (recordingStarting.current && !recordStartedRef.current) void finishRecording(true);
+      else if (recordGestureState.current === 'cancel') void finishRecording(true);
       else if (recordingLocked.current) setRecordingMode('locked');
       else void finishRecording(false);
       recordGestureState.current = 'idle';
@@ -1082,7 +1107,12 @@ export default function ChatDetailScreen() {
                     ) : null}
                     {message.attachment?.type === 'audio' ? (
                       <View style={styles.audioBubble}>
-                        <Pressable onPress={() => void toggleAudio(message)} style={[styles.audioPlay, { backgroundColor: mine ? 'rgba(255,255,255,0.22)' : colors.primary }]}>
+                        <Pressable
+                          onPress={() => void toggleAudio(message)}
+                          style={[styles.audioPlay, { backgroundColor: mine ? 'rgba(255,255,255,0.22)' : colors.primary }]}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${activeAudioMessageId === message.id && audioStatus.playing ? 'Pause' : 'Play'} voice note`}
+                        >
                           <Ionicons name={activeAudioMessageId === message.id && audioStatus.playing ? 'pause' : 'play'} size={18} color="#fff" />
                         </Pressable>
                         <Pressable
@@ -1092,6 +1122,8 @@ export default function ChatDetailScreen() {
                             audioPlayer.seekTo?.(audioStatus.duration * ratio);
                           }}
                           style={styles.audioTrackWrap}
+                          accessibilityRole="adjustable"
+                          accessibilityLabel="Voice note playback position"
                         >
                           <View style={styles.waveformRow}>
                             {compactWaveform(
@@ -1105,7 +1137,7 @@ export default function ChatDetailScreen() {
                             <Text style={[styles.audioDuration, { color: mine ? 'rgba(255,255,255,0.82)' : colors.mutedForeground }]}>
                               {durationLabel(activeAudioMessageId === message.id ? audioStatus.currentTime : 0)} / {durationLabel(activeAudioMessageId === message.id && audioStatus.duration > 0 ? audioStatus.duration : (message.attachment.duration ?? 0))}
                             </Text>
-                            <Pressable onPress={() => {
+                            <Pressable accessibilityRole="button" accessibilityLabel={`Playback speed ${playbackRate}x`} onPress={() => {
                               const nextRate = PLAYBACK_RATES[(PLAYBACK_RATES.indexOf(playbackRate) + 1) % PLAYBACK_RATES.length];
                               setPlaybackRate(nextRate);
                               audioPlayer.setPlaybackRate(nextRate);
@@ -1203,11 +1235,11 @@ export default function ChatDetailScreen() {
             <View style={styles.lockedRecorderTop}><Text style={[styles.lockedRecorderTitle, { color: colors.destructive }]}>Recording voice note</Text><Text style={[styles.lockedRecorderTime, { color: colors.foreground }]}>{durationLabel(recorderState.durationMillis / 1000)}</Text></View>
             <View style={styles.lockedWaveform}>{compactWaveform(((recorderState.durationMillis / 1000) % 10) / 10)}</View>
             <View style={styles.lockedRecorderActions}>
-              <Pressable onPress={() => void finishRecording(true)} style={[styles.lockedAction, { backgroundColor: colors.card }]}><Ionicons name="trash-outline" size={18} color={colors.destructive} /><Text style={{ color: colors.destructive, fontWeight: '700' }}>Delete</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Delete voice note" onPress={() => void finishRecording(true)} style={[styles.lockedAction, { backgroundColor: colors.card }]}><Ionicons name="trash-outline" size={18} color={colors.destructive} /><Text style={{ color: colors.destructive, fontWeight: '700' }}>Delete</Text></Pressable>
               {recordingMode === 'paused'
-                ? <Pressable onPress={() => void resumeRecording()} style={[styles.lockedAction, { backgroundColor: colors.card }]}><Ionicons name="play" size={18} color={colors.foreground} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Resume</Text></Pressable>
-                : <Pressable onPress={() => void pauseRecording()} style={[styles.lockedAction, { backgroundColor: colors.card }]}><Ionicons name="pause" size={18} color={colors.foreground} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Pause</Text></Pressable>}
-              <Pressable onPress={() => void finishRecording(false)} style={[styles.lockedAction, { backgroundColor: colors.primary }]}><Ionicons name="arrow-up" size={18} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700' }}>Send</Text></Pressable>
+                ? <Pressable accessibilityRole="button" accessibilityLabel="Resume recording voice note" onPress={() => void resumeRecording()} style={[styles.lockedAction, { backgroundColor: colors.card }]}><Ionicons name="play" size={18} color={colors.foreground} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Resume</Text></Pressable>
+                : <Pressable accessibilityRole="button" accessibilityLabel="Pause recording voice note" onPress={() => void pauseRecording()} style={[styles.lockedAction, { backgroundColor: colors.card }]}><Ionicons name="pause" size={18} color={colors.foreground} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Pause</Text></Pressable>}
+              <Pressable accessibilityRole="button" accessibilityLabel="Send voice note" onPress={() => void finishRecording(false)} style={[styles.lockedAction, { backgroundColor: colors.primary }]}><Ionicons name="arrow-up" size={18} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700' }}>Send</Text></Pressable>
             </View>
           </View>
         ) : null}
@@ -1238,9 +1270,16 @@ export default function ChatDetailScreen() {
               <Ionicons name="arrow-up" size={18} color="#fff" />
             </Pressable>
           ) : (
-            <View {...recordResponder.panHandlers} style={[styles.sideComposerButton, { backgroundColor: colors.primary }]}>
+            <Pressable
+              {...recordResponder.panHandlers}
+              style={[styles.sideComposerButton, { backgroundColor: colors.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel="Hold to record voice message"
+              accessibilityHint="Swipe left to cancel or swipe up to lock recording"
+              testID="record-voice-note"
+            >
               <Ionicons name="mic-outline" size={19} color="#fff" />
-            </View>
+            </Pressable>
           )}
         </View>
 

@@ -45,6 +45,17 @@ export type DiscoveryItem = {
   score: number;
 };
 
+export type NearbyPlace = {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  category: string;
+  openingHours: string | null;
+  mapUri: string;
+};
+
 function baseUrl() {
   return apiBaseUrl();
 }
@@ -55,6 +66,13 @@ export function getNearbyPins(token: string, latitude: number, longitude: number
   return request<{ items: MapPin[] }>(
     token,
     `/api/map/pins/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&radiusKm=${encodeURIComponent(radiusKm)}`,
+  );
+}
+
+export function getNearbyPlaces(token: string, latitude: number, longitude: number, category: 'all' | 'restaurant' | 'cafe' | 'shop' | 'club' | 'gym' | 'park' | 'church', radiusMeters = 5_000) {
+  return request<{ items: NearbyPlace[]; attribution: '© OpenStreetMap contributors' }>(
+    token,
+    `/api/map/places/nearby?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&category=${encodeURIComponent(category)}&radiusMeters=${encodeURIComponent(radiusMeters)}`,
   );
 }
 

@@ -2430,6 +2430,40 @@ export const GetNearbyMapPinsResponse = zod.object({
 })
 
 
+export const getNearbyPlacesQueryLatitudeMin = -90;
+export const getNearbyPlacesQueryLatitudeMax = 90;
+
+export const getNearbyPlacesQueryLongitudeMin = -180;
+export const getNearbyPlacesQueryLongitudeMax = 180;
+
+export const getNearbyPlacesQueryRadiusMetersDefault = 5000;
+export const getNearbyPlacesQueryRadiusMetersMin = 100;
+export const getNearbyPlacesQueryRadiusMetersMax = 20000;
+
+export const getNearbyPlacesQueryCategoryDefault = `all`;
+
+export const GetNearbyPlacesQueryParams = zod.object({
+  "latitude": zod.coerce.number().min(getNearbyPlacesQueryLatitudeMin).max(getNearbyPlacesQueryLatitudeMax),
+  "longitude": zod.coerce.number().min(getNearbyPlacesQueryLongitudeMin).max(getNearbyPlacesQueryLongitudeMax),
+  "radiusMeters": zod.coerce.number().int().min(getNearbyPlacesQueryRadiusMetersMin).max(getNearbyPlacesQueryRadiusMetersMax).default(getNearbyPlacesQueryRadiusMetersDefault),
+  "category": zod.enum(['all', 'restaurant', 'cafe', 'shop', 'club', 'gym', 'park', 'church']).default(getNearbyPlacesQueryCategoryDefault)
+})
+
+export const GetNearbyPlacesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "address": zod.string(),
+  "latitude": zod.number(),
+  "longitude": zod.number(),
+  "category": zod.string(),
+  "openingHours": zod.string().nullable(),
+  "mapUri": zod.string()
+})),
+  "attribution": zod.enum(['© OpenStreetMap contributors'])
+})
+
+
 /**
  * @summary Explicitly post the caller's chosen location
  */

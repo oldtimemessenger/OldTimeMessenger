@@ -1,0 +1,302 @@
+BUILD THE RELEASE FUNCTIONALITY NOW
+
+We are working ONLY inside:
+
+/home/runner/release-apple-submission-fixes
+
+Branch:
+release/apple-submission-fixes
+
+Base:
+152f154a5b9d8119ec4f2bfa4aa3ab3e5e251c26
+
+This branch is clean and already contains the completed Slices 1-3.
+
+IMPORTANT:
+We are NOT trying to make the app look unfinished or hide functionality for App Review.
+
+The goal is to make the CURRENT exposed app genuinely functional.
+
+Build the following release-critical functionality.
+
+==================================================
+1. SIGN IN WITH APPLE
+==================================================
+
+Current Google authentication exists in:
+
+artifacts/old-time-mobile/components/firebase-auth-panel.tsx
+
+Implement Sign in with Apple alongside Google.
+
+Requirements:
+- Keep Google sign-in.
+- Add a clearly visible Continue with Apple option.
+- Use the existing Firebase authentication architecture.
+- Use Firebase's Apple OAuth/provider flow correctly.
+- Preserve existing account creation/login behavior.
+- Handle first-time Apple users.
+- Handle returning Apple users.
+- Handle Apple's private relay email behavior.
+- Handle user cancellation.
+- Handle authentication errors.
+- Do not create a second authentication architecture.
+
+Update the Expo/iOS configuration required for Apple Sign-In.
+
+Do NOT hardcode Apple secrets in source code.
+
+If Firebase Console or Apple Developer configuration is required outside the repository, document the exact manual steps at the end.
+
+==================================================
+2. REAL ACCOUNT DELETION
+==================================================
+
+Implement a real account deletion flow.
+
+Current settings/account UI must gain a clear Delete Account option.
+
+Requirements:
+- Settings/account → Delete Account.
+- Explain that deletion is permanent.
+- Require explicit confirmation.
+- Reauthenticate the user if required by Firebase.
+- Delete the authenticated Firebase user.
+- Delete the user's backend account data through the existing authenticated backend architecture.
+- Delete/clean user-owned data that is appropriate to delete.
+- Do NOT delete shared data belonging to other users.
+- Do NOT blindly delete public content that the product intentionally retains.
+- Clear local user/session state.
+- Sign the user out.
+- Return to the authentication screen.
+- Handle partial failures safely.
+- Never leave the user believing deletion succeeded when it did not.
+
+Inspect the existing Firebase auth and backend architecture first.
+
+Reuse existing authentication/token verification.
+
+If an API endpoint is necessary, implement the smallest secure endpoint possible.
+
+The server MUST verify the authenticated user's identity and must never accept an arbitrary user ID from the client as authorization.
+
+Do not introduce a new backend service.
+
+==================================================
+3. REAL VOICE NOTES
+==================================================
+
+The current chat composer contains:
+
+"Voice notes are coming soon."
+
+REMOVE that placeholder by implementing the actual feature.
+
+Target:
+
+artifacts/old-time-mobile/app/chat/[id].tsx
+
+Build real voice messaging using the existing Expo/React Native architecture.
+
+Requirements:
+- microphone permission
+- hold microphone button to begin recording
+- release to finish recording
+- cancel recording
+- optional lock/continue-recording interaction if compatible with existing UI
+- recording duration indicator
+- prevent accidental duplicate recordings
+- send the recorded audio as a chat message
+- display voice messages chronologically
+- receiver can play the audio
+- sender can play the audio
+- playback controls
+- pause/resume playback
+- playback progress/duration
+- only one voice message should actively play at a time
+- loading state
+- failed-send state
+- retry behavior where practical
+- gracefully handle permission denial
+- gracefully handle recording failure
+- gracefully handle missing/deleted media
+- preserve existing text, image, video, GIF, reaction, reply, and translation functionality.
+
+IMPORTANT STORAGE RULE:
+
+Reuse the existing application's media/storage architecture.
+
+Do NOT introduce another paid storage provider.
+
+Do NOT create a new unrelated media backend.
+
+Inspect existing chat media upload/send infrastructure before implementing audio.
+
+Use the existing message model if it can represent media/audio messages.
+
+Only extend the existing model/API when necessary.
+
+==================================================
+4. PRODUCTION API CONFIGURATION
+==================================================
+
+Inspect:
+
+artifacts/old-time-mobile/eas.json
+
+artifacts/old-time-mobile/lib/api-base-url.ts
+
+The current production host is:
+
+old-time-messenger--kingvercetti59.replit.app
+
+Determine whether this is the application's intended production backend.
+
+Do NOT migrate infrastructure.
+
+If this is already the intended production backend, preserve it.
+
+Make sure production builds cannot accidentally use a development/staging endpoint.
+
+Do not introduce another hosting provider.
+
+==================================================
+5. PRIVACY / IOS CONFIGURATION
+==================================================
+
+Inspect the final mobile configuration after implementing Apple Sign-In.
+
+Ensure the required Apple Sign-In capability/configuration is represented correctly.
+
+Do not invent privacy declarations.
+
+Inspect existing Expo dependencies and native configuration.
+
+Do not perform broad dependency upgrades.
+
+Only install/add a dependency if it is genuinely required for the requested functionality.
+
+==================================================
+6. KEEP EXISTING FUNCTIONALITY INTACT
+==================================================
+
+Do NOT modify unrelated functionality.
+
+Specifically preserve:
+- Slice 1 video tap/double-tap like behavior
+- Slice 2 comments/replies/comment likes
+- Slice 3 save/share behavior
+- existing navigation
+- existing feed state preservation
+- existing messaging behavior
+- existing authentication behavior
+- existing map
+- existing stories
+- existing calls
+- existing Access/live functionality
+
+Do not redesign screens unless necessary for the requested functionality.
+
+==================================================
+7. COST CONTROL
+==================================================
+
+NO new recurring paid service.
+
+NO new API provider.
+
+NO new storage provider.
+
+NO new database provider.
+
+Reuse existing infrastructure.
+
+If implementation would require a new paid service, STOP and report it instead of adding it.
+
+==================================================
+8. TESTING
+==================================================
+
+Run:
+
+corepack pnpm run typecheck:libs
+
+corepack pnpm --filter @workspace/old-time-mobile run typecheck
+
+corepack pnpm --filter @workspace/old-time-mobile run check:private-navigation
+
+Run relevant mobile build/export validation.
+
+Test or statically verify:
+- Apple auth imports/configuration
+- Firebase Apple provider flow
+- account deletion authorization
+- account deletion UI
+- voice recording lifecycle
+- voice message send
+- voice playback
+- existing chat message rendering
+- existing feed interactions
+- no broken imports
+- no TypeScript errors
+- no secrets committed
+
+==================================================
+9. GIT SAFETY
+==================================================
+
+Work ONLY on:
+
+release/apple-submission-fixes
+
+Do NOT modify main.
+
+Do NOT merge.
+
+Do NOT rebase main.
+
+Do NOT rewrite history.
+
+Do NOT create unrelated commits.
+
+When implementation and testing are complete:
+
+Create a commit with a clear message.
+
+Push:
+
+release/apple-submission-fixes
+
+to:
+
+oldtimemessenger/OldTimeMessenger
+
+Verify the remote branch SHA.
+
+Create a PR:
+
+release/apple-submission-fixes → main
+
+STOP after creating the PR.
+
+Do not merge it.
+
+Final report must contain:
+- PR number
+- commit SHA
+- exact files changed
+- Apple Sign-In implementation summary
+- account deletion implementation summary
+- voice notes implementation summary
+- production endpoint result
+- dependencies added, if any
+- tests passed
+- manual Apple Developer steps
+- manual Firebase Console steps
+- EAS credentials/build steps still required
+- any remaining blockers
+
+IMPORTANT:
+If a required manual Apple/Firebase credential cannot be configured from this environment, do NOT fake it and do NOT hardcode credentials. Implement everything possible and report the exact manual configuration required.
+
+Proceed with implementation now.

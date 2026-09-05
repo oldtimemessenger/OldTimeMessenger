@@ -1,0 +1,214 @@
+STOP. DO NOT CHECK OUT ANY BRANCH.
+
+We have a verified, immutable Slice 3 application commit:
+
+8886231c0efa1637b404fa6e6f087872a888921b
+
+Its parent is:
+
+ec5fb40c129a6fd032d47dc6758a47d4b6fbd9eb
+
+There is now another Replit-generated attachment commit:
+
+5c92ebf20301ac95d876dfba057dd55308fff1d3
+
+DO NOT use that commit.
+
+DO NOT repair it.
+DO NOT reset it.
+DO NOT rebase it.
+DO NOT amend it.
+DO NOT delete commits.
+DO NOT modify application code.
+
+We are going to create a NEW branch reference pointing directly to the already-verified Slice 3 commit.
+
+CRITICAL:
+
+DO NOT run git switch.
+DO NOT run git checkout.
+DO NOT change the working tree.
+DO NOT remove any files.
+DO NOT stage anything.
+DO NOT commit anything.
+
+==================================================
+STEP 1: VERIFY THE GOOD COMMIT
+
+Run:
+
+git cat-file -e 8886231c0efa1637b404fa6e6f087872a888921b^{commit}
+
+Then:
+
+git rev-parse 8886231c0efa1637b404fa6e6f087872a888921b^
+
+Expected:
+
+ec5fb40c129a6fd032d47dc6758a47d4b6fbd9eb
+
+==================================================
+STEP 2: CREATE BRANCH REFERENCE WITHOUT CHECKING IT OUT
+
+Create this branch reference:
+
+slice-3-share-save-github
+
+pointing EXACTLY to:
+
+8886231c0efa1637b404fa6e6f087872a888921b
+
+Use:
+
+git branch slice-3-share-save-github 8886231c0efa1637b404fa6e6f087872a888921b
+
+Do NOT checkout the branch.
+
+Do NOT switch branches.
+
+Do NOT modify the working tree.
+
+If the branch already exists, STOP and report its SHA. Do not overwrite it.
+
+==================================================
+STEP 3: VERIFY THE BRANCH REF
+
+Run:
+
+git rev-parse refs/heads/slice-3-share-save-github
+
+Expected:
+
+8886231c0efa1637b404fa6e6f087872a888921b
+
+Then:
+
+git rev-parse refs/heads/slice-3-share-save-github^
+
+Expected:
+
+ec5fb40c129a6fd032d47dc6758a47d4b6fbd9eb
+
+Then:
+
+git show –stat –oneline refs/heads/slice-3-share-save-github
+
+Expected:
+
+Slice 3: reimplement SocialPost share and save polish
+
+Only:
+
+artifacts/old-time-mobile/app/(tabs)/updates-screen.tsx
+
+247 insertions
+9 deletions
+
+==================================================
+STEP 4: VERIFY THE BRANCH DOES NOT CONTAIN BAD COMMITS
+
+Run:
+
+git merge-base –is-ancestor 5c92ebf20301ac95d876dfba057dd55308fff1d3 refs/heads/slice-3-share-save-github
+
+Expected result:
+
+NON-ZERO EXIT STATUS
+
+This means the bad attachment commit is NOT an ancestor of the GitHub delivery branch.
+
+Also verify:
+
+git merge-base –is-ancestor 9687785359add5725eb0ee8cf1effdc2a8c4001a refs/heads/slice-3-share-save-github
+
+Expected:
+
+NON-ZERO EXIT STATUS
+
+And:
+
+git merge-base –is-ancestor 5d7e603663a209bb68c3984829fff90b843e6024 refs/heads/slice-3-share-save-github
+
+Expected:
+
+NON-ZERO EXIT STATUS
+
+And:
+
+git merge-base –is-ancestor 304a4baf4f66ad8f1644fb21c40f21b994d6d4c5 refs/heads/slice-3-share-save-github
+
+Expected:
+
+NON-ZERO EXIT STATUS
+
+==================================================
+STEP 5: VERIFY EXACT FINAL RANGE
+
+Run:
+
+git diff –name-status ec5fb40c129a6fd032d47dc6758a47d4b6fbd9eb refs/heads/slice-3-share-save-github
+
+Expected ONLY:
+
+artifacts/old-time-mobile/app/(tabs)/updates-screen.tsx
+
+Then:
+
+git diff –stat ec5fb40c129a6fd032d47dc6758a47d4b6fbd9eb refs/heads/slice-3-share-save-github
+
+Expected:
+
+1 file changed
+247 insertions
+9 deletions
+
+Then:
+
+git diff –check ec5fb40c129a6fd032d47dc6758a47d4b6fbd9eb refs/heads/slice-3-share-save-github
+
+Expected:
+
+No output.
+
+==================================================
+STEP 6: DO NOT CHECK WORKING TREE CLEANLINESS
+
+IMPORTANT:
+
+Do NOT attempt to remove, stash, commit, or otherwise modify the current untracked/deleted attachment.
+
+The working tree is irrelevant to the delivery branch because the delivery branch reference points directly to the immutable verified commit 8886231c.
+
+Do not switch branches.
+
+Do not checkout files.
+
+Do not create a commit.
+
+==================================================
+FINAL STOP
+
+Return:
+
+1. Delivery branch name
+2. Delivery branch SHA
+3. Delivery branch parent SHA
+4. Confirmation that the branch was created WITHOUT checkout
+5. Confirmation that 8886231c is the branch tip
+6. Confirmation that ec5fb40c is its parent
+7. Exact changed file
+8. Diff statistics
+9. Confirmation that 5c92ebf is NOT an ancestor
+10. Confirmation that 968778535 is NOT an ancestor
+11. Confirmation that 5d7e603 is NOT an ancestor
+12. Confirmation that 304a4baf is NOT an ancestor
+13. Confirmation that NO commit was created
+14. Confirmation that NO application file was modified
+15. Confirmation that NO push was performed
+16. Confirmation that NO PR was created
+
+STOP THERE.
+
+Do not push.
+Do not create a PR.
+Do not checkout the new branch.
