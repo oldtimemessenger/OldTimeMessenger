@@ -84,7 +84,7 @@ export default function MapScreen() {
       setCurrentEventsError(null);
     } catch {
       // Retain the last known rooms rather than presenting a failed request as an empty list.
-      setCurrentEventsError('Current Events could not be refreshed.');
+      setCurrentEventsError('Access could not be refreshed.');
     }
   }, [session?.authToken]);
 
@@ -308,15 +308,15 @@ export default function MapScreen() {
         <Pressable
           onPress={() => setCurrentEventsMode(true)}
           accessibilityRole="button"
-          accessibilityLabel="Open Current Events"
+          accessibilityLabel="Open Access"
           style={[styles.currentEventsButton, { top: insets.top + 10, backgroundColor: colors.primary }]}
         >
           <Ionicons name="mic-outline" size={16} color={colors.primaryForeground} />
-          <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>What’s happening</Text>
+          <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>Access Live</Text>
           <View style={styles.liveDot} />
           <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>{currentEventRooms.length}</Text>
         </Pressable>
-        {currentEventsError ? <Pressable onPress={() => void loadCurrentEventRooms()} style={[styles.currentEventsError, { top: insets.top + 56, backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Retry loading Current Events"><Ionicons name="cloud-offline-outline" size={15} color={colors.destructive} /><Text style={{ color: colors.destructive, fontSize: 12, fontWeight: '700' }}>Retry Current Events</Text></Pressable> : null}
+        {currentEventsError ? <Pressable onPress={() => void loadCurrentEventRooms()} style={[styles.currentEventsError, { top: insets.top + 56, backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Retry loading Access"><Ionicons name="cloud-offline-outline" size={15} color={colors.destructive} /><Text style={{ color: colors.destructive, fontSize: 12, fontWeight: '700' }}>Retry Access</Text></Pressable> : null}
         <SocialMap
           center={location}
           region={region}
