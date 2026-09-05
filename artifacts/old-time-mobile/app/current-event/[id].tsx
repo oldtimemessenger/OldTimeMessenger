@@ -202,7 +202,7 @@ export default function CurrentEventRoomScreen() {
     void leaveRoom();
   }
 
-  async function moderate(participant: CurrentEventParticipant, action: 'promote' | 'demote' | 'mute' | 'unmute' | 'remove') {
+  async function moderate(participant: CurrentEventParticipant, action: 'promote' | 'mute' | 'unmute' | 'remove') {
     if (!room) return;
     try {
       const nextRoom = await updateCurrentEventParticipant(room.id, participant.id, { action });
@@ -340,7 +340,6 @@ export default function CurrentEventRoomScreen() {
                 <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}</Text>
                 {participant.role === 'listener' ? <Pressable onPress={() => void moderate(participant, 'promote')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Stage</Text></Pressable> : null}
                 {participant.role !== 'listener' ? <Pressable onPress={() => void moderate(participant, participant.muted ? 'unmute' : 'mute')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>{participant.muted ? 'Unmute' : 'Mute'}</Text></Pressable> : null}
-                {participant.role !== 'listener' ? <Pressable onPress={() => void moderate(participant, 'demote')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Audience</Text></Pressable> : null}
               </View>
             ))}
             {room.participants.filter((participant) => participant.role !== 'host').length === 0 ? <Text style={styles.mutedNote}>No one else is in this room yet.</Text> : null}
@@ -480,12 +479,12 @@ export default function CurrentEventRoomScreen() {
 
       <Modal visible={verifyPromptOpen} transparent animationType="fade" onRequestClose={() => setVerifyPromptOpen(false)}>
         <View style={styles.verifyShade}>
-          <View style={[styles.verifyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View accessibilityRole="alert" accessibilityLabel="Verification prompt" style={[styles.verifyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.verifyTitle, { color: colors.foreground }]}>Stay live longer</Text>
             <Text style={[styles.verifyText, { color: colors.mutedForeground }]}>Get your verification badge to host Access rooms longer than 18 minutes.</Text>
             <View style={styles.verifyActions}>
-              <Pressable onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); }}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
-              <Pressable onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Dismiss verification prompt" onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); }}><Text style={[styles.verifyActionText, { color: colors.mutedForeground }]}>Later</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open settings to get verified" onPress={() => { setVerifyPromptDismissed(true); setVerifyPromptOpen(false); router.push('/(tabs)/settings'); }} style={[styles.verifyButton, { backgroundColor: colors.primary }]}><Text style={[styles.verifyButtonText, { color: colors.primaryForeground }]}>Get verified</Text></Pressable>
             </View>
           </View>
         </View>

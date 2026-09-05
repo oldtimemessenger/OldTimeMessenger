@@ -58,7 +58,8 @@ type Colors = {
 type RoomType = typeof roomTypes[number]['key'];
 
 function parseRoomMeta(room: CurrentEventRoom): { roomType: RoomType; coins: number; duration: string } {
-  const payload = room.clubName.startsWith(ACCESS_META_PREFIX) ? room.clubName.slice(ACCESS_META_PREFIX.length) : '';
+  const clubName = room.clubName ?? '';
+  const payload = clubName.startsWith(ACCESS_META_PREFIX) ? clubName.slice(ACCESS_META_PREFIX.length) : '';
   const segments = payload.split('|').filter(Boolean);
   const rawRoomType = segments.find((item) => item.startsWith('TYPE='))?.replace('TYPE=', '') ?? (room.isOpen ? 'public' : 'private');
   const roomType: RoomType = rawRoomType === 'friends' || rawRoomType === 'friends-of-friends' || rawRoomType === 'private' || rawRoomType === 'community' ? rawRoomType : 'public';
