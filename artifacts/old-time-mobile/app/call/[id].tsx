@@ -183,18 +183,6 @@ export default function CallScreen() {
     });
   }
 
-  function toggleCamera() {
-    Alert.alert('Video preview coming soon', 'This build keeps the call connected, but camera publishing is not available yet.');
-  }
-
-  function swapCamera() {
-    Alert.alert('Camera switch unavailable', 'Front and back camera switching is not available in the current calling provider yet.');
-  }
-
-  function startScreenShare() {
-    Alert.alert('Screen sharing unavailable', 'The current in-app calling provider does not support screen sharing in this build yet.');
-  }
-
   if (!session) {
     return <View style={[styles.center, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
   }
@@ -213,9 +201,7 @@ export default function CallScreen() {
           <View style={[styles.statusDot, { backgroundColor: tone.accent }]} />
           <Text style={[styles.callTypeText, { color: colors.foreground }]}>{call?.type === 'video' ? 'Video call' : 'Voice call'}</Text>
         </View>
-        <Pressable accessibilityLabel="Share screen" onPress={startScreenShare} style={[styles.topButton, { backgroundColor: colors.card }]}>
-          <Ionicons name="desktop-outline" size={18} color={colors.foreground} />
-        </Pressable>
+        <View style={styles.topButton} />
       </View>
 
       <View style={styles.hero}>
@@ -249,18 +235,6 @@ export default function CallScreen() {
         <Pressable onPress={() => void toggleSpeaker()} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
           <Ionicons name={speaker ? 'volume-high' : 'volume-mute'} size={22} color={colors.foreground} />
           <Text style={[styles.controlLabel, { color: colors.foreground }]}>{speaker ? 'Speaker' : 'Earpiece'}</Text>
-        </Pressable>
-        <Pressable onPress={toggleCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
-          <Ionicons name="videocam-off" size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Camera unavailable</Text>
-        </Pressable>
-        <Pressable onPress={swapCamera} disabled={!connected || call?.type !== 'video'} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected && call?.type === 'video' ? 1 : 0.5 }]}>
-          <Ionicons name="camera-reverse" size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Switch</Text>
-        </Pressable>
-        <Pressable onPress={startScreenShare} disabled={!connected} style={[styles.controlButton, { backgroundColor: colors.card, opacity: connected ? 1 : 0.5 }]}>
-          <Ionicons name="desktop-outline" size={22} color={colors.foreground} />
-          <Text style={[styles.controlLabel, { color: colors.foreground }]}>Share screen</Text>
         </Pressable>
       </View>
 

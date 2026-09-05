@@ -157,7 +157,7 @@ export default function WalletScreen() {
             <Text style={[styles.infoTitle, { color: colors.foreground }]}>Transactions</Text>
             <Text style={[styles.infoHint, { color: colors.mutedForeground }]}>Your coin activity will appear here.</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.mutedForeground} />
+          <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: '600' }}>Soon</Text>
         </View>
 
         <Pressable onPress={() => setStoreOpen(true)} style={[styles.rechargeCard, { backgroundColor: `${colors.primary}12` }]}>
