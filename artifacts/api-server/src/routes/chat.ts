@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, isNotNull, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
 import {
   Chat,
   CreateChatBody,
@@ -98,8 +98,7 @@ const OTP_RESEND_DELAY_MS = 60 * 1000;
 const MAX_PHONE_REQUESTS_PER_WINDOW = 5;
 const MAX_IP_REQUESTS_PER_WINDOW = 20;
 const MAX_OTP_ATTEMPTS = 5;
-const GROUP_MESSAGE_EXPIRY_MS = 60_000;
-const DIRECT_MESSAGE_EXPIRY_MS = 2 * 60_000;
+const MESSAGE_VIEW_EXPIRY_MS = 60_000;
 
 function now(): number {
   return Date.now();
@@ -144,6 +143,7 @@ function visibleMessageCondition(timestamp: number) {
   return or(
     eq(messagesTable.saved, true),
     isNull(messagesTable.expiresAt),
+    isNull(messagesTable.openedAt),
     gt(messagesTable.expiresAt, timestamp),
   );
 }
@@ -255,7 +255,7 @@ async function serializeMessages(messages: MessageRecord[], viewerId: number) {
 async function cleanupExpiredMessages(): Promise<void> {
   const expired = await db
     .delete(messagesTable)
-    .where(and(lte(messagesTable.expiresAt, now()), eq(messagesTable.saved, false)))
+    .where(and(lte(messagesTable.expiresAt, now()), isNotNull(messagesTable.openedAt), eq(messagesTable.saved, false)))
     .returning();
   for (const message of expired) {
     emitToChat(message.chatId, "message-expired", { chatId: message.chatId, messageId: message.id });
@@ -344,9 +344,10 @@ async function getChatParticipants(chatId: number): Promise<number[]> {
   return rows.map((row) => row.userId);
 }
 
-async function messageExpiryForChat(chatId: number, createdAt: number): Promise<number> {
-  const chat = await getChatById(chatId);
-  return createdAt + (chat?.isGroup ? GROUP_MESSAGE_EXPIRY_MS : DIRECT_MESSAGE_EXPIRY_MS);
+async function messageExpiryForChat(_chatId: number, _createdAt: number): Promise<number | null> {
+  // A disappearing message starts its countdown when the recipient opens it,
+  // not when the sender sends it.
+  return null;
 }
 
 async function getChatById(chatId: number): Promise<ChatRecord | undefined> {
@@ -1611,7 +1612,12 @@ router.post("/messages/:messageId/open", async (req, res): Promise<void> => {
     const openedAt = now();
     const [updated] = await db
       .update(messagesTable)
-      .set({ openedAt, deliveredAt: message.deliveredAt ?? openedAt, read: true })
+      .set({
+        openedAt,
+        expiresAt: openedAt + MESSAGE_VIEW_EXPIRY_MS,
+        deliveredAt: message.deliveredAt ?? openedAt,
+        read: true,
+      })
       .where(
         and(
           eq(messagesTable.id, message.id),

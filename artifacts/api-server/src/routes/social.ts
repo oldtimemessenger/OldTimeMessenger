@@ -7,6 +7,7 @@ import {
   gt,
   ilike,
   inArray,
+  isNull,
   lt,
   ne,
   or,
@@ -46,6 +47,7 @@ import { fileForObjectPath, MAX_UPLOAD_BYTES } from "../lib/chat-storage";
 import { sendPushToUsers } from "../lib/push-notifications";
 
 const router: IRouter = Router();
+const SOCIAL_VIEW_EXPIRY_MS = 30_000;
 
 const postVisibility = z.enum(["public", "friends", "followers", "private"]);
 const postKind = z.enum(["text", "photo", "video", "link", "news"]);
@@ -1527,6 +1529,12 @@ type Story = typeof socialStoriesTable.$inferSelect;
 async function canSeeStory(viewerId: number, story: Story): Promise<boolean> {
   if (story.deleted || story.expiresAt <= Date.now()) return false;
   if (story.authorId === viewerId) return true;
+  const [view] = await db
+    .select({ expiresAt: socialStoryViewersTable.expiresAt })
+    .from(socialStoryViewersTable)
+    .where(and(eq(socialStoryViewersTable.storyId, story.id), eq(socialStoryViewersTable.viewerId, viewerId)))
+    .limit(1);
+  if (view?.expiresAt !== null && view?.expiresAt !== undefined && view.expiresAt <= Date.now()) return false;
   if (await isBlocked(viewerId, story.authorId)) return false;
   if (await isExcludedFromSharing(story.authorId, viewerId)) return false;
   if (story.visibility === "public") return true;
@@ -1866,7 +1874,16 @@ router.delete("/social/stories/:storyId", async (req, res): Promise<void> => {
 });
 router.put("/social/stories/:storyId/view", async (req, res): Promise<void> => {
   const access = await accessibleStory(req, res); if (!access) return;
-  if (access.story.authorId !== access.viewerId) await db.insert(socialStoryViewersTable).values({ storyId: access.story.id, viewerId: access.viewerId, viewedAt: Date.now() }).onConflictDoNothing();
+  if (access.story.authorId !== access.viewerId) {
+    const viewedAt = Date.now();
+    await db
+      .insert(socialStoryViewersTable)
+      .values({ storyId: access.story.id, viewerId: access.viewerId, viewedAt, expiresAt: viewedAt + SOCIAL_VIEW_EXPIRY_MS })
+      .onConflictDoUpdate({
+        target: [socialStoryViewersTable.storyId, socialStoryViewersTable.viewerId],
+        set: { viewedAt, expiresAt: viewedAt + SOCIAL_VIEW_EXPIRY_MS },
+      });
+  }
   res.json({ success: true });
 });
 router.put("/social/stories/:storyId/reaction", async (req, res): Promise<void> => {

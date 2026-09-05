@@ -18,6 +18,7 @@ type Props = {
 };
 
 const STORY_DURATION_MS = 6500;
+const STORY_VIEW_EXPIRY_MS = 30_000;
 const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
 const STORY_BACKGROUNDS = [
   ['#F58529', '#DD2A7B', '#8134AF'],
@@ -135,6 +136,12 @@ export function ServerStoryViewer({ items, initialItemId, token, onClose }: Prop
       Alert.alert('Story view not recorded', error instanceof Error ? error.message : 'Please try again.');
     });
   }, [story?.id, story?.viewer.viewed, token]);
+
+  useEffect(() => {
+    if (!item || item.type === 'SPONSORED_STORY') return;
+    const timeout = setTimeout(() => close(), STORY_VIEW_EXPIRY_MS);
+    return () => clearTimeout(timeout);
+  }, [close, item?.id, item?.type]);
 
   useEffect(() => {
     if (paused || !item) return;

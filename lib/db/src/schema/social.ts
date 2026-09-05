@@ -243,10 +243,12 @@ export const socialStoryViewersTable = pgTable(
     storyId: integer("story_id").notNull(),
     viewerId: integer("viewer_id").notNull(),
     viewedAt: pgBigint("viewed_at", { mode: "number" }).notNull(),
+    expiresAt: pgBigint("expires_at", { mode: "number" }),
   },
   (table) => ({
     primaryKey: primaryKey({ columns: [table.storyId, table.viewerId] }),
     viewerIndex: index("social_story_viewers_viewer_idx").on(table.viewerId),
+    expiryIndex: index("social_story_viewers_expiry_idx").on(table.expiresAt),
   }),
 );
 
