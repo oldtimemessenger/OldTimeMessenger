@@ -14,7 +14,6 @@ import {
   AppState,
   Dimensions,
   FlatList,
-  Keyboard,
   Linking,
   Modal,
   PanResponder,
@@ -55,6 +54,7 @@ import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoSurface } from '@/components/video-surface';
+import { ChatComposer } from '@/components/chat-composer';
 import { apiBaseUrl } from '@/lib/api-base-url';
 import { getNotes, updateUserProfile, type Note } from '@/lib/social-api';
 import {
@@ -346,7 +346,6 @@ export default function ChatDetailScreen() {
   const [draftCaption, setDraftCaption] = useState('');
   const [draftIndex, setDraftIndex] = useState(0);
   const [attachmentMenu, setAttachmentMenu] = useState(false);
-  const [emojiOpen, setEmojiOpen] = useState(false);
   const [actionMessage, setActionMessage] = useState<UiMessage | null>(null);
   const [replyTarget, setReplyTarget] = useState<UiMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<UiMessage | null>(null);
@@ -602,8 +601,8 @@ export default function ChatDetailScreen() {
     }
   }
 
-  function sendText() {
-    const content = text.trim();
+  function sendText(value = text) {
+    const content = value.trim();
     if (!content || !session) return;
     if (editingMessage && editingMessage.id > 0) {
       const messageId = editingMessage.id;
@@ -1293,54 +1292,20 @@ export default function ChatDetailScreen() {
           </View>
         ) : null}
 
-        <View style={[styles.composer, { paddingBottom: insets.bottom + 8 }]}> 
-          <Pressable onPress={() => setAttachmentMenu(true)} style={[styles.sideComposerButton, { backgroundColor: colors.muted }]} accessibilityLabel="Open attachment menu">
-            <Ionicons name="add" size={20} color={colors.foreground} />
-          </Pressable>
-          <View style={[styles.messagePill, { backgroundColor: colors.muted }]}> 
-            <TextInput
-              ref={inputRef}
-              value={text}
-              onChangeText={scheduleTypingState}
-              placeholder="Message"
-              placeholderTextColor={colors.mutedForeground}
-              style={[styles.messageInput, { color: colors.foreground }]}
-              multiline
-              maxLength={2000}
-              blurOnSubmit={false}
-              onSubmitEditing={settings.enterToSend ? sendText : undefined}
-            />
-            <Pressable onPress={() => { Keyboard.dismiss(); setEmojiOpen((current) => !current); }} style={styles.inlineComposerButton} accessibilityLabel="Open emoji picker">
-              <Ionicons name="happy-outline" size={20} color={colors.foreground} />
-            </Pressable>
-          </View>
-          {text.trim() ? (
-            <Pressable onPress={sendText} style={[styles.sideComposerButton, { backgroundColor: colors.primary }]} accessibilityLabel="Send message">
-              <Ionicons name="arrow-up" size={18} color="#fff" />
-            </Pressable>
-          ) : (
-            <Pressable
-              {...recordResponder.panHandlers}
-              style={[styles.sideComposerButton, { backgroundColor: colors.primary }]}
-              accessibilityRole="button"
-              accessibilityLabel="Hold to record voice message"
-              accessibilityHint="Swipe left to cancel or swipe up to lock recording"
-              testID="record-voice-note"
-            >
-              <Ionicons name="mic-outline" size={19} color="#fff" />
-            </Pressable>
-          )}
+        <View style={{ paddingBottom: insets.bottom + 8 }}>
+          <ChatComposer
+            value={text}
+            onChangeText={scheduleTypingState}
+            onSendText={sendText}
+            onOpenAttachments={() => setAttachmentMenu(true)}
+            onRecordVoice={() => void beginRecording()}
+            recordPanHandlers={recordResponder.panHandlers}
+            inputRef={inputRef}
+            colors={colors}
+            locale={settings.language}
+            enterToSend={settings.enterToSend}
+          />
         </View>
-
-        {emojiOpen ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.compactEmojiRail} keyboardShouldPersistTaps="handled">
-            {['😀','😂','😍','🙏','🔥','🎉','❤️','👍','👎','😮','😢'].map((emoji) => (
-              <Pressable key={emoji} onPress={() => { setText((current) => `${current}${emoji}`); inputRef.current?.focus(); }} style={[styles.compactEmojiButton, { backgroundColor: colors.muted }]}> 
-                <Text style={styles.compactEmojiText}>{emoji}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        ) : null}
 
         {recordingMode === 'recording' ? (
           <View style={styles.recordHintRow}>
