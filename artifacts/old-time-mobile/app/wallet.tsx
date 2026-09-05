@@ -19,6 +19,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
@@ -45,6 +46,7 @@ function purchaseError(error: unknown) {
 export default function WalletScreen() {
   const colors = useColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ showCoins?: string }>();
   const queryClient = useQueryClient();
   const { session } = useApp();
@@ -113,12 +115,12 @@ export default function WalletScreen() {
 
   return (
     <Screen>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} style={styles.iconButton}>
-          <Ionicons name="chevron-back" size={28} color={colors.foreground} />
+      <View style={[styles.header, { height: insets.top + 56, paddingTop: insets.top, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Go back" hitSlop={8} onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={24} color={colors.foreground} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>Balance</Text>
-        <Pressable disabled={walletQuery.isFetching} onPress={() => void refreshWallet()} style={styles.iconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh balance" hitSlop={8} disabled={walletQuery.isFetching} onPress={() => void refreshWallet()} style={styles.headerButton}>
           {walletQuery.isFetching
             ? <ActivityIndicator size="small" color={colors.primary} />
             : <Ionicons name="refresh" size={21} color={colors.primary} />}
@@ -157,19 +159,7 @@ export default function WalletScreen() {
             <Text style={[styles.infoTitle, { color: colors.foreground }]}>Transactions</Text>
             <Text style={[styles.infoHint, { color: colors.mutedForeground }]}>Your coin activity will appear here.</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.mutedForeground} />
         </View>
-
-        <Pressable onPress={() => setStoreOpen(true)} style={[styles.rechargeCard, { backgroundColor: `${colors.primary}12` }]}>
-          <View style={[styles.infoIcon, { backgroundColor: `${colors.primary}20` }]}>
-            <Ionicons name="cash-outline" size={21} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.infoTitle, { color: colors.foreground }]}>Get more coins</Text>
-            <Text style={[styles.infoHint, { color: colors.mutedForeground }]}>90 coins for every $1 of value.</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-        </Pressable>
       </ScrollView>
 
       <Modal visible={storeOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setStoreOpen(false)}>
@@ -271,26 +261,26 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16 },
   storeHeader: { height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10 },
-  headerTitle: { fontSize: 20, fontWeight: '800' },
+  headerTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.2 },
+  headerButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  content: { alignItems: 'center', paddingHorizontal: 20, paddingBottom: 100 },
-  balanceArt: { width: 260, height: 245, marginTop: 8 },
-  balanceLabel: { fontSize: 19, fontWeight: '600' },
-  estimatedValue: { fontSize: 45, fontWeight: '800', letterSpacing: -1.5, marginTop: 2 },
-  coinPill: { minHeight: 48, borderRadius: 24, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 18 },
-  coinPillText: { fontSize: 16, fontWeight: '700' },
+  content: { alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 34 },
+  balanceArt: { width: 176, height: 154, marginTop: 2 },
+  balanceLabel: { fontSize: 17, fontWeight: '600' },
+  estimatedValue: { fontSize: 40, fontWeight: '800', letterSpacing: -1.4, marginTop: 1 },
+  coinPill: { minHeight: 44, borderRadius: 22, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 17, marginTop: 13 },
+  coinPillText: { fontSize: 15, fontWeight: '700' },
   nonWithdrawable: { fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 8, paddingHorizontal: 8 },
-  earningsCard: { width: '100%', borderWidth: 1, borderRadius: 20, marginTop: 20, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  earningsCard: { width: '100%', borderWidth: 1, borderRadius: 18, marginTop: 17, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   earningsAmount: { fontSize: 17, fontWeight: '800', marginTop: 4 },
   withdrawButton: { minHeight: 38, paddingHorizontal: 13, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   withdrawText: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  settingsRow: { width: '100%', minHeight: 62, borderWidth: 1, borderRadius: 16, marginTop: 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingsRow: { width: '100%', minHeight: 58, borderWidth: 1, borderRadius: 16, marginTop: 10, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   pillDivider: { width: 1, height: 22, marginHorizontal: 15 },
   getCoinsText: { fontSize: 16, fontWeight: '700' },
-  infoCard: { width: '100%', minHeight: 92, borderWidth: 1, borderRadius: 20, marginTop: 28, padding: 16, flexDirection: 'row', gap: 13, alignItems: 'center' },
-  rechargeCard: { width: '100%', minHeight: 86, borderRadius: 20, marginTop: 14, padding: 16, flexDirection: 'row', gap: 13, alignItems: 'center' },
+  infoCard: { width: '100%', minHeight: 78, borderWidth: 1, borderRadius: 18, marginTop: 10, padding: 14, flexDirection: 'row', gap: 13, alignItems: 'center' },
   infoIcon: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
   infoTitle: { fontSize: 17, fontWeight: '700' },
   infoHint: { fontSize: 13, lineHeight: 18, marginTop: 3 },
