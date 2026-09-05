@@ -185,17 +185,17 @@ export default function CurrentEventRoomScreen() {
 
   const speakers = useMemo(() => room?.participants.filter((participant) => ['host', 'moderator', 'speaker'].includes(participant.role)) ?? [], [room]);
   const listeners = useMemo(() => room?.participants.filter((participant) => participant.role === 'listener') ?? [], [room]);
-  const audienceListeners = useMemo(() => listeners.filter((participant) => !participant.handRaised), [listeners]);
   const canModerate = room?.viewer.role === 'host' || room?.viewer.role === 'moderator';
   const activeRecipientId = giftRecipientId ?? speakers.find((participant) => participant.user.id !== room?.viewer.participantId)?.user.id ?? speakers[0]?.user.id ?? null;
 
   useEffect(() => {
-    if (room?.viewer.role === 'host' && !session?.phoneVerified && !verifyPromptDismissed) {
+    const limitWindowReached = room ? Date.now() - room.createdAt >= 15 * 60 * 1000 : false;
+    if (room?.viewer.role === 'host' && !session?.phoneVerified && !verifyPromptDismissed && limitWindowReached) {
       setVerifyPromptOpen(true);
     } else {
       setVerifyPromptOpen(false);
     }
-  }, [room?.viewer.role, session?.phoneVerified, verifyPromptDismissed]);
+  }, [room, session?.phoneVerified, verifyPromptDismissed]);
 
   async function leaveRoom() {
     if (room?.isLive && room.viewer.participantId !== null) await leaveCurrentEventRoom(room.id).catch(() => undefined);
@@ -414,10 +414,10 @@ export default function CurrentEventRoomScreen() {
                 </View>
               ))}
               <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>AUDIENCE</Text>
-              {audienceListeners.length === 0 ? <Text style={[styles.mutedNote, { color: colors.mutedForeground }]}>No listeners right now.</Text> : audienceListeners.map((participant) => (
+              {listeners.length === 0 ? <Text style={[styles.mutedNote, { color: colors.mutedForeground }]}>No listeners right now.</Text> : listeners.map((participant) => (
                 <View key={participant.id} style={styles.controlRow}>
                   <Avatar name={participant.user.name} size={30} color={colors.foreground} />
-                  <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}</Text>
+                  <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}{participant.handRaised ? ' · hand raised' : ''}</Text>
                   {canModerate ? <Pressable onPress={() => void promoteFromPeople(participant)} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite to speak</Text></Pressable> : null}
                 </View>
               ))}

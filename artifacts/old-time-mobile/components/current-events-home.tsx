@@ -41,8 +41,6 @@ const roomTypes = [
 
 const accessDurations = ['15 min', '30 min', '1 hour', '2 hours', '4 hours', 'Custom'] as const;
 
-const ACCESS_META_PREFIX = 'ACCESS|';
-
 type Colors = {
   background: string;
   foreground: string;
@@ -56,31 +54,6 @@ type Colors = {
 };
 
 type RoomType = typeof roomTypes[number]['key'];
-
-function parseRoomMeta(room: CurrentEventRoom): { roomType: RoomType; coins: number; duration: string } {
-  const clubName = room.clubName ?? '';
-  const payload = clubName.startsWith(ACCESS_META_PREFIX) ? clubName.slice(ACCESS_META_PREFIX.length) : '';
-  const segments = payload.split('|').filter(Boolean);
-  const rawRoomType = decodeURIComponent(segments.find((item) => item.startsWith('TYPE='))?.replace('TYPE=', '') ?? (room.isOpen ? 'public' : 'private'));
-  const roomType: RoomType = rawRoomType === 'friends' || rawRoomType === 'friends-of-friends' || rawRoomType === 'private' || rawRoomType === 'community' ? rawRoomType : 'public';
-  const coins = Number(segments.find((item) => item.startsWith('COINS='))?.replace('COINS=', '') ?? 0);
-  const duration = decodeURIComponent(segments.find((item) => item.startsWith('DUR='))?.replace('DUR=', '') ?? '');
-  return {
-    roomType,
-    coins: Number.isFinite(coins) && coins > 0 ? coins : 0,
-    duration,
-  };
-}
-
-function encodeRoomMeta(roomType: RoomType, paid: boolean, coins: string, duration: string) {
-  const parts = [`TYPE=${encodeURIComponent(roomType)}`];
-  if (paid) {
-    const value = Number(coins);
-    if (Number.isFinite(value) && value > 0) parts.push(`COINS=${Math.floor(value)}`);
-    if (duration.trim()) parts.push(`DUR=${encodeURIComponent(duration.trim())}`);
-  }
-  return `${ACCESS_META_PREFIX}${parts.join('|')}`;
-}
 
 function roomTypeLabel(type: RoomType) {
   return roomTypes.find((item) => item.key === type)?.label ?? 'Public';
@@ -154,7 +127,7 @@ export default function CurrentEventsHome({
         title: title.trim(),
         topic: hostTopic,
         isOpen: roomType !== 'private',
-        clubName: encodeRoomMeta(roomType, paidRoom, entryCoins, duration),
+        clubName: 'Access',
       });
       setHostOpen(false);
       setTitle('');
@@ -237,7 +210,7 @@ export default function CurrentEventsHome({
               return <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{item.title}</Text>;
             }
             const room = item.room;
-            const meta = parseRoomMeta(room);
+            const roomMode: RoomType = room.isOpen ? 'public' : 'private';
             const host = room.participants.find((participant) => participant.role === 'host');
             const coHosts = room.participants.filter((participant) => participant.role === 'moderator').slice(0, 2);
             const speakers = room.participants.filter((participant) => ['host', 'moderator', 'speaker'].includes(participant.role));
@@ -251,8 +224,8 @@ export default function CurrentEventsHome({
                 <View style={styles.roomCardTop}>
                   <View style={styles.liveLabel}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
                   <View style={styles.badgeRow}>
-                    <Text style={[styles.roomTypeBadge, { backgroundColor: colors.muted, color: colors.foreground }]}>{roomTypeLabel(meta.roomType)}</Text>
-                    {meta.coins > 0 ? <Text style={[styles.paidBadge, { backgroundColor: colors.foreground, color: colors.background }]}>🔒 {meta.coins.toLocaleString()} coins</Text> : <Text style={[styles.roomTypeBadge, { backgroundColor: colors.muted, color: colors.foreground }]}>FREE</Text>}
+                    <Text style={[styles.roomTypeBadge, { backgroundColor: colors.muted, color: colors.foreground }]}>{roomTypeLabel(roomMode)}</Text>
+                    <Text style={[styles.roomTypeBadge, { backgroundColor: colors.muted, color: colors.foreground }]}>FREE</Text>
                   </View>
                 </View>
                 <Text style={[styles.roomTitle, { color: colors.foreground }]} numberOfLines={2}>{room.title}</Text>
@@ -270,7 +243,6 @@ export default function CurrentEventsHome({
                 </View>
                 <View style={styles.roomSignals}>
                   <Text style={[styles.signalText, { color: colors.mutedForeground }]}>Live conversation</Text>
-                  {meta.duration ? <Text style={[styles.signalText, { color: colors.mutedForeground }]}>Access {meta.duration}</Text> : null}
                 </View>
               </Pressable>
             );
@@ -376,7 +348,6 @@ const styles = StyleSheet.create({
   roomCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   roomTypeBadge: { fontSize: 10, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 },
-  paidBadge: { fontSize: 10, fontWeight: '800', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 },
   metaText: { marginTop: 8, fontSize: 12, lineHeight: 17 },
   liveLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#E5484D' },
