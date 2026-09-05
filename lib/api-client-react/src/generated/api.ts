@@ -53,6 +53,7 @@ import type {
   FollowActionResult,
   GetCurrentEventRoomsParams,
   GetNearbyMapPinsParams,
+  GetNearbyPlacesParams,
   GetNearbyStoriesParams,
   GetNotesParams,
   GetSocialFeedParams,
@@ -82,6 +83,7 @@ import type {
   MessageRequestAcceptResult,
   MessageRequestList,
   MuteActionResult,
+  NearbyPlaceList,
   Note,
   NoteInput,
   NoteList,
@@ -6449,6 +6451,84 @@ export function useGetNearbyMapPins<TData = Awaited<ReturnType<typeof getNearbyM
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetNearbyMapPinsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetNearbyPlacesUrl = (params: GetNearbyPlacesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/map/places/nearby?${stringifiedParams}` : `/api/map/places/nearby`
+}
+
+export const getNearbyPlaces = async (params: GetNearbyPlacesParams, options?: Parameters<typeof customFetch>[1]): Promise<NearbyPlaceList> => {
+
+  return customFetch<NearbyPlaceList>(getGetNearbyPlacesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNearbyPlacesQueryKey = (params?: GetNearbyPlacesParams,) => {
+    return [
+    `/api/map/places/nearby`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetNearbyPlacesQueryOptions = <TData = Awaited<ReturnType<typeof getNearbyPlaces>>, TError = ErrorType<unknown>>(params: GetNearbyPlacesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNearbyPlaces>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNearbyPlacesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNearbyPlaces>>> = ({ signal }) => getNearbyPlaces(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNearbyPlaces>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNearbyPlacesQueryResult = NonNullable<Awaited<ReturnType<typeof getNearbyPlaces>>>
+export type GetNearbyPlacesQueryError = ErrorType<unknown>
+
+
+
+export function useGetNearbyPlaces<TData = Awaited<ReturnType<typeof getNearbyPlaces>>, TError = ErrorType<unknown>>(
+ params: GetNearbyPlacesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNearbyPlaces>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNearbyPlacesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

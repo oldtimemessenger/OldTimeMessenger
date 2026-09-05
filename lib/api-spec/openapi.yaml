@@ -1330,6 +1330,17 @@ paths:
         - { name: radiusKm, in: query, schema: { type: number, minimum: 0.1, maximum: 50, default: 25 } }
       responses:
         "200": { description: Nearby pins, content: { application/json: { schema: { $ref: "#/components/schemas/MapPinList" } } } }
+  /map/places/nearby:
+    get:
+      operationId: getNearbyPlaces
+      tags: [Map]
+      parameters:
+        - { in: query, name: latitude, required: true, schema: { type: number, format: double, minimum: -90, maximum: 90 } }
+        - { in: query, name: longitude, required: true, schema: { type: number, format: double, minimum: -180, maximum: 180 } }
+        - { in: query, name: radiusMeters, schema: { type: integer, minimum: 100, maximum: 20000, default: 5000 } }
+        - { in: query, name: category, schema: { type: string, enum: [all, restaurant, cafe, shop, club, gym, park, church], default: all } }
+      responses:
+        "200": { description: Nearby OpenStreetMap places, content: { application/json: { schema: { $ref: "#/components/schemas/NearbyPlaceList" } } } }
   /map/pins:
     post:
       operationId: createMapPin
@@ -2468,6 +2479,24 @@ components:
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/MapPin" } }
       required: [items]
+    NearbyPlace:
+      type: object
+      required: [id, name, address, latitude, longitude, category, openingHours, mapUri]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { type: string }
+        latitude: { type: number, format: double }
+        longitude: { type: number, format: double }
+        category: { type: string }
+        openingHours: { type: [string, "null"] }
+        mapUri: { type: string }
+    NearbyPlaceList:
+      type: object
+      required: [items, attribution]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/NearbyPlace" } }
+        attribution: { type: string, enum: ["© OpenStreetMap contributors"] }
     MapPinInput:
       type: object
       properties:

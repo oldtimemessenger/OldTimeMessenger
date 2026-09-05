@@ -15,9 +15,11 @@ import {
   type CurrentEventRoom,
 } from '@workspace/api-client-react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Alert,
   FlatList,
   Modal,
@@ -70,11 +72,35 @@ export default function CurrentEventRoomScreen() {
   const [message, setMessage] = useState('');
   const [giftRecipientId, setGiftRecipientId] = useState<number | null>(null);
   const [reactionCount, setReactionCount] = useState(0);
+  const [floatingHearts, setFloatingHearts] = useState<Array<{ id: number; progress: Animated.Value; drift: number }>>([]);
+  const nextHeartId = useRef(0);
+  const currentEventSocketRef = useRef<ReturnType<typeof io> | null>(null);
   const [roomUnavailable, setRoomUnavailable] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [audioState, setAudioState] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
   const [audioMuted, setAudioMuted] = useState(false);
   const roomEndedRef = useRef(false);
+
+  const showFloatingHeart = useCallback((withHaptic = false) => {
+    const id = nextHeartId.current++;
+    const progress = new Animated.Value(0);
+    const drift = ((id % 5) - 2) * 13;
+    setReactionCount((count) => count + 1);
+    setFloatingHearts((current) => [...current, { id, progress, drift }]);
+    if (withHaptic) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 1_150,
+      useNativeDriver: true,
+    }).start(() => {
+      setFloatingHearts((current) => current.filter((heart) => heart.id !== id));
+    });
+  }, []);
+
+  const sendHeart = useCallback(() => {
+    showFloatingHeart(true);
+    currentEventSocketRef.current?.emit('current-event-reaction', { roomId });
+  }, [roomId, showFloatingHeart]);
 
   const loadRoom = useCallback(async (join = false) => {
     if (!Number.isInteger(roomId) || roomId < 1) return;
@@ -136,19 +162,29 @@ export default function CurrentEventRoomScreen() {
       if (incoming.roomId !== roomId || !Number.isInteger(incoming.id)) return;
       setMessages((current) => mergeMessages(current, [incoming]));
     };
+    const receiveReaction = (payload: unknown) => {
+      if (!payload || typeof payload !== 'object') return;
+      const incoming = payload as { roomId?: unknown };
+      if (incoming.roomId !== roomId) return;
+      showFloatingHeart();
+    };
     const joinRoom = () => socket.emit('join-current-event', { roomId });
 
+    currentEventSocketRef.current = socket;
     socket.on('connect', joinRoom);
     socket.on('current-event-message', receiveMessage);
+    socket.on('current-event-reaction', receiveReaction);
     socket.on('current-event-room-updated', refreshRoom);
     return () => {
+      if (currentEventSocketRef.current === socket) currentEventSocketRef.current = null;
       socket.emit('leave-current-event', { roomId });
       socket.off('connect', joinRoom);
       socket.off('current-event-message', receiveMessage);
+      socket.off('current-event-reaction', receiveReaction);
       socket.off('current-event-room-updated', refreshRoom);
       socket.disconnect();
     };
-  }, [loadRoom, room?.isLive, room?.viewer.participantId, roomId, session?.authToken]);
+  }, [loadRoom, room?.isLive, room?.viewer.participantId, roomId, session?.authToken, showFloatingHeart]);
 
   const connectAudio = useCallback(async () => {
     if (!room || room.viewer.participantId === null) return;
@@ -350,12 +386,30 @@ export default function CurrentEventRoomScreen() {
             <Ionicons name="gift-outline" size={20} color={colors.foreground} />
             <Text style={[styles.actionText, { color: colors.foreground }]}>gift</Text>
           </Pressable>
-          <Pressable onPress={() => setReactionCount((count) => count + 1)} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="heart-outline" size={20} color={colors.foreground} />
+          <Pressable onPress={sendHeart} style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="heart" size={20} color="#F43F5E" />
             <Text style={[styles.actionText, { color: colors.foreground }]}>{reactionCount || 'react'}</Text>
           </Pressable>
         </View>
       </ScrollView>
+
+      <View pointerEvents="none" style={styles.floatingHeartLayer}>
+        {floatingHearts.map((heart) => (
+          <Animated.View
+            key={heart.id}
+            style={{
+              opacity: heart.progress.interpolate({ inputRange: [0, 0.72, 1], outputRange: [0.95, 0.8, 0] }),
+              transform: [
+                { translateY: heart.progress.interpolate({ inputRange: [0, 1], outputRange: [0, -240] }) },
+                { translateX: heart.progress.interpolate({ inputRange: [0, 1], outputRange: [0, heart.drift] }) },
+                { scale: heart.progress.interpolate({ inputRange: [0, 0.18, 1], outputRange: [0.65, 1.08, 0.9] }) },
+              ],
+            }}
+          >
+            <Ionicons name="heart" size={30 + (heart.id % 3) * 4} color={heart.id % 2 ? '#FB7185' : '#F43F5E'} />
+          </Animated.View>
+        ))}
+      </View>
 
       <View style={[styles.leaveBar, { backgroundColor: colors.background, paddingBottom: insets.bottom + 10 }]}>
         <Pressable onPress={confirmLeaveRoom} style={[styles.leaveButton, { backgroundColor: colors.destructive }]}><Ionicons name="exit-outline" size={19} color={colors.destructiveForeground} /><Text style={[styles.leaveText, { color: colors.destructiveForeground }]}>{room.viewer.role === 'host' ? 'end room' : 'leave quietly'}</Text></Pressable>
@@ -497,6 +551,7 @@ const styles = StyleSheet.create({
   actionButton: { flex: 1, minHeight: 52, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', gap: 3 },
   actionButtonActive: { borderWidth: 0 },
   actionText: { fontSize: 10, fontWeight: '600' },
+  floatingHeartLayer: { position: 'absolute', right: 22, bottom: 124, width: 90, height: 270, alignItems: 'center', justifyContent: 'flex-end' },
   leaveBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 9 },
   leaveButton: { minHeight: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   leaveText: { fontWeight: '600' },

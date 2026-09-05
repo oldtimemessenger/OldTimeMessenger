@@ -27,6 +27,18 @@ const pinInput = z.object({
 const pinUpdate = pinInput.partial();
 const commentInput = z.object({ content: z.string().trim().min(1).max(1_000) });
 const reportInput = z.object({ reason: z.enum(["spam", "harassment", "other"]) });
+const placeCategory = z.enum(["all", "restaurant", "cafe", "shop", "club", "gym", "park", "church"]);
+const osmPlaceSelectors: Record<z.infer<typeof placeCategory>, string[]> = {
+  all: ['["amenity"="restaurant"]', '["amenity"="cafe"]', '["shop"]', '["amenity"="nightclub"]', '["leisure"="fitness_centre"]', '["leisure"="park"]', '["amenity"="place_of_worship"]["religion"="christian"]'],
+  restaurant: ['["amenity"="restaurant"]'],
+  cafe: ['["amenity"="cafe"]'],
+  shop: ['["shop"]'],
+  club: ['["amenity"="nightclub"]'],
+  gym: ['["leisure"="fitness_centre"]'],
+  park: ['["leisure"="park"]'],
+  church: ['["amenity"="place_of_worship"]["religion"="christian"]', '["building"="church"]'],
+};
+const placeCache = new Map<string, { expiresAt: number; items: unknown[] }>();
 
 function id(value: unknown) {
   const number = Number(value);
@@ -97,6 +109,71 @@ router.get("/map/pins/nearby", async (req, res): Promise<void> => {
   const items = await serialize(visible, viewerId, query.data);
   items.sort((left, right) => left.distanceKm - right.distanceKm);
   res.json({ items });
+});
+
+router.get("/map/places/nearby", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
+  const query = z.object({
+    latitude: z.coerce.number().finite().min(-90).max(90),
+    longitude: z.coerce.number().finite().min(-180).max(180),
+    radiusMeters: z.coerce.number().int().min(100).max(20_000).default(5_000),
+    category: placeCategory.default("all"),
+  }).safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Valid coordinates, radius, and place category are required." });
+    return;
+  }
+  const cacheKey = `${query.data.category}:${query.data.latitude.toFixed(3)}:${query.data.longitude.toFixed(3)}:${query.data.radiusMeters}`;
+  const cached = placeCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    res.json({ items: cached.items, attribution: "© OpenStreetMap contributors" });
+    return;
+  }
+  try {
+    const selectors = osmPlaceSelectors[query.data.category]
+      .map((selector) => `nwr(around:${query.data.radiusMeters},${query.data.latitude},${query.data.longitude})${selector};`)
+      .join("");
+    const overpassQuery = `[out:json][timeout:20];(${selectors});out center 30;`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 22_000);
+    const response = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "User-Agent": "Old-Time-Messenger/1.0 (nearby place discovery)",
+      },
+      body: new URLSearchParams({ data: overpassQuery }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const payload = await response.json() as { elements?: Array<any>; remark?: string };
+    if (!response.ok) {
+      res.status(502).json({ error: payload.remark || "OpenStreetMap place search failed." });
+      return;
+    }
+    const items = (payload.elements ?? []).map((element) => {
+      const tags = element.tags ?? {};
+      const latitude = element.lat ?? element.center?.lat;
+      const longitude = element.lon ?? element.center?.lon;
+      const streetAddress = [tags["addr:housenumber"], tags["addr:street"]].filter(Boolean).join(" ");
+      const locality = [tags["addr:city"], tags["addr:state"]].filter(Boolean).join(", ");
+      const address = tags["addr:full"] || [streetAddress, locality].filter(Boolean).join(", ");
+      return {
+        id: `${element.type}:${element.id}`,
+        name: tags.name || tags.brand || "Unnamed place",
+        address,
+        latitude,
+        longitude,
+        category: tags.amenity || tags.leisure || (tags.shop ? "shop" : query.data.category),
+        openingHours: tags.opening_hours || null,
+        mapUri: `https://www.openstreetmap.org/${element.type}/${element.id}`,
+      };
+    }).filter((place) => Number.isFinite(place.latitude) && Number.isFinite(place.longitude) && place.name !== "Unnamed place");
+    placeCache.set(cacheKey, { items, expiresAt: Date.now() + 5 * 60_000 });
+    res.json({ items, attribution: "© OpenStreetMap contributors" });
+  } catch {
+    res.status(502).json({ error: "Nearby places are temporarily unavailable." });
+  }
 });
 
 router.post("/map/pins", async (req, res): Promise<void> => {

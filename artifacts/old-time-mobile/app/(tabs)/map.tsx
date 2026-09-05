@@ -14,13 +14,39 @@ import { userStoryViewerItemId } from '@/components/story-viewer-content';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
-import { createMapPin, createMapPinComment, deleteMapPin, discoveryEmbedUrl, getMapPinComments, getNearbyDiscoveryItems, getNearbyPins, reportMapPin, setMapPinRelation, type DiscoveryItem, type MapComment, type MapPin, type MapVisibility } from '@/lib/map-api';
+import { createMapPin, createMapPinComment, deleteMapPin, discoveryEmbedUrl, getMapPinComments, getNearbyDiscoveryItems, getNearbyPins, getNearbyPlaces, reportMapPin, setMapPinRelation, type DiscoveryItem, type MapComment, type MapPin, type MapVisibility, type NearbyPlace } from '@/lib/map-api';
 import { getNearbyStories, setUserBlocked, type Story } from '@/lib/social-api';
 import CurrentEventsHome from '@/components/current-events-home';
 import { AdMobNativeFeedAd } from '@/components/admob-native-feed-ad';
 import { adManager } from '@/lib/ad-manager';
 
 type Coordinate = { latitude: number; longitude: number };
+type PlaceCategory = 'all' | 'favorites' | 'visited' | 'restaurant' | 'cafe' | 'shop' | 'club' | 'gym' | 'park' | 'church';
+
+const PLACE_CATEGORIES: Array<{ key: PlaceCategory; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { key: 'all', label: 'Explore', icon: 'search' },
+  { key: 'favorites', label: 'Favorites', icon: 'heart' },
+  { key: 'visited', label: 'Visited', icon: 'checkmark-circle' },
+  { key: 'restaurant', label: 'Restaurants', icon: 'restaurant' },
+  { key: 'cafe', label: 'Cafes', icon: 'cafe' },
+  { key: 'shop', label: 'Shops', icon: 'bag-handle' },
+  { key: 'club', label: 'Clubs', icon: 'musical-notes' },
+  { key: 'gym', label: 'Gyms', icon: 'barbell' },
+  { key: 'park', label: 'Parks', icon: 'leaf' },
+  { key: 'church', label: 'Churches', icon: 'business' },
+];
+
+function categoryLabel(category: PlaceCategory) {
+  return PLACE_CATEGORIES.find((item) => item.key === category)?.label ?? 'Place';
+}
+
+function seasonalMapMessage(now = new Date()) {
+  const month = now.getMonth();
+  const day = now.getDate();
+  if (month === 8 && day >= 4 && day <= 8) return 'Happy Labor Day';
+  if ((month === 11 && day === 31) || (month === 0 && day <= 2)) return 'Happy New Year';
+  return null;
+}
 
 const WORLD_REGION: SocialMapRegion = {
   latitude: 24,
@@ -61,12 +87,27 @@ export default function MapScreen() {
   const [pinCoordinate, setPinCoordinate] = useState<Coordinate | null>(null);
   const [placeQuery, setPlaceQuery] = useState('');
   const [placeSearching, setPlaceSearching] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<PlaceCategory>('all');
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const [placesError, setPlacesError] = useState<string | null>(null);
+  const [pinCategory, setPinCategory] = useState<Exclude<PlaceCategory, 'all' | 'favorites' | 'visited'>>('restaurant');
+  const [markVisited, setMarkVisited] = useState(true);
+  const [seasonalVisible, setSeasonalVisible] = useState(true);
   const [currentEventsMode, setCurrentEventsMode] = useState(false);
   const [currentEventRooms, setCurrentEventRooms] = useState<CurrentEventRoom[]>([]);
   const [currentEventsError, setCurrentEventsError] = useState<string | null>(null);
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regionCache = useRef(new Map<string, { loadedAt: number; pins: MapPin[]; stories: Story[]; discoveryItems: DiscoveryItem[] }>());
   const discoveryRequestId = useRef(0);
+  const seasonalMessage = seasonalMapMessage();
+  const visiblePins = useMemo(() => {
+    if (selectedCategory === 'all') return pins;
+    if (selectedCategory === 'favorites') return pins.filter((pin) => pin.viewer.saved);
+    if (selectedCategory === 'visited') return pins.filter((pin) => pin.caption?.startsWith('Visited ·'));
+    const label = categoryLabel(selectedCategory);
+    return pins.filter((pin) => pin.caption?.includes(`· ${label} ·`) || pin.caption?.startsWith(`${label} ·`));
+  }, [pins, selectedCategory]);
 
   useEffect(() => {
     adManager.setActiveSurface('map');
@@ -75,6 +116,34 @@ export default function MapScreen() {
   useEffect(() => {
     setVisibility(settings.locationAudience === 'public' ? 'friends' : settings.locationAudience);
   }, [settings.locationAudience]);
+
+  useEffect(() => {
+    if (!session?.authToken || ['all', 'favorites', 'visited'].includes(selectedCategory)) {
+      setNearbyPlaces([]);
+      setPlacesError(null);
+      return;
+    }
+    let active = true;
+    setPlacesLoading(true);
+    setPlacesError(null);
+    const googleCategory = selectedCategory as Exclude<PlaceCategory, 'favorites' | 'visited'>;
+    void getNearbyPlaces(session.authToken, region.latitude, region.longitude, googleCategory)
+      .then((result) => {
+        if (active) setNearbyPlaces(result.items);
+      })
+      .catch((requestError) => {
+        if (active) {
+          setNearbyPlaces([]);
+          setPlacesError(requestError instanceof Error ? requestError.message : 'Could not load nearby places.');
+        }
+      })
+      .finally(() => {
+        if (active) setPlacesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedCategory, session?.authToken]);
 
   const loadCurrentEventRooms = useCallback(async () => {
     if (!session?.authToken) return;
@@ -263,6 +332,22 @@ export default function MapScreen() {
     });
   }
 
+  async function openPlaceDetails(place: NearbyPlace) {
+    const url = place.mapUri;
+    if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+  }
+
+  function postPlaceVisit(place: NearbyPlace) {
+    setPlaceQuery(place.name);
+    setPinCoordinate({ latitude: place.latitude, longitude: place.longitude });
+    setRegion({ latitude: place.latitude, longitude: place.longitude, latitudeDelta: 0.03, longitudeDelta: 0.04 });
+    if (['restaurant', 'cafe', 'shop', 'club', 'gym', 'park', 'church'].includes(selectedCategory)) {
+      setPinCategory(selectedCategory as Exclude<PlaceCategory, 'all' | 'favorites' | 'visited'>);
+    }
+    setMarkVisited(true);
+    setComposerOpen(true);
+  }
+
   async function publishPin() {
     if (!pinCoordinate) {
       Alert.alert('Choose a location', 'Move the map or search for the place where this pin belongs.');
@@ -274,7 +359,9 @@ export default function MapScreen() {
     }
     try {
       const expiresAt = expiry === 'never' ? null : Date.now() + (expiry === 'day' ? 86_400_000 : 604_800_000);
-      const created = await createMapPin(session.authToken, { ...pinCoordinate, caption: caption.trim() || undefined, visibility, expiresAt });
+      const placeName = placeQuery.trim() || 'Shared place';
+      const placeTag = `${markVisited ? 'Visited · ' : ''}${categoryLabel(pinCategory)} · ${placeName}`;
+      const created = await createMapPin(session.authToken, { ...pinCoordinate, caption: caption.trim() ? `${placeTag}\n${caption.trim()}` : placeTag, visibility, expiresAt });
       setPins((items) => [created, ...items]);
       regionCache.current.clear();
       setCaption('');
@@ -309,18 +396,16 @@ export default function MapScreen() {
           onPress={() => setCurrentEventsMode(true)}
           accessibilityRole="button"
           accessibilityLabel="Open Current Events"
-          style={[styles.currentEventsButton, { top: insets.top + 10, backgroundColor: colors.primary }]}
+          style={[styles.currentEventsButton, { top: insets.top + 10, backgroundColor: colors.card, borderColor: colors.border }]}
         >
-          <Ionicons name="mic-outline" size={16} color={colors.primaryForeground} />
-          <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>What’s happening</Text>
-          <View style={styles.liveDot} />
-          <Text style={{ color: colors.primaryForeground, fontSize: 12, fontWeight: '800' }}>{currentEventRooms.length}</Text>
+          <Ionicons name="mic" size={21} color={colors.foreground} />
+          {currentEventRooms.length > 0 ? <View style={styles.liveCount}><Text style={styles.liveCountText}>{currentEventRooms.length}</Text></View> : null}
         </Pressable>
         {currentEventsError ? <Pressable onPress={() => void loadCurrentEventRooms()} style={[styles.currentEventsError, { top: insets.top + 56, backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="button" accessibilityLabel="Retry loading Current Events"><Ionicons name="cloud-offline-outline" size={15} color={colors.destructive} /><Text style={{ color: colors.destructive, fontSize: 12, fontWeight: '700' }}>Retry Current Events</Text></Pressable> : null}
         <SocialMap
           center={location}
           region={region}
-          pins={pins}
+          pins={visiblePins}
           stories={stories}
           discoveryItems={mapDiscoveryItems}
           currentEventRooms={currentEventRooms}
@@ -345,6 +430,47 @@ export default function MapScreen() {
           }}
           onRegionChange={changeRegion}
         />
+        {seasonalVisible && seasonalMessage ? (
+          <Pressable onPress={() => setSeasonalVisible(false)} style={[styles.seasonalTag, { top: insets.top + 12, backgroundColor: colors.card, borderColor: colors.border }]} accessibilityLabel={`Dismiss ${seasonalMessage}`}>
+            <Text style={[styles.seasonalText, { color: colors.foreground }]}>{seasonalMessage}</Text>
+            <Ionicons name="close" size={14} color={colors.mutedForeground} />
+          </Pressable>
+        ) : null}
+        {!placingPin && !storyPreview && !selectedPin && !discoveryCoordinate ? (
+          <View style={[styles.placeCategoryTray, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placeCategoryList}>
+              {PLACE_CATEGORIES.map((item) => {
+                const active = selectedCategory === item.key;
+                return (
+                  <Pressable
+                    key={item.key}
+                    onPress={() => setSelectedCategory(item.key)}
+                    style={[styles.placeCategoryChip, { backgroundColor: active ? colors.foreground : colors.muted }]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Ionicons name={item.icon} size={15} color={active ? colors.background : colors.foreground} />
+                    <Text style={[styles.placeCategoryText, { color: active ? colors.background : colors.foreground }]}>{item.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable onPress={startPinPlacement} style={[styles.placePostButton, { backgroundColor: colors.primary }]} accessibilityLabel="Post a place visit">
+              <Ionicons name="add" size={20} color={colors.primaryForeground} />
+            </Pressable>
+          </View>
+        ) : null}
+        {!placingPin && !storyPreview && !selectedPin && !discoveryCoordinate && !['all', 'favorites', 'visited'].includes(selectedCategory) ? (
+          <NearbyPlacesPanel
+            category={selectedCategory}
+            places={nearbyPlaces}
+            loading={placesLoading}
+            error={placesError}
+            colors={colors}
+            onDirections={(place) => void openPlaceDetails(place)}
+            onPost={postPlaceVisit}
+          />
+        ) : null}
         {loading ? <View style={[styles.loadingPill, { top: insets.top + 10, backgroundColor: colors.card }]}><ActivityIndicator size="small" color={colors.primary} /></View> : null}
         {error ? <Pressable onPress={() => void loadRegion(region, true)} style={[styles.errorPill, { top: insets.top + 10, backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name="cloud-offline-outline" size={17} color={colors.destructive} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>Retry area</Text></Pressable> : null}
         {discoveryCoordinate ? (
@@ -402,11 +528,11 @@ export default function MapScreen() {
             }}
           />
         ) : null}
-        {!placingPin && !storyPreview && !selectedPin && !discoveryCoordinate && stories.length > 0 ? (
+        {!placingPin && !storyPreview && !selectedPin && !discoveryCoordinate && stories.length > 0 && selectedCategory === 'all' ? (
           <MapStoryTray stories={stories} colors={colors} onSelect={previewMapStory} />
         ) : null}
       </View>
-      <PinComposer visible={composerOpen} coordinate={pinCoordinate} colors={colors} caption={caption} setCaption={setCaption} visibility={visibility} setVisibility={setVisibility} expiry={expiry} setExpiry={setExpiry} onClose={() => { setComposerOpen(false); setPinCoordinate(null); }} onSave={() => void publishPin()} />
+      <PinComposer visible={composerOpen} coordinate={pinCoordinate} colors={colors} caption={caption} setCaption={setCaption} visibility={visibility} setVisibility={setVisibility} expiry={expiry} setExpiry={setExpiry} category={pinCategory} setCategory={setPinCategory} markVisited={markVisited} setMarkVisited={setMarkVisited} placeName={placeQuery} onClose={() => { setComposerOpen(false); setPinCoordinate(null); }} onSave={() => void publishPin()} />
       <CommentsSheet pin={commentPin} token={session?.authToken ?? ''} colors={colors} onClose={() => setCommentPin(null)} />
       <Modal visible={storyOpen !== null} transparent animationType="fade" onRequestClose={() => setStoryOpen(null)}>
         {storyOpen ? (
@@ -563,6 +689,42 @@ function MapStoryTray({ stories, colors, onSelect }: { stories: Story[]; colors:
   );
 }
 
+function NearbyPlacesPanel({ category, places, loading, error, colors, onDirections, onPost }: { category: PlaceCategory; places: NearbyPlace[]; loading: boolean; error: string | null; colors: any; onDirections: (place: NearbyPlace) => void; onPost: (place: NearbyPlace) => void }) {
+  return (
+    <View style={[styles.placesPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.placesPanelHeader}>
+        <View>
+          <Text style={[styles.placesPanelTitle, { color: colors.foreground }]}>{categoryLabel(category)}</Text>
+          <Text style={[styles.placesAttribution, { color: colors.mutedForeground }]}>Nearby · © OpenStreetMap contributors</Text>
+        </View>
+        {loading ? <ActivityIndicator color={colors.primary} /> : null}
+      </View>
+      {error ? <Text style={[styles.placesEmpty, { color: colors.destructive }]}>{error}</Text> : null}
+      {!loading && !error && places.length === 0 ? <Text style={[styles.placesEmpty, { color: colors.mutedForeground }]}>No nearby places found in this area.</Text> : null}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.placesList}>
+        {places.map((place) => (
+          <View key={place.id} style={[styles.placeCard, { borderTopColor: colors.border }]}>
+            <View style={[styles.placeTypeIcon, { backgroundColor: colors.muted }]}>
+              <Ionicons name={PLACE_CATEGORIES.find((item) => item.key === category)?.icon ?? 'location'} size={18} color={colors.foreground} />
+            </View>
+            <View style={styles.placeCardCopy}>
+              <Text numberOfLines={1} style={[styles.placeCardTitle, { color: colors.foreground }]}>{place.name}</Text>
+              <Text numberOfLines={1} style={[styles.placeCardAddress, { color: colors.mutedForeground }]}>{place.address}</Text>
+              <Text numberOfLines={1} style={[styles.placeCardMeta, { color: colors.mutedForeground }]}>{place.openingHours || 'Hours not listed'}</Text>
+            </View>
+            <Pressable onPress={() => onDirections(place)} style={[styles.placeMiniAction, { backgroundColor: colors.muted }]} accessibilityLabel={`Directions to ${place.name}`}>
+              <Ionicons name="navigate" size={17} color={colors.foreground} />
+            </Pressable>
+            <Pressable onPress={() => onPost(place)} style={[styles.placeMiniAction, { backgroundColor: colors.primary }]} accessibilityLabel={`Post that you visited ${place.name}`}>
+              <Ionicons name="camera" size={17} color={colors.primaryForeground} />
+            </Pressable>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 type MapActivity =
   | { kind: 'discovery'; id: string; item: DiscoveryItem }
   | { kind: 'story'; id: string; story: Story }
@@ -647,8 +809,9 @@ function PinAction({ icon, label, active, colors, onPress }: { icon: keyof typeo
   return <Pressable onPress={onPress} style={styles.pinAction}><Ionicons name={icon} size={18} color={active ? colors.destructive : colors.mutedForeground} /><Text style={{ color: active ? colors.destructive : colors.mutedForeground, fontSize: 12 }}>{label}</Text></Pressable>;
 }
 
-function PinComposer({ visible, coordinate, colors, caption, setCaption, visibility, setVisibility, expiry, setExpiry, onClose, onSave }: any) {
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><View style={[styles.sheet, { backgroundColor: colors.background }]}><View style={[styles.grabber, { backgroundColor: colors.border }]} /><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Post location</Text><Text style={[styles.sheetText, { color: colors.mutedForeground }]}>{coordinate ? 'Your chosen map location will be attached to this pin.' : 'Choose a location on the map before posting.'}</Text><TextInput value={caption} onChangeText={setCaption} placeholder="Add a caption (optional)" placeholderTextColor={colors.mutedForeground} multiline maxLength={280} style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /><Text style={[styles.field, { color: colors.foreground }]}>Who can see this?</Text><View style={styles.choices}>{(['public', 'friends', 'followers', 'private'] as MapVisibility[]).map((item) => <Pressable key={item} onPress={() => setVisibility(item)} style={[styles.choice, { borderColor: visibility === item ? colors.primary : colors.border, backgroundColor: visibility === item ? colors.secondary : 'transparent' }]}><Text style={{ color: colors.foreground }}>{item}</Text></Pressable>)}</View><Text style={[styles.field, { color: colors.foreground }]}>Expiry</Text><View style={styles.choices}>{(['day', 'week', 'never'] as const).map((item) => <Pressable key={item} onPress={() => setExpiry(item)} style={[styles.choice, { borderColor: expiry === item ? colors.primary : colors.border }]}><Text style={{ color: colors.foreground }}>{item === 'day' ? '24 hours' : item === 'week' ? '7 days' : 'Never'}</Text></Pressable>)}</View><View style={styles.sheetActions}><Pressable onPress={onClose}><Text style={{ color: colors.mutedForeground, fontWeight: '700' }}>Cancel</Text></Pressable><Pressable onPress={onSave} style={[styles.publish, { backgroundColor: colors.primary }]}><Text style={styles.primaryText}>Post pin</Text></Pressable></View></View></View></Modal>;
+function PinComposer({ visible, coordinate, colors, caption, setCaption, visibility, setVisibility, expiry, setExpiry, category, setCategory, markVisited, setMarkVisited, placeName, onClose, onSave }: any) {
+  const categories = PLACE_CATEGORIES.filter((item) => !['all', 'favorites', 'visited'].includes(item.key));
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><View style={[styles.sheet, { backgroundColor: colors.background }]}><View style={[styles.grabber, { backgroundColor: colors.border }]} /><Text style={[styles.sheetTitle, { color: colors.foreground }]}>Post this place</Text><Text style={[styles.sheetText, { color: colors.mutedForeground }]}>{coordinate ? `${placeName || 'Your chosen location'} will be attached to this post.` : 'Choose a location on the map before posting.'}</Text><Text style={[styles.field, { color: colors.foreground }]}>Place type</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.composerCategories}>{categories.map((item) => <Pressable key={item.key} onPress={() => setCategory(item.key)} style={[styles.choice, { borderColor: category === item.key ? colors.primary : colors.border, backgroundColor: category === item.key ? colors.secondary : 'transparent', flexDirection: 'row', alignItems: 'center', gap: 6 }]}><Ionicons name={item.icon} size={15} color={colors.foreground} /><Text style={{ color: colors.foreground }}>{item.label}</Text></Pressable>)}</ScrollView><Pressable onPress={() => setMarkVisited(!markVisited)} style={[styles.visitedChoice, { borderColor: markVisited ? colors.primary : colors.border, backgroundColor: markVisited ? colors.secondary : 'transparent' }]}><Ionicons name={markVisited ? 'checkmark-circle' : 'ellipse-outline'} size={19} color={markVisited ? colors.primary : colors.mutedForeground} /><Text style={{ color: colors.foreground, fontWeight: '700' }}>I visited this place</Text></Pressable><TextInput value={caption} onChangeText={setCaption} placeholder="Add a caption (optional)" placeholderTextColor={colors.mutedForeground} multiline maxLength={280} style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /><Text style={[styles.field, { color: colors.foreground }]}>Who can see this?</Text><View style={styles.choices}>{(['public', 'friends', 'followers', 'private'] as MapVisibility[]).map((item) => <Pressable key={item} onPress={() => setVisibility(item)} style={[styles.choice, { borderColor: visibility === item ? colors.primary : colors.border, backgroundColor: visibility === item ? colors.secondary : 'transparent' }]}><Text style={{ color: colors.foreground }}>{item}</Text></Pressable>)}</View><Text style={[styles.field, { color: colors.foreground }]}>Expiry</Text><View style={styles.choices}>{(['day', 'week', 'never'] as const).map((item) => <Pressable key={item} onPress={() => setExpiry(item)} style={[styles.choice, { borderColor: expiry === item ? colors.primary : colors.border }]}><Text style={{ color: colors.foreground }}>{item === 'day' ? '24 hours' : item === 'week' ? '7 days' : 'Never'}</Text></Pressable>)}</View><View style={styles.sheetActions}><Pressable onPress={onClose}><Text style={{ color: colors.mutedForeground, fontWeight: '700' }}>Cancel</Text></Pressable><Pressable onPress={onSave} style={[styles.publish, { backgroundColor: colors.primary }]}><Text style={styles.primaryText}>Post place</Text></Pressable></View></View></View></Modal>;
 }
 
 function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; token: string; colors: any; onClose: () => void }) {
@@ -662,11 +825,33 @@ function CommentsSheet({ pin, token, colors, onClose }: { pin: MapPin | null; to
 
 const styles = StyleSheet.create({
   mapCanvas: { flex: 1, position: 'relative', overflow: 'hidden' },
-  currentEventsButton: { position: 'absolute', zIndex: 8, left: 68, right: 68, minHeight: 40, borderRadius: 21, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
+  currentEventsButton: { position: 'absolute', zIndex: 11, right: 14, width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
+  liveCount: { position: 'absolute', right: -3, top: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  liveCountText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   currentEventsError: { position: 'absolute', zIndex: 8, alignSelf: 'center', minHeight: 32, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#EF4444', marginLeft: 1 },
   loadingPill: { position: 'absolute', left: 14, zIndex: 7, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
   errorPill: { position: 'absolute', left: 14, zIndex: 7, minHeight: 40, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  seasonalTag: { position: 'absolute', zIndex: 10, alignSelf: 'center', minHeight: 38, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 8, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 },
+  seasonalText: { fontSize: 13, fontWeight: '900' },
+  placeCategoryTray: { position: 'absolute', zIndex: 10, left: 8, right: 8, bottom: 8, minHeight: 58, borderRadius: 25, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', paddingLeft: 8, paddingRight: 7, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 14, elevation: 6 },
+  placeCategoryList: { alignItems: 'center', gap: 7, paddingRight: 8 },
+  placeCategoryChip: { minHeight: 38, borderRadius: 19, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  placeCategoryText: { fontSize: 12, fontWeight: '800' },
+  placePostButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  placesPanel: { position: 'absolute', zIndex: 9, left: 8, right: 8, bottom: 74, maxHeight: '55%', borderRadius: 25, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, paddingTop: 12, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 14, elevation: 6 },
+  placesPanelHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  placesPanelTitle: { fontSize: 17, fontWeight: '900' },
+  placesAttribution: { fontSize: 11, marginTop: 2 },
+  placesList: { paddingBottom: 8 },
+  placesEmpty: { fontSize: 12, paddingVertical: 16 },
+  placeCard: { minHeight: 74, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 9 },
+  placeTypeIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  placeCardCopy: { flex: 1 },
+  placeCardTitle: { fontSize: 13, fontWeight: '900' },
+  placeCardAddress: { fontSize: 10, marginTop: 2 },
+  placeCardMeta: { fontSize: 10, fontWeight: '700', marginTop: 3 },
+  placeMiniAction: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   selectedPinPanel: { position: 'absolute', left: 10, right: 10, bottom: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 6 },
   placementPanel: { position: 'absolute', zIndex: 12, left: 10, right: 10, bottom: 10, borderRadius: 26, borderWidth: 1, padding: 14, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 8 },
   placementHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
@@ -686,7 +871,7 @@ const styles = StyleSheet.create({
   storyPreviewText: { fontSize: 12, lineHeight: 17, marginTop: 3 },
   storyPlay: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   storyPreviewClose: { position: 'absolute', top: 7, right: 8, width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  storyTray: { position: 'absolute', zIndex: 9, left: 8, right: 8, bottom: 8, borderRadius: 25, borderWidth: 1, paddingTop: 10, paddingBottom: 8, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  storyTray: { position: 'absolute', zIndex: 9, left: 8, right: 8, bottom: 74, borderRadius: 25, borderWidth: 1, paddingTop: 10, paddingBottom: 8, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
   storyTrayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 13, marginBottom: 7 },
   storyTrayLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   storyTrayTitle: { fontSize: 12, fontWeight: '900' },
@@ -733,5 +918,5 @@ const styles = StyleSheet.create({
   post: { marginTop: 12, minHeight: 46, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   postText: { fontWeight: '800' }, error: { borderRadius: 10, padding: 12, marginTop: 12 },
   pin: { borderWidth: 1, borderRadius: 24, padding: 14 }, pinHead: { flexDirection: 'row', alignItems: 'center', gap: 10 }, avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: '#fff', fontWeight: '800' }, author: { fontWeight: '800' }, meta: { fontSize: 12, marginTop: 2 }, caption: { fontSize: 15, lineHeight: 21, marginTop: 12 }, expiry: { fontSize: 12, marginTop: 8 }, pinActions: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingTop: 10, flexDirection: 'row' }, pinAction: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4 },
-  modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,.35)', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }, commentsSheet: { height: '72%', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10 }, grabber: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 }, sheetTitle: { fontSize: 20, fontWeight: '800' }, sheetText: { lineHeight: 19, marginTop: 6 }, input: { minHeight: 82, borderWidth: 1, borderRadius: 12, padding: 12, textAlignVertical: 'top', marginTop: 16 }, field: { fontWeight: '800', marginTop: 16 }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }, choice: { borderWidth: 1, borderRadius: 18, paddingVertical: 8, paddingHorizontal: 12 }, sheetActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }, publish: { borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12 }, commentsTitle: { paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }, comment: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 3 }, emptyComments: { textAlign: 'center', marginTop: 32 }, commentEntry: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', padding: 14, gap: 10, alignItems: 'center' },
+  modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,.35)', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }, commentsSheet: { height: '72%', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10 }, grabber: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 }, sheetTitle: { fontSize: 20, fontWeight: '800' }, sheetText: { lineHeight: 19, marginTop: 6 }, input: { minHeight: 82, borderWidth: 1, borderRadius: 12, padding: 12, textAlignVertical: 'top', marginTop: 16 }, field: { fontWeight: '800', marginTop: 16 }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }, choice: { borderWidth: 1, borderRadius: 18, paddingVertical: 8, paddingHorizontal: 12 }, composerCategories: { gap: 8, paddingVertical: 8 }, visitedChoice: { minHeight: 44, borderRadius: 22, borderWidth: 1, marginTop: 8, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 8 }, sheetActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 }, publish: { borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12 }, commentsTitle: { paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }, comment: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 3 }, emptyComments: { textAlign: 'center', marginTop: 32 }, commentEntry: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', padding: 14, gap: 10, alignItems: 'center' },
 });

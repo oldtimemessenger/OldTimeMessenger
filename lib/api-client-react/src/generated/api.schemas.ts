@@ -555,6 +555,30 @@ export interface MapPinList {
   items: MapPin[];
 }
 
+export interface NearbyPlace {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  category: string;
+  /** @nullable */
+  openingHours: string | null;
+  mapUri: string;
+}
+
+export type NearbyPlaceListAttribution = typeof NearbyPlaceListAttribution[keyof typeof NearbyPlaceListAttribution];
+
+
+export const NearbyPlaceListAttribution = {
+  '©_OpenStreetMap_contributors': '© OpenStreetMap contributors',
+} as const;
+
+export interface NearbyPlaceList {
+  items: NearbyPlace[];
+  attribution: NearbyPlaceListAttribution;
+}
+
 export type MapPinInputVisibility = typeof MapPinInputVisibility[keyof typeof MapPinInputVisibility];
 
 
@@ -1400,6 +1424,39 @@ longitude: number;
  */
 radiusKm?: number;
 };
+
+export type GetNearbyPlacesParams = {
+/**
+ * @minimum -90
+ * @maximum 90
+ */
+latitude: number;
+/**
+ * @minimum -180
+ * @maximum 180
+ */
+longitude: number;
+/**
+ * @minimum 100
+ * @maximum 20000
+ */
+radiusMeters?: number;
+category?: GetNearbyPlacesCategory;
+};
+
+export type GetNearbyPlacesCategory = typeof GetNearbyPlacesCategory[keyof typeof GetNearbyPlacesCategory];
+
+
+export const GetNearbyPlacesCategory = {
+  all: 'all',
+  restaurant: 'restaurant',
+  cafe: 'cafe',
+  shop: 'shop',
+  club: 'club',
+  gym: 'gym',
+  park: 'park',
+  church: 'church',
+} as const;
 
 export type GetCurrentEventRoomsParams = {
 topic?: CurrentEventTopic;

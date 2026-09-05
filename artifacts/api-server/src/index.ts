@@ -72,6 +72,8 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   const userId = socket.data.userId as number;
   const rawToken = socket.handshake.auth.token as string;
+  let reactionWindowStartedAt = Date.now();
+  let reactionsInWindow = 0;
 
   socket.join(`user_${userId}`);
   void db
@@ -140,6 +142,27 @@ io.on("connection", (socket) => {
     if (typeof roomId === "number" && Number.isInteger(roomId) && roomId > 0) {
       socket.leave(`current_event_${roomId}`);
     }
+  });
+  socket.on("current-event-reaction", (payload: unknown) => {
+    const roomId =
+      payload && typeof payload === "object" ? (payload as { roomId?: unknown }).roomId : null;
+    if (typeof roomId !== "number" || !Number.isInteger(roomId) || roomId <= 0) return;
+    const roomName = `current_event_${roomId}`;
+    if (!socket.rooms.has(roomName)) return;
+
+    const now = Date.now();
+    if (now - reactionWindowStartedAt >= 1_000) {
+      reactionWindowStartedAt = now;
+      reactionsInWindow = 0;
+    }
+    if (reactionsInWindow >= 12) return;
+    reactionsInWindow += 1;
+
+    socket.to(roomName).emit("current-event-reaction", {
+      roomId,
+      userId,
+      sentAt: now,
+    });
   });
   socket.on("typing", async (payload: unknown) => {
     if (!payload || typeof payload !== "object") return;

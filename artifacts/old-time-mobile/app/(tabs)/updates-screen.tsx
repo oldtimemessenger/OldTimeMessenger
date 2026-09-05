@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import {
   ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
-  FlatList, Dimensions, Platform, Share, PanResponder
+  Animated, FlatList, Dimensions, Platform, Share, PanResponder
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -1225,6 +1226,38 @@ function CreatorFeedPager({ posts, initialIndex, token, colors, headerControls, 
   );
 }
 
+function HeartBurst({ burstKey }: { burstKey: number }) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!burstKey) return;
+    progress.setValue(0);
+    Animated.sequence([
+      Animated.spring(progress, { toValue: 0.68, friction: 4, tension: 140, useNativeDriver: true }),
+      Animated.timing(progress, { toValue: 1, duration: 360, useNativeDriver: true }),
+    ]).start();
+  }, [burstKey, progress]);
+
+  if (!burstKey) return null;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.creatorHeart,
+        {
+          opacity: progress.interpolate({ inputRange: [0, 0.68, 1], outputRange: [0, 0.95, 0] }),
+          transform: [
+            { scale: progress.interpolate({ inputRange: [0, 0.68, 1], outputRange: [0.35, 1.08, 1] }) },
+            { rotate: '-8deg' },
+          ],
+        },
+      ]}
+    >
+      <Ionicons name="heart" size={118} color="#fff" style={styles.heartBurstShadow} />
+    </Animated.View>
+  );
+}
+
 function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOpenProfile, onChanged }: {
   post: SocialPost;
   active: boolean;
@@ -1238,7 +1271,7 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
   const insets = useSafeAreaInsets();
   const [muted, setMuted] = useState(true);
   const [userPaused, setUserPaused] = useState(false);
-  const [showHeart, setShowHeart] = useState(false);
+  const [heartBurstKey, setHeartBurstKey] = useState(0);
   const [saveInFlight, setSaveInFlight] = useState(false);
   const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const relationInFlightRef = useRef<{ like: boolean; save: boolean }>({ like: false, save: false });
@@ -1279,8 +1312,8 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
 
   function doubleTap() {
     if (!post.viewer.liked) void changeRelation('like');
-    setShowHeart(true);
-    setTimeout(() => setShowHeart(false), 650);
+    setHeartBurstKey((key) => key + 1);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }
 
   function singleTap() {
@@ -1288,7 +1321,6 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
       if (active) setUserPaused((value) => !value);
       return;
     }
-    doubleTap();
   }
 
   function handleMediaTap() {
@@ -1323,7 +1355,7 @@ function CreatorFeedPost({ post, active, token, colors, onComment, onShare, onOp
         {mediaUrl && media?.type === 'video' ? <VideoSurface source={mediaUrl} style={StyleSheet.absoluteFill} muted={muted} paused={!active || userPaused} /> : mediaUrl ? <Image source={{ uri: mediaUrl }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
       </Pressable>
       <View style={styles.creatorFeedShade} pointerEvents="none" />
-      {showHeart ? <View style={styles.creatorHeart} pointerEvents="none"><Ionicons name="heart" size={120} color="#fff" /></View> : null}
+      <HeartBurst burstKey={heartBurstKey} />
       <Pressable onPress={() => setMuted((value) => !value)} style={[styles.creatorMuteButton, { top: Math.max(insets.top, 20) + 14 }]} accessibilityRole="button" accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}>
         <Ionicons name={muted ? 'volume-mute' : 'volume-medium'} size={20} color="#fff" />
       </Pressable>
@@ -1414,17 +1446,34 @@ function FeedPager({ posts, initialIndex, onClose, colors, onLike, onSave, onCom
 
 function FeedPost({ post, active, followed, onLike, onSave, onComment, onShare, onFollow, onHide, onOpenProfile, colors }: any) {
   const [muted, setMuted] = useState(true);
-  const [showHeart, setShowHeart] = useState(false);
+  const [heartBurstKey, setHeartBurstKey] = useState(0);
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+  }, []);
 
   function doubleTap() {
     if (!post.liked) onLike();
-    setShowHeart(true);
-    setTimeout(() => setShowHeart(false), 700);
+    setHeartBurstKey((key) => key + 1);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }
+
+  function handleMediaTap() {
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+      tapTimeoutRef.current = null;
+      doubleTap();
+      return;
+    }
+    tapTimeoutRef.current = setTimeout(() => {
+      tapTimeoutRef.current = null;
+    }, 220);
   }
 
   return (
     <View style={{ width: WINDOW_WIDTH, height: WINDOW_HEIGHT, backgroundColor: post.color }}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={doubleTap} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={handleMediaTap} accessibilityRole="button" accessibilityLabel="Post media" accessibilityHint="Double tap to like" />
 
       {post.uri && (post as UpdatePost & { type?: string }).type === 'video' ? (
         <VideoSurface source={post.uri} style={StyleSheet.absoluteFill} muted paused />
@@ -1436,11 +1485,7 @@ function FeedPost({ post, active, followed, onLike, onSave, onComment, onShare, 
         </View>
       )}
 
-      {showHeart && (
-         <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 20 }]}>
-           <Ionicons name="heart" size={120} color="#fff" style={{ opacity: 0.8 }} />
-         </View>
-      )}
+      <HeartBurst burstKey={heartBurstKey} />
 
       <Pressable onPress={() => setMuted(!muted)} style={{ position: 'absolute', top: 60, right: 16, backgroundColor: 'rgba(0,0,0,0.3)', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
         <Ionicons name={muted ? "volume-mute" : "volume-medium"} size={20} color="#fff" />
@@ -3356,6 +3401,7 @@ const styles = StyleSheet.create({
   creatorMuteButton: { position: 'absolute', right: 16, width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   creatorFeedShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.16)' },
   creatorHeart: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', zIndex: 20 },
+  heartBurstShadow: { textShadowColor: 'rgba(0,0,0,0.22)', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 8 },
   creatorFeedActions: { position: 'absolute', right: 12, alignItems: 'center', gap: 20 },
   creatorAction: { alignItems: 'center', minWidth: 42 },
   creatorActionCount: { color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 },
