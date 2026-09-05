@@ -182,7 +182,11 @@ export default function CurrentEventRoomScreen() {
   const activeRecipientId = giftRecipientId ?? speakers.find((participant) => participant.user.id !== room?.viewer.participantId)?.user.id ?? speakers[0]?.user.id ?? null;
 
   useEffect(() => {
-    if (room?.viewer.role === 'host' && !session?.phoneVerified && !verifyPromptDismissed) setVerifyPromptOpen(true);
+    if (room?.viewer.role === 'host' && !session?.phoneVerified && !verifyPromptDismissed) {
+      setVerifyPromptOpen(true);
+    } else {
+      setVerifyPromptOpen(false);
+    }
   }, [room?.viewer.role, session?.phoneVerified, verifyPromptDismissed]);
 
   async function leaveRoom() {
@@ -394,22 +398,24 @@ export default function CurrentEventRoomScreen() {
           <View style={styles.modalShade} />
           <View style={[styles.chatSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 10 }]}>
             <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.foreground }]}>People</Text><Pressable onPress={() => setPeopleOpen(false)}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable></View>
-            <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>HOSTS & SPEAKERS</Text>
-            {speakers.map((participant) => (
-              <View key={participant.id} style={styles.controlRow}>
-                <Avatar name={participant.user.name} size={30} color={colors.primary} />
-                <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name} · {participant.role}</Text>
-                {canModerate && participant.id !== room.viewer.participantId && participant.role !== 'host' ? <Pressable onPress={() => void moderate(participant, participant.muted ? 'unmute' : 'mute')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>{participant.muted ? 'Unmute' : 'Mute'}</Text></Pressable> : null}
-              </View>
-            ))}
-            <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>AUDIENCE</Text>
-            {listeners.length === 0 ? <Text style={[styles.mutedNote, { color: colors.mutedForeground }]}>No listeners right now.</Text> : listeners.map((participant) => (
-              <View key={participant.id} style={styles.controlRow}>
-                <Avatar name={participant.user.name} size={30} color={colors.foreground} />
-                <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}</Text>
-                {canModerate ? <Pressable onPress={() => void promoteFromPeople(participant)} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite to speak</Text></Pressable> : null}
-              </View>
-            ))}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>HOSTS & SPEAKERS</Text>
+              {speakers.map((participant) => (
+                <View key={participant.id} style={styles.controlRow}>
+                  <Avatar name={participant.user.name} size={30} color={colors.primary} />
+                  <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name} · {participant.role}</Text>
+                  {canModerate && participant.id !== room.viewer.participantId && participant.role !== 'host' ? <Pressable onPress={() => void moderate(participant, participant.muted ? 'unmute' : 'mute')} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>{participant.muted ? 'Unmute' : 'Mute'}</Text></Pressable> : null}
+                </View>
+              ))}
+              <Text style={[styles.peopleHeading, { color: colors.mutedForeground }]}>AUDIENCE</Text>
+              {listeners.length === 0 ? <Text style={[styles.mutedNote, { color: colors.mutedForeground }]}>No listeners right now.</Text> : listeners.map((participant) => (
+                <View key={participant.id} style={styles.controlRow}>
+                  <Avatar name={participant.user.name} size={30} color={colors.foreground} />
+                  <Text style={[styles.controlName, { color: colors.foreground }]}>{participant.user.name}</Text>
+                  {canModerate ? <Pressable onPress={() => void promoteFromPeople(participant)} style={[styles.smallAction, { backgroundColor: colors.muted }]}><Text style={[styles.smallActionText, { color: colors.primary }]}>Invite to speak</Text></Pressable> : null}
+                </View>
+              ))}
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>

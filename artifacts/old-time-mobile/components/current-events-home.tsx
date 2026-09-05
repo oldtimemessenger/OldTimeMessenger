@@ -138,7 +138,7 @@ export default function CurrentEventsHome({
   const sections = useMemo(() => {
     const sorted = [...rooms].sort((left, right) => (right.counts.listeners + right.counts.speakers) - (left.counts.listeners + left.counts.speakers));
     return [
-      { key: 'live', title: 'LIVE NOW', items: rooms },
+      { key: 'live', title: 'LIVE NOW', items: sorted },
       { key: 'friends', title: 'FRIENDS ARE TALKING', items: sorted.filter((room) => room.counts.speakers >= 2).slice(0, 4) },
       { key: 'trending', title: 'TRENDING', items: sorted.slice(0, 6) },
       { key: 'for-you', title: 'FOR YOU', items: sorted.filter((room) => room.topic === topic || topic === 'for-you').slice(0, 6) },
