@@ -1047,7 +1047,7 @@ router.post("/users/contact-discovery", async (req, res): Promise<void> => {
     ne(usersTable.id, userId),
     inArray(usersTable.phoneDiscoveryPermission, ["contacts", "everyone"]),
   ));
-  const visible = [];
+  const visible: Array<{ phoneHash: string; user: ReturnType<typeof parseUser> }> = [];
   for (const user of matches) {
     if (!(await usersAreBlocked(userId, user.id)) && user.phoneDiscoveryHash) {
       visible.push({ phoneHash: user.phoneDiscoveryHash, user: parseUser(user, userId) });
@@ -1099,7 +1099,12 @@ router.get("/users/:userId/inbox", async (req, res): Promise<void> => {
     .select({ chatId: chatParticipantsTable.chatId })
     .from(chatParticipantsTable)
     .where(eq(chatParticipantsTable.userId, viewer.id));
-  const items = [];
+  const items: Array<{
+    chat: ReturnType<typeof parseChat>;
+    contact: ReturnType<typeof parseUser>;
+    lastMessage: Awaited<ReturnType<typeof serializeMessages>>[number] | null;
+    unreadCount: number;
+  }> = [];
 
   for (const membership of memberships) {
     const chat = await getChatById(membership.chatId);

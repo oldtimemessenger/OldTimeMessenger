@@ -5,7 +5,7 @@ import {
   type CurrentEventRoom,
   type CurrentEventTopic,
 } from '@workspace/api-client-react';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,7 +13,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -32,6 +31,11 @@ const topicLabels: Array<{ key: CurrentEventTopic; label: string }> = [
   { key: 'world', label: 'World' },
 ];
 
+const roomTypes = [
+  { key: 'public', label: 'Public', supported: true },
+  { key: 'private', label: 'Private', supported: true },
+] as const;
+
 type Colors = {
   background: string;
   foreground: string;
@@ -44,18 +48,26 @@ type Colors = {
   destructive: string;
 };
 
+type RoomType = typeof roomTypes[number]['key'];
+
+function roomTypeLabel(type: RoomType) {
+  return roomTypes.find((item) => item.key === type)?.label ?? 'Public';
+}
+
 export default function CurrentEventsHome({
   colors,
   onBack,
   onOpenRoom,
   onRoomCreated,
   onRoomsChanged,
+  currentUserId,
 }: {
   colors: Colors;
   onBack: () => void;
   onOpenRoom: (room: CurrentEventRoom) => void;
   onRoomCreated: (room: CurrentEventRoom) => void;
   onRoomsChanged: (rooms: CurrentEventRoom[]) => void;
+  currentUserId?: number | null;
 }) {
   const insets = useSafeAreaInsets();
   const [topic, setTopic] = useState<CurrentEventTopic>('for-you');
@@ -64,7 +76,7 @@ export default function CurrentEventsHome({
   const [hostOpen, setHostOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [hostTopic, setHostTopic] = useState<CurrentEventTopic>('for-you');
-  const [isOpen, setIsOpen] = useState(true);
+  const [roomType, setRoomType] = useState<RoomType>('public');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,7 +88,7 @@ export default function CurrentEventsHome({
       setRooms(result.items);
       onRoomsChanged(result.items);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Current Events are unavailable right now.');
+      setError(requestError instanceof Error ? requestError.message : 'Access is unavailable right now.');
     } finally {
       setLoading(false);
     }
@@ -88,6 +100,24 @@ export default function CurrentEventsHome({
     return () => clearInterval(interval);
   }, [loadRooms]);
 
+  const sections = useMemo(() => {
+    const sorted = [...rooms].sort((left, right) => (right.counts.listeners + right.counts.speakers) - (left.counts.listeners + left.counts.speakers));
+    const sectionList = [
+      { key: 'live', title: 'LIVE NOW', items: sorted.slice(0, 8) },
+      { key: 'friends', title: 'FRIENDS ARE TALKING', items: sorted.filter((room) => room.counts.speakers >= 2).slice(0, 4) },
+      { key: 'trending', title: 'TRENDING', items: sorted.slice(0, 6) },
+      { key: 'for-you', title: 'FOR YOU', items: sorted.filter((room) => topic === 'for-you' || room.topic === topic).slice(0, 6) },
+    ];
+    if (typeof currentUserId === 'number' && currentUserId > 0) {
+      sectionList.push({
+        key: 'my-access',
+        title: 'MY ACCESS',
+        items: sorted.filter((room) => room.participants.find((participant) => participant.role === 'host')?.user.id === currentUserId).slice(0, 4),
+      });
+    }
+    return sectionList.filter((section) => section.items.length > 0);
+  }, [currentUserId, rooms, topic]);
+
   async function hostRoom() {
     if (!title.trim()) return;
     setSaving(true);
@@ -95,17 +125,36 @@ export default function CurrentEventsHome({
       const room = await createCurrentEventRoom({
         title: title.trim(),
         topic: hostTopic,
-        isOpen,
+        isOpen: roomType !== 'private',
+        clubName: 'Access',
       });
       setHostOpen(false);
       setTitle('');
       onRoomCreated(room);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not start this room.');
+      setError(requestError instanceof Error ? requestError.message : 'Could not start this Access room.');
     } finally {
       setSaving(false);
     }
   }
+
+  const flatRooms = useMemo(() => {
+    const rows: Array<{ type: 'section'; key: string; title: string } | { type: 'room'; key: string; room: CurrentEventRoom }> = [];
+    const seen = new Set<number>();
+    for (const section of sections) {
+      const uniqueRooms = section.items.filter((room) => {
+        if (seen.has(room.id)) return false;
+        seen.add(room.id);
+        return true;
+      });
+      if (!uniqueRooms.length) continue;
+      rows.push({ type: 'section', key: `section-${section.key}`, title: section.title });
+      for (const room of uniqueRooms) {
+        rows.push({ type: 'room', key: `${section.key}-${room.id}`, room });
+      }
+    }
+    return rows;
+  }, [sections]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -114,7 +163,7 @@ export default function CurrentEventsHome({
           <Ionicons name="arrow-back" size={23} color={colors.foreground} />
         </Pressable>
         <View pointerEvents="none" style={styles.headerTitleSlot}>
-          <Text style={[typography.navigationTitle, styles.headerTitle, { color: colors.foreground }]}>Current Events</Text>
+          <Text style={[typography.navigationTitle, styles.headerTitle, { color: colors.foreground }]}>Access</Text>
         </View>
         <View style={styles.headerButton} />
       </View>
@@ -146,62 +195,79 @@ export default function CurrentEventsHome({
         </View>
       ) : (
         <FlatList
-          data={rooms}
-          keyExtractor={(room) => String(room.id)}
+          data={flatRooms}
+          keyExtractor={(item) => item.key}
           contentContainerStyle={styles.roomList}
           showsVerticalScrollIndicator={false}
-          scrollEnabled={rooms.length > 0}
+          scrollEnabled
           ListEmptyComponent={
             error ? null : (
               <View style={styles.empty}>
-                <Ionicons name="mic-outline" size={34} color={colors.primary} />
-                <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No live rooms yet</Text>
-                <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Start a room to begin.</Text>
+                <Ionicons name="radio-outline" size={34} color={colors.primary} />
+                <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No live rooms right now</Text>
+                <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Explore topics, browse Spaces, check upcoming events, or start a room.</Text>
               </View>
             )
           }
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => onOpenRoom(item)}
-              accessibilityRole="button"
-              accessibilityLabel={`Join ${item.title}`}
-              style={({ pressed }) => [styles.roomCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.82 : 1 }]}
-            >
-              <View style={styles.roomCardTop}>
-                <Text style={[styles.roomClub, { color: colors.mutedForeground }]}>{item.clubName.toUpperCase()}</Text>
-                <View style={styles.liveLabel}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
-              </View>
-              <Text style={[styles.roomTitle, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
-              <View style={styles.roomMeta}>
-                <View style={styles.avatarStack}>
-                  {item.participants.slice(0, 4).map((participant, index) => (
-                    <View key={participant.id} style={{ marginLeft: index === 0 ? 0 : -9 }}>
-                      <Avatar name={participant.user.name} size={30} color={index % 2 === 0 ? colors.primary : colors.foreground} />
-                    </View>
-                  ))}
+          renderItem={({ item }) => {
+            if (item.type === 'section') {
+              return <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{item.title}</Text>;
+            }
+            const room = item.room;
+            const roomMode: RoomType = room.isOpen ? 'public' : 'private';
+            const host = room.participants.find((participant) => participant.role === 'host');
+            const coHosts = room.participants.filter((participant) => participant.role === 'moderator').slice(0, 2);
+            const speakers = room.participants.filter((participant) => ['host', 'moderator', 'speaker'].includes(participant.role));
+            return (
+              <Pressable
+                onPress={() => onOpenRoom(room)}
+                accessibilityRole="button"
+                accessibilityLabel={`Join ${room.title}`}
+                style={({ pressed }) => [styles.roomCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.82 : 1 }]}
+              >
+                <View style={styles.roomCardTop}>
+                  <View style={styles.liveLabel}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
+                  <View style={styles.badgeRow}>
+                    <Text style={[styles.roomTypeBadge, { backgroundColor: colors.muted, color: colors.foreground }]}>{roomTypeLabel(roomMode)}</Text>
+                    <Text style={[styles.roomTypeBadge, { backgroundColor: colors.muted, color: colors.foreground }]}>FREE</Text>
+                  </View>
                 </View>
-                <Text style={[styles.countText, { color: colors.mutedForeground }]}>{item.counts.speakers} speaking · {item.counts.listeners} listening</Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
-              </View>
-            </Pressable>
-          )}
+                <Text style={[styles.roomTitle, { color: colors.foreground }]} numberOfLines={2}>{room.title}</Text>
+                <Text style={[styles.metaText, { color: colors.mutedForeground }]}>Host: {host?.user.name ?? 'Host'} {coHosts.length ? `· Co-hosts: ${coHosts.map((item) => item.user.name).join(', ')}` : ''}</Text>
+                <View style={styles.roomMeta}>
+                  <View style={styles.avatarStack}>
+                    {speakers.slice(0, 4).map((participant, index) => (
+                      <View key={participant.id} style={{ marginLeft: index === 0 ? 0 : -9 }}>
+                        <Avatar name={participant.user.name} size={30} color={index % 2 === 0 ? colors.primary : colors.foreground} />
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={[styles.countText, { color: colors.mutedForeground }]}>{room.counts.listeners} listeners · {topicLabels.find((entry) => entry.key === room.topic)?.label ?? 'Topic'}</Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+                </View>
+                <View style={styles.roomSignals}>
+                  <Text style={[styles.signalText, { color: colors.mutedForeground }]}>Live conversation</Text>
+                </View>
+              </Pressable>
+            );
+          }}
         />
       )}
 
-      <Pressable onPress={() => setHostOpen(true)} style={[styles.hostButton, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Host a Current Event room">
-        <Ionicons name="add" size={20} color={colors.primaryForeground} />
-        <Text style={styles.hostButtonText}>host a room</Text>
+      <Pressable onPress={() => setHostOpen(true)} style={[styles.hostButton, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Create Access room">
+        <Ionicons name="mic" size={20} color={colors.primaryForeground} />
+        <Text style={styles.hostButtonText}>create access</Text>
       </Pressable>
 
       <Modal visible={hostOpen} transparent animationType="slide" onRequestClose={() => setHostOpen(false)}>
         <View style={styles.modalShade}>
           <View style={[styles.hostSheet, { backgroundColor: colors.card }]}>
             <View style={[styles.grabber, { backgroundColor: colors.border }]} />
-            <Text style={[typography.sheetTitle, { color: colors.foreground }]}>Start a Current Event</Text>
+            <Text style={[typography.sheetTitle, { color: colors.foreground }]}>Create Access Room</Text>
             <TextInput
               value={title}
               onChangeText={setTitle}
-              placeholder="What are you talking about?"
+              placeholder="Room title"
               placeholderTextColor={colors.mutedForeground}
               maxLength={120}
               autoFocus
@@ -215,17 +281,24 @@ export default function CurrentEventsHome({
                 </Pressable>
               ))}
             </ScrollView>
-            <View style={styles.openRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: colors.foreground, marginTop: 0 }]}>Open to everyone</Text>
-                <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 3 }}>Anyone can join as a listener.</Text>
-              </View>
-              <Switch value={isOpen} onValueChange={setIsOpen} trackColor={{ false: colors.border, true: colors.primary }} />
+            <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Who can join</Text>
+            <View style={styles.roomTypeRail}>
+              {roomTypes.map((item) => (
+                <Pressable key={item.key} disabled={!item.supported} onPress={() => setRoomType(item.key)} style={[styles.roomTypeChip, { borderColor: roomType === item.key ? colors.primary : colors.border, backgroundColor: roomType === item.key ? `${colors.primary}16` : 'transparent', opacity: item.supported ? 1 : 0.5 }]}>
+                  <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>{item.label}{item.supported ? '' : ' · soon'}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.featureList}>
+              <Text style={[styles.featureItem, { color: colors.mutedForeground }]}>Chat, reactions, gifting, and people controls are available once the room is live.</Text>
+            </View>
+            <View style={styles.featureList}>
+              <Text style={[styles.featureItem, { color: colors.mutedForeground }]}>Paid room pricing controls are coming soon to Access.</Text>
             </View>
             <View style={styles.sheetActions}>
               <Pressable onPress={() => setHostOpen(false)}><Text style={{ color: colors.mutedForeground, fontWeight: '700' }}>Cancel</Text></Pressable>
               <Pressable disabled={!title.trim() || saving} onPress={() => void hostRoom()} style={[styles.startButton, { backgroundColor: colors.primary, opacity: !title.trim() || saving ? 0.45 : 1 }]}>
-                {saving ? <ActivityIndicator color={colors.primaryForeground} /> : <Text style={[styles.startButtonText, { color: colors.primaryForeground }]}>Start room</Text>}
+                {saving ? <ActivityIndicator color={colors.primaryForeground} /> : <Text style={[styles.startButtonText, { color: colors.primaryForeground }]}>Start Access</Text>}
               </Pressable>
             </View>
           </View>
@@ -241,20 +314,24 @@ const styles = StyleSheet.create({
   headerButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   headerTitleSlot: { position: 'absolute', left: 58, right: 58, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 21, textAlign: 'center' },
-  notificationDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#F46A3D', borderWidth: 1.5, borderColor: '#FFFFFF' },
   topicScroller: { flexGrow: 0, maxHeight: 60 },
   topicRail: { gap: 8, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
   topicChip: { borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 8 },
   topicText: { fontSize: 13, fontWeight: '500' },
   roomList: { paddingHorizontal: 16, paddingBottom: 150, gap: 12 },
+  sectionTitle: { marginTop: 8, marginBottom: 2, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   roomCard: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: 15 },
-  roomCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  roomClub: { fontSize: 11, fontWeight: '600', letterSpacing: 0.8 },
+  roomCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  roomTypeBadge: { fontSize: 10, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 },
+  metaText: { marginTop: 8, fontSize: 12, lineHeight: 17 },
   liveLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#E5484D' },
   liveText: { color: '#E5484D', fontSize: 10, fontWeight: '600' },
   roomTitle: { fontSize: 16, lineHeight: 22, fontWeight: '600', marginTop: 9 },
-  roomMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 16, gap: 9 },
+  roomMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 14, gap: 9 },
+  roomSignals: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  signalText: { fontSize: 11, fontWeight: '500' },
   avatarStack: { flexDirection: 'row', width: 96, flexShrink: 0 },
   countText: { flex: 1, fontSize: 12, fontWeight: '400' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -266,27 +343,17 @@ const styles = StyleSheet.create({
   hostButton: { position: 'absolute', bottom: 22, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 48, borderRadius: 25, paddingHorizontal: 20 },
   hostButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   modalShade: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
-  notificationsSheet: { maxHeight: '72%', minHeight: 330, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  notificationsHeader: { minHeight: 78, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
-  notificationsEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 1.1 },
-  notificationsTitle: { fontSize: 24, lineHeight: 30, fontWeight: '700', marginTop: 2 },
-  closeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  notificationsList: { paddingHorizontal: 18, paddingBottom: 28 },
-  notificationsEmpty: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 54 },
-  notificationRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  notificationIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3559C7' },
-  notificationCopy: { flex: 1 },
-  notificationRoomTitle: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
-  notificationRoomMeta: { fontSize: 12, lineHeight: 17, marginTop: 3 },
-  hostSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 30 },
+  hostSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 30, maxHeight: '92%' },
   grabber: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  sheetTitle: { fontSize: 22, lineHeight: 28, fontWeight: '600' },
   titleInput: { borderWidth: 1, borderRadius: 12, minHeight: 52, paddingHorizontal: 14, marginTop: 18, fontSize: 16 },
   fieldLabel: { fontSize: 14, fontWeight: '500', marginTop: 18 },
   sheetTopics: { gap: 8, paddingTop: 9 },
   sheetChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
-  openRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20 },
+  roomTypeRail: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  roomTypeChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
+  featureList: { marginTop: 14, borderRadius: 12, padding: 12 },
+  featureItem: { fontSize: 12, lineHeight: 17 },
   sheetActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 25 },
-  startButton: { minHeight: 44, minWidth: 112, borderRadius: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 17 },
+  startButton: { minHeight: 44, minWidth: 120, borderRadius: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 17 },
   startButtonText: { fontWeight: '600' },
 });
