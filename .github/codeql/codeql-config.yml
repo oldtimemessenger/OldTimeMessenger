@@ -1,5 +1,6 @@
 name: codeql-scoped-analysis
 # Exclude non-production prototype/asset directories to keep analysis within runtime limits.
+# Keep both exact directory and recursive patterns to ensure stable exclusion matching.
 paths-ignore:
   - artifacts/mockup-sandbox
   - artifacts/mockup-sandbox/**
