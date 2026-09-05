@@ -121,11 +121,23 @@ function MediaFeedFloatingHeader({
   onSelectTab,
   onOpenHub,
   onOpenCommunity,
+  onOpenSearch,
+  onOpenMessages,
+  onOpenProfile,
+  unreadRequests,
+  ownCard,
+  session,
 }: {
   tab: FeedTab;
   onSelectTab: (tab: FeedTab) => void;
   onOpenHub: () => void;
   onOpenCommunity: () => void;
+  onOpenSearch: () => void;
+  onOpenMessages: () => void;
+  onOpenProfile: () => void;
+  unreadRequests: number;
+  ownCard: any;
+  session: any;
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -138,6 +150,18 @@ function MediaFeedFloatingHeader({
           </Pressable>
           <Pressable onPress={onOpenCommunity} accessibilityRole="button" accessibilityLabel="Open Hubs" style={styles.floatingIconButton}>
             <Ionicons name="albums" size={21} color="#fff" />
+          </Pressable>
+        </View>
+        <View style={styles.mediaFeedHeaderGroup}>
+          <Pressable onPress={onOpenSearch} accessibilityRole="button" accessibilityLabel="Search people" style={styles.floatingIconButton}>
+            <Ionicons name="search" size={21} color="#fff" />
+          </Pressable>
+          <Pressable onPress={onOpenMessages} accessibilityRole="button" accessibilityLabel="Open messages" style={styles.floatingIconButton}>
+            <Ionicons name="mail" size={21} color="#fff" />
+            {unreadRequests > 0 && <View style={[styles.headerUnreadDot, styles.floatingUnreadDot]} />}
+          </Pressable>
+          <Pressable onPress={onOpenProfile} accessibilityRole="button" accessibilityLabel="Open your profile">
+            <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={32} color="#4C63F5" uri={socialAvatarUrl(ownCard?.avatarObjectPath ?? session?.avatarObjectPath)} />
           </Pressable>
         </View>
       </View>
@@ -638,6 +662,12 @@ export default function UpdatesScreen() {
              onSelectTab={selectFeedTab}
              onOpenHub={() => setViewMode('landing')}
              onOpenCommunity={openCommunity}
+              onOpenSearch={() => setShowPeopleSearch(true)}
+              onOpenMessages={openMessagesInbox}
+              onOpenProfile={() => setProfileUserId(session?.id ?? 0)}
+              unreadRequests={messageRequests.filter((item) => item.status === 'pending').length}
+              ownCard={ownCard}
+              session={session}
            />
          }
          onComment={setSocialCommentPost}
@@ -649,10 +679,23 @@ export default function UpdatesScreen() {
        {/* Layer 1: Current Updates (Hub) Modal */}
         <Modal visible={viewMode === 'landing'} transparent animationType="slide" onRequestClose={() => setViewMode('media-feed')}>
          <View style={{ flex: 1, backgroundColor: colors.background }}>
-             <Screen title="Current" left={
+            <Screen title="Current" left={
              <View style={styles.headerLeftActions}>
                <IconButton name="chevron-down" label="Back to Feed" onPress={() => setViewMode('media-feed')} />
              </View>
+            } right={
+              <View style={styles.socialHeaderActions}>
+                <IconButton name="add" label="Create an update" onPress={() => setShowCreateMenu(true)} />
+                <IconButton name="options-outline" label="Open Updates settings" onPress={() => setShowFeedSettings((value) => !value)} />
+                <IconButton name="search-outline" label="Search people" onPress={() => setShowPeopleSearch(true)} />
+                <View>
+                  <IconButton name="mail-outline" label="Open messages" onPress={openMessagesInbox} />
+                  {messageRequests.length > 0 ? <View style={[styles.headerUnreadDot, { backgroundColor: colors.destructive }]} /> : null}
+                </View>
+                <Pressable testID="updates-profile-button" onPress={() => setProfileUserId(session?.id ?? 0)} accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.headerProfileButton}>
+                  <Avatar name={ownCard?.name ?? session?.name ?? 'You'} size={31} color={colors.primary} uri={socialAvatarUrl(ownCard?.avatarObjectPath ?? session?.avatarObjectPath)} />
+                </Pressable>
+              </View>
             }>
              <FlatList
                 testID="updates-feed"
