@@ -34,6 +34,7 @@ export default function WalletScreen() {
   const { session } = useApp();
   const revenueCat = useRevenueCat();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [loadFailureMessage, setLoadFailureMessage] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const walletQuery = useGetCurrentEventWallet({
     query: {
@@ -47,9 +48,14 @@ export default function WalletScreen() {
 
   useEffect(() => {
     if (walletQuery.error && !walletQuery.data) {
-      setFeedback(walletQuery.error instanceof Error ? walletQuery.error.message : 'Wallet unavailable.');
+      const message = walletQuery.error instanceof Error ? walletQuery.error.message : 'Wallet unavailable.';
+      setLoadFailureMessage(message);
+      setFeedback(message);
+    } else if (walletQuery.data && loadFailureMessage && feedback === loadFailureMessage) {
+      setLoadFailureMessage(null);
+      setFeedback(null);
     }
-  }, [walletQuery.data, walletQuery.error]);
+  }, [feedback, loadFailureMessage, walletQuery.data, walletQuery.error]);
 
   async function refreshWallet() {
     const result = await walletQuery.refetch();
@@ -70,10 +76,12 @@ export default function WalletScreen() {
       const credited = await revenueCat.purchase(item);
       const refreshed = await refreshWallet();
       if (!refreshed.ok) {
-        setFeedback(`${credited} coins added. The wallet balance will refresh when the connection returns.`);
+        setFeedback(credited > 0
+          ? `${credited} coins added. The wallet balance will refresh when the connection returns.`
+          : 'Purchase confirmed. The wallet balance will refresh when the connection returns.');
         return;
       }
-      setFeedback(`${credited} coins added.`);
+      setFeedback(credited > 0 ? `${credited} coins added.` : 'Purchase confirmed. Your wallet is already up to date.');
     } catch (error) {
       const details = revenueCatErrorDetails(error);
       if (!details.userCancelled) setFeedback(details.message ?? 'Purchase unavailable.');
@@ -95,7 +103,7 @@ export default function WalletScreen() {
       setFeedback(credited ? `${credited} coins restored.` : 'Wallet is up to date.');
     } catch (error) {
       const details = revenueCatErrorDetails(error);
-      setFeedback(details.message ?? 'Restore unavailable.');
+      if (!details.userCancelled) setFeedback(details.message ?? 'Restore unavailable.');
     } finally {
       setRestoring(false);
     }
