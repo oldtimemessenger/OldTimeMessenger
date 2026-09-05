@@ -70,7 +70,7 @@ export default function WalletScreen() {
       };
     }
     const result = await walletQuery.refetch();
-    if (result.status === 'error' || !result.data) {
+    if (result.status === 'error' || result.data === undefined) {
       return {
         ok: false as const,
         message: result.error instanceof Error ? result.error.message : 'Wallet unavailable.',
@@ -158,6 +158,7 @@ export default function WalletScreen() {
                 </View>
               </View>
               <PrimaryButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={() => void handleRestore()} disabled={revenueCat.purchasing || restoring || !session?.authToken} />
+              {!session?.authToken ? <Text style={[styles.authHint, { color: colors.mutedForeground }]}>Sign in again to restore purchases and refresh this wallet.</Text> : null}
             </>
           )}
         </View>
@@ -281,6 +282,12 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontSize: 12,
     marginTop: 4,
+  },
+  authHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 10,
   },
   feedbackCard: {
     borderRadius: 14,
