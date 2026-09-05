@@ -345,11 +345,12 @@ export default function PaceSheet({
             const resumed = resumeSession(session);
             const flushed = await flushPending(resumed);
             const finishedLocal = { ...flushed, manualPaused: false, autoPaused: false };
+            const finishMetrics = deriveLiveMetrics(finishedLocal);
             commitSession(finishedLocal);
             try {
               const finished = await finishPaceActivity(token, session.activityId!, {
                 endedAt: Date.now(),
-                elapsedTimeSec: metrics.elapsedTimeSec,
+                elapsedTimeSec: finishMetrics.elapsedTimeSec,
                 caption: caption.trim() || undefined,
                 visibility,
               });

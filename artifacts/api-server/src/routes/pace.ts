@@ -700,17 +700,19 @@ router.get("/pace/feed", async (req, res): Promise<void> => {
   const userId = await requireChatAuth(req, res);
   if (userId === null) return;
   const limit = parseLimit(req.query.limit, 20, 50);
+  const queryLimit = Math.min(300, limit * 4);
   const items = await db
     .select()
     .from(paceActivitiesTable)
     .where(and(eq(paceActivitiesTable.lifecycleStatus, "finished"), ne(paceActivitiesTable.visibility, "private")))
     .orderBy(desc(paceActivitiesTable.createdAt))
-    .limit(limit);
+    .limit(queryLimit);
   const visible = [] as typeof items;
   // eslint-disable-next-line no-restricted-syntax
   for (const item of items) {
     // eslint-disable-next-line no-await-in-loop
     if (await canViewActivity(userId, item)) visible.push(item);
+    if (visible.length >= limit) break;
   }
   res.json({ items: await Promise.all(visible.map((item) => serializeActivity(userId, item))) });
 });
@@ -947,6 +949,7 @@ router.get("/pace/segments", async (req, res): Promise<void> => {
   const items = await db
     .select()
     .from(paceSegmentsTable)
+    .where(eq(paceSegmentsTable.visibility, "public"))
     .orderBy(desc(paceSegmentsTable.updatedAt))
     .limit(limit);
   res.json({ items });
@@ -1020,6 +1023,7 @@ router.get("/pace/challenges", async (req, res): Promise<void> => {
       participantCompletedAt: paceChallengeParticipantsTable.completedAt,
     })
     .from(paceChallengesTable)
+    .where(eq(paceChallengesTable.visibility, "public"))
     .leftJoin(
       paceChallengeParticipantsTable,
       and(

@@ -201,11 +201,7 @@ export function pauseSession(session: PaceTrackingSession, automatic = false): P
 }
 
 export function resumeSession(session: PaceTrackingSession): PaceTrackingSession {
-  if (!session.pauseStartedAt) return {
-    ...session,
-    manualPaused: false,
-    autoPaused: false,
-  };
+  if (!session.pauseStartedAt) return session;
   const now = Date.now();
   return {
     ...session,
