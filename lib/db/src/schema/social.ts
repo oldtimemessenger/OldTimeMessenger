@@ -2,6 +2,7 @@ import {
   bigint as pgBigint,
   boolean,
   doublePrecision,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -376,7 +377,7 @@ export const socialHubsTable = pgTable(
     icon: text("icon"),
     coverImage: text("cover_image"),
     category: text("category"),
-    parentHubId: integer("parent_hub_id").references(() => socialHubsTable.id, { onDelete: "set null" }),
+    parentHubId: integer("parent_hub_id"),
     createdBy: integer("created_by").notNull(),
     status: text("status").notNull().default("active"),
     privacy: text("privacy").notNull().default("public"),
@@ -386,6 +387,11 @@ export const socialHubsTable = pgTable(
     updatedAt: pgBigint("updated_at", { mode: "number" }).notNull(),
   },
   (table) => ({
+    parentHubForeignKey: foreignKey({
+      columns: [table.parentHubId],
+      foreignColumns: [table.id],
+      name: "social_hubs_parent_fk",
+    }).onDelete("set null"),
     slugIndex: uniqueIndex("social_hubs_slug_unique").on(table.slug),
     nameIndex: index("social_hubs_name_idx").on(table.name),
     parentIndex: index("social_hubs_parent_idx").on(table.parentHubId),

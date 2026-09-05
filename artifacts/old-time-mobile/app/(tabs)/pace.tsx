@@ -1,78 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import Svg, { Circle, Polyline } from 'react-native-svg';
-import { Avatar, Screen } from '@/components/ui';
-import { useApp } from '@/context/app-state';
-import { useColors } from '@/hooks/useColors';
-import { appendTrackedPoint, clearPaceRecording, getStoredPaceRecording, savePaceRecording, startPaceLocationUpdates, stopPaceLocationUpdates, type PaceRecording } from '@/lib/pace-recorder';
-import {
-  createPaceComment,
-  createPaceRoute,
-  getPaceComments,
-  getPaceFeed,
-  sendPaceGift,
-  setPaceCommentLike,
-  setPaceRouteLike,
-  type PaceActivity,
-  type PaceComment,
-  type PaceDifficulty,
-  type PacePoint,
-  type PaceRoute,
-  type PaceSuggestion,
-} from '@/lib/pace-api';
-
-const GIFT_OPTIONS = [
-  { key: 'coffee' as const, label: 'Coffee', price: 25, icon: 'cafe-outline' as const },
-  { key: 'idea' as const, label: 'Idea', price: 100, icon: 'bulb-outline' as const },
-  { key: 'heart' as const, label: 'Heart', price: 200, icon: 'heart-outline' as const },
-  { key: 'gem' as const, label: 'Gem', price: 500, icon: 'diamond-outline' as const },
-  { key: 'studio' as const, label: 'Studio', price: 1000, icon: 'albums-outline' as const },
-  { key: 'time_is_up' as const, label: 'Time is up', price: 10000, icon: 'trophy-outline' as const },
-];
-
-const ACTIVITY_LABELS: Record<PaceActivity, string> = { run: 'Run', walk: 'Walk', bike: 'Ride', hike: 'Hike' };
-const DIFFICULTY_LABELS: Record<PaceDifficulty, string> = { easy: 'Easy', steady: 'Steady', hard: 'Hard' };
-
-type Coordinate = PacePoint;
-
-function recordingAsSuggestion(recording: PaceRecording): PaceSuggestion {
-  const firstPoint = recording.points[0];
-  return {
-    id: `recorded-${recording.id}`,
-    suggested: true,
-    title: 'My Pace route',
-    description: 'Recorded with Old Time.',
-    kind: 'route',
-    visibility: 'public',
-    activity: 'run',
-    difficulty: recording.distanceKm >= 8 ? 'hard' : recording.distanceKm >= 4 ? 'steady' : 'easy',
-    distanceKm: recording.distanceKm,
-    elevationM: 0,
-    durationMin: Math.max(1, Math.round(recording.elapsedSeconds / 60)),
-    locationLabel: 'Recorded locally',
-    distanceFromYouKm: 0,
-    routeCoordinates: recording.points.map(({ latitude, longitude }) => ({ latitude, longitude })),
-  };
-}
-
-export default function PaceScreen() {
-  const colors = useColors();
-  const { session } = useApp();
-  const [permission, requestPermission] = Location.useForegroundPermissions();
-  const [location, setLocation] = useState<Coordinate | null>(null);
-  const [routes, setRoutes] = useState<PaceRoute[]>([]);
-  const [suggestions, setSuggestions] = useState<PaceSuggestion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [composer, setComposer] = useState<PaceSuggestion | null>(null);
-  const [commentsRoute, setCommentsRoute] = useState<PaceRoute | null>(null);
-  const [giftRoute, setGiftRoute] = useState<PaceRoute | null>(null);
-  const [recording, setRecording] = useState<PaceRecording | null>(null);
-  const [recordingLoading, setRecordingLoading] = useState(true);
-  const [backgroundTrackingEnabled, setBackgroundTrackingEnabled] = useState(false);
+ckingEnabled, setBackgroundTrackingEnabled] = useState(false);
+  const [encouragement, setEncouragement] = useState<PaceEncouragement | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
 
   const syncRecordingState = useCallback(async () => {
@@ -89,6 +16,10 @@ export default function PaceScreen() {
     }
     setBackgroundTrackingEnabled(false);
     await stopPaceLocationUpdates().catch(() => undefined);
+  }, []);
+
+  const loadEncouragement = useCallback(async () => {
+    setEncouragement(await getNextPaceEncouragement());
   }, []);
 
   const load = useCallback(async (showRefresh = false) => {
@@ -111,6 +42,10 @@ export default function PaceScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadEncouragement();
+  }, [loadEncouragement]);
 
   useEffect(() => {
     if (!permission?.granted) return;
@@ -305,6 +240,12 @@ export default function PaceScreen() {
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Pace</Text>
         </View>
       }
+      right={
+        <Pressable onPress={() => void useLocation()} style={[styles.headerLocation, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityRole="button" accessibilityLabel="Use my location">
+          <Ionicons name="navigate-outline" size={16} color={location ? colors.primary : colors.mutedForeground} />
+          <Text style={[styles.headerLocationText, { color: colors.foreground }]}>{location ? 'Nearby' : 'Set area'}</Text>
+        </Pressable>
+      }
     >
       <FlatList
         data={routes}
@@ -315,25 +256,29 @@ export default function PaceScreen() {
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <View>
-            <View style={[styles.hero, { backgroundColor: colors.foreground }]}>
-              <View style={styles.heroCopy}>
-                <Text style={styles.heroKicker}>MOVE WITH INTENTION</Text>
-                <Text style={styles.heroTitle}>Find your next good route.</Text>
-                <Text style={styles.heroText}>Local ideas, shared progress, and people who keep showing up.</Text>
-              </View>
-              <View style={styles.heroMark}><Ionicons name="footsteps-outline" size={30} color={colors.primaryForeground} /></View>
-            </View>
+            <PaceActivityOverview
+              colors={colors}
+              recording={recording}
+              suggestion={suggestions[0]}
+              onStart={() => void startRecording()}
+            />
             {!recordingLoading ? <PaceRecorderCard recording={recording} backgroundTrackingEnabled={backgroundTrackingEnabled} colors={colors} onStart={() => void startRecording()} onPause={() => void pauseRecording()} onResume={() => void resumeRecording()} onFinish={() => void finishRecording()} onShare={() => recording && setComposer(recordingAsSuggestion(recording))} onDiscard={() => void discardRecording()} /> : null}
+
+            {encouragement ? (
+              <PacePulseCard
+                colors={colors}
+                pulse={encouragement}
+                onStart={() => void startRecording()}
+                onRefresh={() => void loadEncouragement()}
+              />
+            ) : null}
 
             <View style={styles.sectionHeading}>
               <View>
                 <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Suggested for you</Text>
-                <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>{location ? 'Based on your current area' : 'Set an area for local route ideas'}</Text>
+                <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>{location ? 'Based on your current area' : 'Global route ideas · nearby is optional'}</Text>
               </View>
-              <Pressable onPress={() => void useLocation()} style={[styles.locationAction, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityRole="button" accessibilityLabel="Use my location">
-                <Ionicons name="navigate-outline" size={16} color={location ? colors.primary : colors.mutedForeground} />
-                <Text style={[styles.locationActionText, { color: colors.foreground }]}>{location ? 'Nearby' : 'Set area'}</Text>
-              </Pressable>
+              <Ionicons name="shuffle-outline" size={18} color={colors.primary} />
             </View>
             {suggestions.length ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>
@@ -342,14 +287,17 @@ export default function PaceScreen() {
                 ))}
               </ScrollView>
             ) : (
-              <View style={[styles.locationPrompt, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Pressable onPress={() => void useLocation()} style={[styles.locationPrompt, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Ionicons name="location-outline" size={22} color={colors.primary} />
                 <View style={styles.flex}>
-                  <Text style={[styles.promptTitle, { color: colors.foreground }]}>Unlock local route ideas</Text>
-                  <Text style={[styles.promptText, { color: colors.mutedForeground }]}>{location ? 'Update your area anytime with the control above. Your exact location is never posted.' : 'Your exact location is never posted. Pace only uses it to shape nearby suggestions.'}</Text>
+                  <Text style={[styles.promptTitle, { color: colors.foreground }]}>Make route ideas nearby</Text>
+                  <Text style={[styles.promptText, { color: colors.mutedForeground }]}>Global suggestions stay available without location. Use your area only when you want nearby ideas.</Text>
                 </View>
-              </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+              </Pressable>
             )}
+
+            {routes.length ? <PaceRecentActivities routes={routes.slice(0, 3)} colors={colors} /> : null}
 
             <View style={styles.feedHeading}>
               <View>
@@ -403,6 +351,125 @@ export default function PaceScreen() {
         }}
       />
     </Screen>
+  );
+}
+
+function formatRoutePace(distanceKm: number, durationMin: number) {
+  if (!distanceKm || !durationMin) return '--:--';
+  const totalSeconds = Math.round((durationMin * 60) / distanceKm);
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+function formatRouteTime(durationMin: number) {
+  if (!durationMin) return '--:--';
+  return `${Math.floor(durationMin / 60)}:${String(Math.round(durationMin % 60)).padStart(2, '0')}`;
+}
+
+function RouteArtwork({ points, colors }: { points?: PacePoint[]; colors: any }) {
+  const routePoints = points?.length && points.length > 1 ? points : [
+    { latitude: 0, longitude: 0 },
+    { latitude: 0.002, longitude: 0.001 },
+    { latitude: 0.001, longitude: 0.004 },
+    { latitude: 0.004, longitude: 0.006 },
+    { latitude: 0.003, longitude: 0.009 },
+    { latitude: 0.006, longitude: 0.011 },
+  ];
+  const lats = routePoints.map((point) => point.latitude);
+  const lngs = routePoints.map((point) => point.longitude);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const latSpan = Math.max(maxLat - minLat, 0.0001);
+  const lngSpan = Math.max(maxLng - minLng, 0.0001);
+  const route = routePoints.map((point) => `${24 + ((point.longitude - minLng) / lngSpan) * 292},${118 - ((point.latitude - minLat) / latSpan) * 94}`).join(' ');
+  return (
+    <View style={[styles.activityRouteArtwork, { backgroundColor: `${colors.paceInk}E8` }]}>
+      <Svg width="100%" height={142} viewBox="0 0 340 142">
+        <Polyline points="0,112 64,82 116,92 170,42 236,62 340,20" fill="none" stroke={`${colors.paceCyan}20`} strokeWidth={1} />
+        <Polyline points="0,45 68,70 126,28 204,54 280,26 340,48" fill="none" stroke={`${colors.paceCyan}1A`} strokeWidth={1} />
+        <Polyline points="12,126 72,105 138,114 186,75 250,94 330,68" fill="none" stroke={`${colors.paceCyan}16`} strokeWidth={1} />
+        <Polyline points={route} fill="none" stroke={`${colors.brandOrange}5C`} strokeWidth={11} strokeLinecap="round" strokeLinejoin="round" />
+        <Polyline points={route} fill="none" stroke={colors.brandOrange} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+      <View style={[styles.routeStartDot, { backgroundColor: colors.paceCyan }]} />
+      <View style={[styles.routeEndDot, { backgroundColor: colors.brandOrange }]} />
+    </View>
+  );
+}
+
+function PaceActivityOverview({ colors, recording, suggestion, onStart }: { colors: any; recording: PaceRecording | null; suggestion?: PaceSuggestion; onStart: () => void }) {
+  const distanceKm = recording?.distanceKm ?? suggestion?.distanceKm ?? 0;
+  const durationMin = recording ? recording.elapsedSeconds / 60 : suggestion?.durationMin ?? 0;
+  const routePoints = recording?.points ?? suggestion?.routeCoordinates;
+  const activityLabel = recording ? 'LIVE ACTIVITY' : suggestion ? ACTIVITY_LABELS[suggestion.activity].toUpperCase() : 'READY TO MOVE';
+  return (
+    <LinearGradient colors={[colors.paceInk, `${colors.brandPurple}E8`]} style={styles.activityOverview}>
+      <View style={styles.activityOverviewTop}>
+        <View>
+          <Text style={styles.activityEyebrow}>PACE / ACTIVITY</Text>
+          <Text style={styles.activityTitle}>{activityLabel}</Text>
+        </View>
+        <View style={styles.activityTopActions}>
+          <View style={styles.activityStatus}><Ionicons name="pulse-outline" size={17} color={colors.paceCyan} /><Text style={styles.activityStatusText}>READY</Text></View>
+          <Pressable onPress={onStart} style={styles.activityStartButton} accessibilityRole="button" accessibilityLabel="Start a Pace journey">
+            <Ionicons name="play" size={14} color={colors.paceInk} />
+          </Pressable>
+        </View>
+      </View>
+      <RouteArtwork points={routePoints} colors={colors} />
+      <View style={styles.activityMetrics}>
+        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>DISTANCE</Text><Text style={styles.activityMetricValue}>{distanceKm ? distanceKm.toFixed(2) : '--'}<Text style={styles.activityMetricUnit}> km</Text></Text></View>
+        <View style={styles.activityMetricDivider} />
+        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>TIME</Text><Text style={styles.activityMetricValue}>{formatRouteTime(durationMin)}</Text></View>
+        <View style={styles.activityMetricDivider} />
+        <View style={styles.activityMetric}><Text style={styles.activityMetricLabel}>PACE</Text><Text style={styles.activityMetricValue}>{formatRoutePace(distanceKm, durationMin)}<Text style={styles.activityMetricUnit}> /km</Text></Text></View>
+      </View>
+      <View style={styles.activityStatRow}>
+        <View style={styles.activityStat}><Ionicons name="trending-up-outline" size={17} color={colors.paceCyan} /><Text style={styles.activityStatLabel}>ELEVATION</Text><Text style={styles.activityStatValue}>{suggestion?.elevationM ?? 0} m</Text></View>
+        <View style={styles.activityStat}><Ionicons name="flash-outline" size={17} color={colors.brandOrange} /><Text style={styles.activityStatLabel}>EFFORT</Text><Text style={styles.activityStatValue}>{suggestion ? DIFFICULTY_LABELS[suggestion.difficulty] : 'Open'}</Text></View>
+        <View style={styles.activityStat}><Ionicons name="footsteps-outline" size={17} color={colors.paceCyan} /><Text style={styles.activityStatLabel}>JOURNEY</Text><Text style={styles.activityStatValue}>{suggestion?.activity ? ACTIVITY_LABELS[suggestion.activity] : 'Yours'}</Text></View>
+      </View>
+    </LinearGradient>
+  );
+}
+
+function PacePulseCard({ colors, pulse, onStart, onRefresh }: { colors: any; pulse: PaceEncouragement; onStart: () => void; onRefresh: () => void }) {
+  return (
+    <View style={[styles.pulseCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.pulseIcon}><Ionicons name="radio-outline" size={18} color={colors.paceCyan} /></View>
+      <View style={styles.pulseCopy}>
+        <View style={styles.pulseMeta}><Text style={[styles.pulseEyebrow, { color: colors.paceCyan }]}>{pulse.eyebrow}</Text><Text style={[styles.pulseLocation, { color: colors.mutedForeground }]}>{pulse.location}</Text></View>
+        <Text style={[styles.pulseHeadline, { color: colors.foreground }]}>{pulse.headline}</Text>
+        <Text style={[styles.pulseBody, { color: colors.mutedForeground }]}>{pulse.body}</Text>
+        <Pressable onPress={onStart} style={[styles.pulseAction, { backgroundColor: colors.brandOrange }]}><Text style={[styles.pulseActionText, { color: colors.primaryForeground }]}>{pulse.action}</Text><Ionicons name="arrow-forward" size={14} color={colors.primaryForeground} /></Pressable>
+      </View>
+      <Pressable onPress={onRefresh} style={styles.pulseRefresh} accessibilityLabel="Show another Pace pulse"><Ionicons name="refresh-outline" size={17} color={colors.mutedForeground} /></Pressable>
+    </View>
+  );
+}
+
+function PaceRecentActivities({ routes, colors }: { routes: PaceRoute[]; colors: any }) {
+  return (
+    <View style={styles.recentActivities}>
+      <View style={styles.recentActivitiesHeader}>
+        <Text style={[styles.recentActivitiesTitle, { color: colors.foreground }]}>RECENT ACTIVITIES</Text>
+        <Text style={[styles.recentActivitiesView, { color: colors.brandOrange }]}>VIEW ALL</Text>
+      </View>
+      {routes.map((route) => (
+        <View key={`recent-${route.id}`} style={[styles.recentActivityRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <RouteThumbnail points={route.routeCoordinates} colors={colors} />
+          <View style={styles.recentActivityCopy}>
+            <Text style={[styles.recentActivityName, { color: colors.foreground }]} numberOfLines={1}>{route.title}</Text>
+            <Text style={[styles.recentActivityMeta, { color: colors.mutedForeground }]} numberOfLines={1}>{route.locationLabel} · {route.durationMin} min</Text>
+          </View>
+          <View style={styles.recentActivityMetric}>
+            <Text style={[styles.recentActivityDistance, { color: colors.foreground }]}>{route.distanceKm.toFixed(1)} km</Text>
+            <Ionicons name="heart" size={14} color={colors.brandOrange} />
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -668,7 +735,41 @@ function GiftSheet({ route, token, colors, onClose, onSent }: { route: PaceRoute
 const styles = StyleSheet.create({
   headerEyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 1.4 },
   headerTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.4, marginTop: 1 },
+  headerLocation: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 18, paddingHorizontal: 10, paddingVertical: 7 },
+  headerLocationText: { fontSize: 11, fontWeight: '700' },
   content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 110 },
+  activityOverview: { borderRadius: 25, padding: 14, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 6 },
+  activityOverviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingBottom: 12 },
+  activityEyebrow: { color: '#C8D6E6', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
+  activityTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '800', letterSpacing: -0.6, marginTop: 3 },
+  activityTopActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  activityStatus: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: 'rgba(54,215,242,0.35)', borderRadius: 14, paddingHorizontal: 8, paddingVertical: 6 },
+  activityStatusText: { color: '#C8D6E6', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  activityStartButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF7800' },
+  activityRouteArtwork: { height: 142, borderRadius: 18, overflow: 'hidden', position: 'relative', borderWidth: 1, borderColor: 'rgba(54,215,242,0.18)' },
+  routeStartDot: { position: 'absolute', left: 18, bottom: 17, width: 9, height: 9, borderRadius: 5, borderWidth: 2, borderColor: '#07131D' },
+  routeEndDot: { position: 'absolute', right: 19, top: 16, width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: '#07131D' },
+  activityMetrics: { flexDirection: 'row', alignItems: 'center', borderRadius: 17, marginTop: -2, paddingVertical: 12, paddingHorizontal: 7, backgroundColor: 'rgba(7,19,29,0.94)' },
+  activityMetric: { flex: 1, paddingHorizontal: 7 },
+  activityMetricDivider: { width: StyleSheet.hairlineWidth, height: 38, backgroundColor: 'rgba(200,214,230,0.24)' },
+  activityMetricLabel: { color: '#AFC1D2', fontSize: 8, fontWeight: '900', letterSpacing: 1.1 },
+  activityMetricValue: { color: '#FFFFFF', fontSize: 19, fontWeight: '800', letterSpacing: -0.5, marginTop: 4 },
+  activityMetricUnit: { color: '#C8D6E6', fontSize: 10, fontWeight: '700' },
+  activityStatRow: { flexDirection: 'row', gap: 7, marginTop: 9 },
+  activityStat: { flex: 1, minHeight: 75, borderRadius: 14, padding: 9, backgroundColor: 'rgba(7,19,29,0.68)', borderWidth: 1, borderColor: 'rgba(200,214,230,0.12)' },
+  activityStatLabel: { color: '#AFC1D2', fontSize: 7, fontWeight: '900', letterSpacing: 0.8, marginTop: 7 },
+  activityStatValue: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', marginTop: 4 },
+  pulseCard: { borderRadius: 20, borderWidth: 1, padding: 14, marginTop: 14, flexDirection: 'row', gap: 10 },
+  pulseIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(54,215,242,0.11)' },
+  pulseCopy: { flex: 1 },
+  pulseMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  pulseEyebrow: { fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  pulseLocation: { fontSize: 10, fontWeight: '600' },
+  pulseHeadline: { fontSize: 17, fontWeight: '800', letterSpacing: -0.25, marginTop: 7 },
+  pulseBody: { fontSize: 12, lineHeight: 17, marginTop: 4 },
+  pulseAction: { alignSelf: 'flex-start', minHeight: 34, borderRadius: 12, paddingHorizontal: 11, marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  pulseActionText: { fontSize: 11, fontWeight: '900' },
+  pulseRefresh: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   hero: { minHeight: 172, borderRadius: 25, padding: 21, flexDirection: 'row', justifyContent: 'space-between', overflow: 'hidden' },
   heroCopy: { flex: 1, paddingRight: 18 },
   heroKicker: { color: '#9FB9FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.8 },
@@ -690,8 +791,6 @@ const styles = StyleSheet.create({
   recorderSecondary: { minHeight: 38, borderRadius: 13, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
   recorderSecondaryText: { fontSize: 12, fontWeight: '800' },
   sectionHeading: { marginTop: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  locationAction: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 18, paddingHorizontal: 10, paddingVertical: 7 },
-  locationActionText: { fontSize: 11, fontWeight: '700' },
   sectionTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.35 },
   sectionSubtitle: { fontSize: 12, marginTop: 4 },
   suggestionRow: { gap: 12, paddingVertical: 14, paddingRight: 12 },
@@ -706,6 +805,16 @@ const styles = StyleSheet.create({
   locationPrompt: { minHeight: 76, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 11 },
   promptTitle: { fontSize: 14, fontWeight: '800' },
   promptText: { fontSize: 11, lineHeight: 15, marginTop: 3 },
+  recentActivities: { marginTop: 22 },
+  recentActivitiesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 },
+  recentActivitiesTitle: { fontSize: 10, fontWeight: '900', letterSpacing: 1.4 },
+  recentActivitiesView: { fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
+  recentActivityRow: { minHeight: 74, borderRadius: 16, borderWidth: 1, padding: 8, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  recentActivityCopy: { flex: 1, minWidth: 0 },
+  recentActivityName: { fontSize: 13, fontWeight: '800' },
+  recentActivityMeta: { fontSize: 10, marginTop: 4 },
+  recentActivityMetric: { alignItems: 'flex-end', gap: 7 },
+  recentActivityDistance: { fontSize: 12, fontWeight: '800' },
   flex: { flex: 1 },
   feedHeading: { marginTop: 18, marginBottom: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   shareButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 15 },

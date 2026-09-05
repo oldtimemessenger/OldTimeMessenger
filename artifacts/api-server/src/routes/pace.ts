@@ -84,7 +84,6 @@ function suggestedCoordinates(center: Point, distance: number, seed: number): Po
 }
 
 function buildSuggestions(center: Point | null) {
-  if (!center) return [];
   const templates = [
     { title: "The Reset Loop", activity: "run", distanceKm: 4.8, elevationM: 42, durationMin: 31, difficulty: "steady", description: "A balanced loop for clearing your head and finding a steady rhythm." },
     { title: "Golden Hour Out-and-Back", activity: "walk", distanceKm: 3.2, elevationM: 18, durationMin: 42, difficulty: "easy", description: "An easy route with room to slow down, notice the neighborhood, and keep moving." },
@@ -92,8 +91,19 @@ function buildSuggestions(center: Point | null) {
     { title: "Parkline Climb", activity: "hike", distanceKm: 6.1, elevationM: 164, durationMin: 78, difficulty: "hard", description: "A scenic climb for a more deliberate day outside." },
     { title: "Neighborhood Tempo", activity: "run", distanceKm: 7.4, elevationM: 63, durationMin: 44, difficulty: "steady", description: "A repeatable route that fits between real life and your next goal." },
   ] as const;
+  const globalCenters = [
+    { label: "Sydney, Australia", latitude: -33.8688, longitude: 151.2093 },
+    { label: "Manchester, UK", latitude: 53.4808, longitude: -2.2426 },
+    { label: "Nairobi, Kenya", latitude: -1.2921, longitude: 36.8219 },
+    { label: "Tokyo, Japan", latitude: 35.6762, longitude: 139.6503 },
+    { label: "São Paulo, Brazil", latitude: -23.5505, longitude: -46.6333 },
+    { label: "Toronto, Canada", latitude: 43.6532, longitude: -79.3832 },
+    { label: "Paris, France", latitude: 48.8566, longitude: 2.3522 },
+  ] as const;
   const hourBucket = Math.floor(Date.now() / 3_600_000);
-  const baseSeed = Math.abs(Math.round(center.latitude * 97 + center.longitude * 193 + hourBucket));
+  const baseSeed = center
+    ? Math.abs(Math.round(center.latitude * 97 + center.longitude * 193 + hourBucket))
+    : Math.abs(hourBucket * 37 + 11);
   const ordered = [...templates].sort((left, right) => seededNumber(baseSeed + left.distanceKm) - seededNumber(baseSeed + right.distanceKm));
   return ordered.slice(0, 3).map((template, index) => ({
     id: `suggested-${baseSeed}-${index}`,
@@ -101,9 +111,13 @@ function buildSuggestions(center: Point | null) {
     kind: "route" as const,
     visibility: "public" as const,
     ...template,
-    locationLabel: "Near your current area",
-    distanceFromYouKm: 0,
-    routeCoordinates: suggestedCoordinates(center, template.distanceKm, baseSeed + index),
+    locationLabel: center ? "Near your current area" : globalCenters[(baseSeed + index) % globalCenters.length].label,
+    distanceFromYouKm: center ? 0 : null,
+    routeCoordinates: suggestedCoordinates(
+      center ?? globalCenters[(baseSeed + index) % globalCenters.length],
+      template.distanceKm,
+      baseSeed + index,
+    ),
   }));
 }
 

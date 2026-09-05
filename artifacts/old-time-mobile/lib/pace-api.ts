@@ -48,7 +48,7 @@ export type PaceSuggestion = {
   elevationM: number;
   durationMin: number;
   locationLabel: string;
-  distanceFromYouKm: number;
+  distanceFromYouKm: number | null;
   routeCoordinates: PacePoint[];
 };
 
