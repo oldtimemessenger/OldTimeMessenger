@@ -17,6 +17,16 @@ const giftCatalog = [
 
 const emptyWallet: CurrentEventWallet = { coins: 0, gold: 0, pendingGold: 0 };
 
+function revenueCatErrorDetails(error: unknown) {
+  if (error instanceof Error) return { message: error.message, userCancelled: false };
+  if (!error || typeof error !== 'object') return { message: null, userCancelled: false };
+  const candidate = error as { message?: unknown; userCancelled?: unknown };
+  return {
+    message: typeof candidate.message === 'string' ? candidate.message : null,
+    userCancelled: candidate.userCancelled === true,
+  };
+}
+
 export default function WalletScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -41,8 +51,10 @@ export default function WalletScreen() {
     const result = await walletQuery.refetch();
     if (result.status === 'error') {
       const message = result.error instanceof Error ? result.error.message : 'Wallet unavailable.';
-      if (options?.alertOnError) Alert.alert('Wallet not updated', message);
-      else setFeedback(message);
+      if (options?.alertOnError) {
+        setFeedback(null);
+        Alert.alert('Wallet not updated', message);
+      } else setFeedback(message);
       return null;
     }
     if (options?.clearFeedback) setFeedback(null);
@@ -54,8 +66,9 @@ export default function WalletScreen() {
       const credited = await revenueCat.purchase(item);
       await refreshWallet({ clearFeedback: true });
       setFeedback(`${credited} coins added.`);
-    } catch (error: any) {
-      if (!error?.userCancelled) setFeedback(error?.message ?? 'Purchase unavailable.');
+    } catch (error) {
+      const details = revenueCatErrorDetails(error);
+      if (!details.userCancelled) setFeedback(details.message ?? 'Purchase unavailable.');
     }
   }
 
@@ -64,8 +77,9 @@ export default function WalletScreen() {
       const credited = await revenueCat.restore();
       await refreshWallet({ clearFeedback: true });
       setFeedback(credited ? `${credited} coins restored.` : 'Wallet is up to date.');
-    } catch (error: any) {
-      setFeedback(error?.message ?? 'Restore unavailable.');
+    } catch (error) {
+      const details = revenueCatErrorDetails(error);
+      setFeedback(details.message ?? 'Restore unavailable.');
     }
   }
 
