@@ -6,7 +6,6 @@ import * as Crypto from 'expo-crypto';
 import {
   GoogleAuthProvider,
   OAuthProvider,
-  createUserWithEmailAndPassword,
   signInWithCredential,
   signInWithEmailAndPassword,
   signOut,
@@ -19,7 +18,7 @@ import {
   type AuthenticatedUser,
   type BirthdayRequiredResponse,
 } from '@workspace/api-client-react';
-import { auth } from '@/firebaseConfig';
+import { auth, firebaseApiKey } from '@/firebaseConfig';
 import { useColors } from '@/hooks/useColors';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -35,21 +34,30 @@ const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
 const GOOGLE_REVERSED_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID ?? '';
 
 function readableFirebaseError(error: unknown): string {
-  if (!(error instanceof Error)) return 'Please try again.';
-  const message = error.message;
-  if (message.includes('auth/email-already-in-use')) return 'An account already exists for this email.';
-  if (message.includes('auth/invalid-credential')) return 'The email or password is incorrect.';
-  if (message.includes('auth/invalid-email')) return 'Enter a valid email address.';
-  if (message.includes('auth/weak-password')) return 'Use a password with at least 6 characters.';
-  if (message.includes('auth/popup-closed-by-user')) return 'Google Sign-In was cancelled.';
-  return 'Sign-in is temporarily unavailable. Please try again.';
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  const code = typeof candidate?.code === 'string' ? candidate.code : '';
+  const message = typeof candidate?.message === 'string' ? candidate.message : '';
+  const reason = code || message;
+  if (reason.includes('EMAIL_EXISTS') || reason.includes('auth/email-already-in-use')) return 'An account already exists for this email.';
+  if (reason.includes('INVALID_LOGIN_CREDENTIALS') || reason.includes('auth/invalid-credential') || reason.includes('auth/wrong-password') || reason.includes('auth/user-not-found')) return 'The email or password is incorrect.';
+  if (reason.includes('INVALID_EMAIL') || reason.includes('auth/invalid-email')) return 'Enter a valid email address.';
+  if (reason.includes('WEAK_PASSWORD') || reason.includes('auth/weak-password')) return 'Use a password with at least 6 characters.';
+  if (reason.includes('OPERATION_NOT_ALLOWED') || reason.includes('auth/operation-not-allowed')) return 'Email sign-in is not enabled for this Old Time build.';
+  if (reason.includes('TOO_MANY_ATTEMPTS') || reason.includes('auth/too-many-requests')) return 'Too many attempts. Wait a moment and try again.';
+  if (reason.includes('NETWORK') || reason.includes('network-request-failed')) return 'Could not connect to Firebase. Check your connection and try again.';
+  if (reason.includes('auth/popup-closed-by-user')) return 'Google Sign-In was cancelled.';
+  return message || 'Sign-in is temporarily unavailable. Please try again.';
 }
 
 function readableExchangeError(error: unknown): string {
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  const candidate = error as { message?: unknown; data?: unknown } | null;
+  const apiError = candidate?.data as { error?: unknown } | null;
+  const serverMessage = typeof apiError?.error === 'string' ? apiError.error : '';
+  const message = `${serverMessage} ${typeof candidate?.message === 'string' ? candidate.message : ''}`.toLowerCase();
   if (message.includes('network') || message.includes('fetch') || message.includes('timeout')) {
     return 'Your sign-in was verified, but we could not reach Old Time. Check your connection and try again.';
   }
+  if (serverMessage) return serverMessage;
   return 'Your sign-in was verified, but Old Time could not finish signing you in. Please try again.';
 }
 
@@ -58,6 +66,45 @@ function isAppleSignInCancellation(error: unknown): boolean {
     && error !== null
     && 'code' in error
     && error.code === 'ERR_REQUEST_CANCELED';
+}
+
+type FirebaseEmailAuthMode = 'signUp' | 'signInWithPassword';
+
+type FirebaseEmailAuthResponse = {
+  idToken: string;
+  refreshToken: string;
+  expiresIn: string;
+  localId: string;
+  email: string;
+};
+
+async function authenticateEmailWithFirebase(
+  mode: FirebaseEmailAuthMode,
+  email: string,
+  password: string,
+): Promise<FirebaseEmailAuthResponse> {
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:${mode}?key=${firebaseApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    },
+  );
+  const body = await response.json().catch(() => null) as
+    | FirebaseEmailAuthResponse
+    | { error?: { message?: string } }
+    | null;
+  if (!response.ok || !body || !('idToken' in body) || typeof body.idToken !== 'string') {
+    const error = new Error(
+      body && 'error' in body && body.error?.message
+        ? body.error.message
+        : `Firebase email authentication failed (${response.status}).`,
+    ) as Error & { code?: string };
+    error.code = body && 'error' in body ? body.error?.message : undefined;
+    throw error;
+  }
+  return body;
 }
 
 export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
@@ -83,11 +130,15 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
     },
   );
 
-  const finishFirebaseSignIn = useCallback(async (user: User, newProfile?: { name: string; username: string }) => {
-    const idToken = await user.getIdToken(true);
+  const finishFirebaseTokenSignIn = useCallback(async (idToken: string, newProfile?: { name: string; username: string }) => {
     const result = await exchangeFirebaseToken.mutateAsync({ data: { idToken } });
     onAuthenticated(result, newProfile);
   }, [exchangeFirebaseToken, onAuthenticated]);
+
+  const finishFirebaseSignIn = useCallback(async (user: User, newProfile?: { name: string; username: string }) => {
+    const idToken = await user.getIdToken(true);
+    await finishFirebaseTokenSignIn(idToken, newProfile);
+  }, [finishFirebaseTokenSignIn]);
 
   const handleExchangeFailure = useCallback((error: unknown, user: User, newProfile?: { name: string; username: string }) => {
     Alert.alert(
@@ -186,14 +237,21 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
     if (createAccount && (!cleanName || !/^[a-z0-9_]{3,24}$/.test(cleanUsername))) return;
     setBusy(true);
     try {
-      const credential = createAccount
-        ? await createUserWithEmailAndPassword(auth, email.trim(), password)
-        : await signInWithEmailAndPassword(auth, email.trim(), password);
+      const normalizedEmail = email.trim().toLowerCase();
+      const firebaseResult = await authenticateEmailWithFirebase(
+        createAccount ? 'signUp' : 'signInWithPassword',
+        normalizedEmail,
+        password,
+      );
       const newProfile = createAccount ? { name: cleanName, username: cleanUsername } : undefined;
       try {
-        await finishFirebaseSignIn(credential.user, newProfile);
+        await finishFirebaseTokenSignIn(firebaseResult.idToken, newProfile);
+        // Keep Firebase's client session in sync for account deletion and provider
+        // refreshes. The REST token exchange above remains the source of truth for
+        // completing mobile sign-in, so this must not block the user.
+        void signInWithEmailAndPassword(auth, normalizedEmail, password).catch(() => undefined);
       } catch (error) {
-        handleExchangeFailure(error, credential.user, newProfile);
+        Alert.alert('Finish signing in', readableExchangeError(error));
       }
     } catch (error) {
       await signOut(auth).catch(() => undefined);

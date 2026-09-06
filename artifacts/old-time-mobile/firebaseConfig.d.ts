@@ -3,3 +3,4 @@ import type { Auth } from "firebase/auth";
 
 export const app: FirebaseApp;
 export const auth: Auth;
+export const firebaseApiKey: string;
