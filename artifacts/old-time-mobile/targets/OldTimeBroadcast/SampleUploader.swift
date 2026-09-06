@@ -37,9 +37,12 @@ class SampleUploader {
             return false
         }
         
-        isReady = false
+        guard let preparedData = prepare(sample: buffer) else {
+            return false
+        }
 
-        dataToSend = prepare(sample: buffer)
+        isReady = false
+        dataToSend = preparedData
         byteIndex = 0
 
         serialQueue.async { [weak self] in
@@ -58,8 +61,8 @@ private extension SampleUploader {
         }
         connection.streamHasSpaceAvailable = { [weak self] in
             self?.serialQueue.async {
-                if let success = self?.sendDataChunk() {
-                    self?.isReady = !success
+                if let finished = self?.sendDataChunk() {
+                    self?.isReady = finished
                 }
             }
         }
@@ -67,7 +70,7 @@ private extension SampleUploader {
     
     @discardableResult func sendDataChunk() -> Bool {
         guard let dataToSend = dataToSend else {
-            return false
+            return true
         }
       
         var bytesLeft = dataToSend.count - byteIndex
@@ -88,12 +91,14 @@ private extension SampleUploader {
             if bytesLeft == 0 {
                 self.dataToSend = nil
                 byteIndex = 0
+                return true
             }
         } else {
             print("writeBufferToStream failure")
+            return false
         }
       
-        return true
+        return false
     }
     
     func prepare(sample buffer: CMSampleBuffer) -> Data? {

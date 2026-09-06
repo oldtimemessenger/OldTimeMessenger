@@ -113,6 +113,7 @@ private extension SocketConnection {
   
     func setupAddress() -> Bool {
         var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
         guard filePath.count < MemoryLayout.size(ofValue: addr.sun_path) else {
             print("failure: fd path is too long")
             return false
