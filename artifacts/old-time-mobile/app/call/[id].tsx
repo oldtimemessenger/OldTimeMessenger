@@ -48,7 +48,7 @@ export default function CallScreen() {
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { session } = useApp();
+  const { session, addCall } = useApp();
   const [call, setCall] = useState<ManagedCall | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +63,7 @@ export default function CallScreen() {
   const [elapsed, setElapsed] = useState(0);
   const connectStarted = useRef(false);
   const connectedCallId = useRef<number | null>(null);
+  const recordedCallId = useRef<number | null>(null);
   const videoSurface = useRef<CallVideoSurfaceHandle>(null);
   const inbox = useGetInbox(session?.id ?? 0, { query: { enabled: Boolean(session?.id), queryKey: getGetInboxQueryKey(session?.id ?? 0) } });
 
@@ -152,6 +153,32 @@ export default function CallScreen() {
       void audioService.leave();
     }
   }, [call, connectAudio]);
+
+  // Persist finished calls into local Recent Calls once per call id.
+  useEffect(() => {
+    if (!call || !session?.id) return;
+    if (!['declined', 'missed', 'ended'].includes(call.status)) return;
+    if (recordedCallId.current === call.id) return;
+    recordedCallId.current = call.id;
+
+    const isOutgoing = call.callerId === session.id;
+    const direction =
+      call.status === 'missed'
+        ? 'missed'
+        : isOutgoing
+          ? 'outgoing'
+          : 'incoming';
+
+    const seconds = call.durationSeconds > 0 ? call.durationSeconds : elapsed;
+    const duration = seconds > 0 ? durationLabel(seconds) : undefined;
+
+    addCall({
+      name,
+      type: call.type,
+      direction,
+      duration,
+    });
+  }, [call, session?.id, name, elapsed, addCall]);
 
   useEffect(() => () => { void audioService.leave(); }, []);
 
@@ -394,8 +421,8 @@ export default function CallScreen() {
               </Pressable>
             ) : null}
             <Pressable disabled={busy || !call} onPress={() => void hangup()} style={[styles.endButton, { backgroundColor: colors.destructive }]}>
-              <Ionicons name="call" size={20} color={colors.destructiveForeground} />
-              <Text style={[styles.endText, { color: colors.destructiveForeground }]}>{isCallee && call?.status === 'ringing' ? 'Decline' : 'End call'}</Text>
+              <Ionicons name="call" size={20} color="#FFFFFF" style={{ transform: [{ rotate: '135deg' }] }} />
+              <Text style={styles.endText}>End</Text>
             </Pressable>
           </View>
         </>
@@ -407,40 +434,40 @@ export default function CallScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 20 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  topButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  topTitle: { alignItems: 'center', gap: 2 },
-  callTypeText: { fontSize: 14, fontWeight: '800' },
-  topMeta: { fontSize: 12, fontWeight: '600' },
-  liveDot: { width: 8, height: 8, borderRadius: 4, marginRight: 17 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
+  topButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  topTitle: { alignItems: 'center', flex: 1 },
+  callTypeText: { fontSize: 16, fontWeight: '700' },
+  topMeta: { fontSize: 13, marginTop: 2 },
+  liveDot: { width: 10, height: 10, borderRadius: 5 },
+  voiceContent: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  finishedContent: { paddingBottom: 24 },
+  name: { fontSize: 28, fontWeight: '700', marginTop: 16 },
+  title: { fontSize: 18, fontWeight: '600', marginTop: 4 },
+  detail: { fontSize: 14, textAlign: 'center', paddingHorizontal: 24 },
+  connectionPill: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
+  connectionText: { fontSize: 13, fontWeight: '600' },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  voiceContent: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  finishedContent: { paddingBottom: 42 },
-  name: { fontSize: 30, fontWeight: '800', marginTop: 18, letterSpacing: -0.5 },
-  title: { fontSize: 18, fontWeight: '700' },
-  detail: { fontSize: 14, textAlign: 'center' },
-  connectionPill: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, marginTop: 14 },
-  connectionText: { fontSize: 12, fontWeight: '700' },
-  videoStageContainer: { flex: 1, marginTop: 14, marginBottom: 18, borderRadius: 28, overflow: 'hidden', backgroundColor: '#101217' },
+  videoStageContainer: { flex: 1, borderRadius: 24, overflow: 'hidden', marginBottom: 16 },
   videoConnecting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  videoConnectingText: { fontSize: 13, fontWeight: '700' },
-  videoOverlay: { position: 'absolute', top: 14, left: 14, right: 14, alignItems: 'center' },
-  videoStatusPill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(16,18,23,0.72)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
-  videoStatusText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
-  videoError: { color: '#FFFFFF', backgroundColor: 'rgba(190,40,56,0.88)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 8, fontSize: 12, textAlign: 'center' },
-  controlsRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 22 },
-  controlButton: { width: 66, alignItems: 'center', gap: 7 },
-  controlIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  controlLabel: { fontSize: 11.5, fontWeight: '700', textAlign: 'center' },
-  summaryCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
-  summaryIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  summaryCopy: { flex: 1, gap: 3 },
-  summaryTitle: { fontSize: 15, fontWeight: '800' },
-  summaryDetail: { fontSize: 12.5 },
+  videoConnectingText: { fontSize: 14 },
+  videoOverlay: { position: 'absolute', top: 16, left: 16, right: 16, gap: 8 },
+  videoStatusPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.45)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
+  videoStatusText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  videoError: { color: '#fecaca', fontSize: 13 },
+  summaryCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, marginTop: 'auto' },
+  summaryIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  summaryCopy: { flex: 1 },
+  summaryTitle: { fontSize: 16, fontWeight: '700' },
+  summaryDetail: { fontSize: 13, marginTop: 2 },
   doneButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  bottomActions: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 2 },
-  answerButton: { minWidth: 132, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  answerText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  controlsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 18, marginBottom: 28 },
+  controlButton: { width: 72, alignItems: 'center', gap: 8 },
+  controlIcon: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  controlLabel: { fontSize: 12, fontWeight: '600' },
+  bottomActions: { flexDirection: 'row', justifyContent: 'center', gap: 16 },
+  answerButton: { minWidth: 142, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  answerText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   endButton: { minWidth: 142, minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  endText: { fontSize: 15, fontWeight: '800' },
+  endText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
 });
