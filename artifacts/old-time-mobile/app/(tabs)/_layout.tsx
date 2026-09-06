@@ -15,7 +15,6 @@ const tabDefinitions = {
   pace: { label: 'Pace', icon: 'footsteps-outline', activeIcon: 'footsteps' },
   map: { label: 'Map', icon: 'location-outline', activeIcon: 'location' },
   index: { label: 'Chat', icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
-  calls: { label: 'Calls', icon: 'call-outline', activeIcon: 'call' },
   settings: { label: 'Settings', icon: 'settings-outline', activeIcon: 'settings' },
 } as const satisfies Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }>;
 
@@ -48,7 +47,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               key={route.key}
               accessibilityRole="tab"
               accessibilityState={focused ? { selected: true } : {}}
-                accessibilityLabel={descriptors[route.key]?.options.tabBarAccessibilityLabel ?? t(settings.language, labelKey as 'updates' | 'pace' | 'map' | 'chat' | 'calls' | 'settings')}
+                accessibilityLabel={descriptors[route.key]?.options.tabBarAccessibilityLabel ?? t(settings.language, labelKey as 'updates' | 'pace' | 'map' | 'chat' | 'settings')}
               onPress={onPress}
               onLongPress={onLongPress}
               style={({ pressed }) => [styles.tabPressable, { opacity: pressed ? 0.66 : 1 }]}
@@ -59,7 +58,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                   size={focused ? 22 : 21}
                   color={focused ? colors.primary : colors.mutedForeground}
                 />
-                  <Text style={[styles.tabLabel, { color: focused ? colors.primary : colors.mutedForeground }]}>{t(settings.language, labelKey as 'updates' | 'pace' | 'map' | 'chat' | 'calls' | 'settings')}</Text>
+                  <Text style={[styles.tabLabel, { color: focused ? colors.primary : colors.mutedForeground }]}>{t(settings.language, labelKey as 'updates' | 'pace' | 'map' | 'chat' | 'settings')}</Text>
               </View>
             </Pressable>
           );
@@ -87,7 +86,6 @@ export default function TabLayout() {
     <Tabs.Screen name="pace" options={{ title: 'Pace', tabBarIcon: ({ color, size }) => <Ionicons name="footsteps-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="map" options={{ title: 'Map', tabBarIcon: ({ color, size }) => <Ionicons name="location-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="index" options={{ title: 'Chat', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" color={color} size={size} /> }} />
-    <Tabs.Screen name="calls" options={{ title: 'Calls', tabBarIcon: ({ color, size }) => <Ionicons name="call-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }} />
     <Tabs.Screen name="updates-screen" options={{ href: null }} />
   </Tabs>;
