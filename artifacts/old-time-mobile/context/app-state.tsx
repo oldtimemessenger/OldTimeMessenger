@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setUnauthorizedHandler, type AuthenticatedUser } from '@workspace/api-client-react';
+import { signOut as firebaseSignOut } from 'firebase/auth';
 import React, { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { auth } from '@/firebaseConfig';
 import type { InteractionKind } from '@/lib/for-you';
 
 export type StatusItem = {
@@ -193,7 +195,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setSessionState(null);
-      return AsyncStorage.removeItem(STORAGE_KEY);
+      return AsyncStorage.removeItem(STORAGE_KEY).then(() => {
+        // Match logout: clear Firebase identity so a rejected API session cannot
+        // leave a stale auth user for the next sign-in attempt.
+        return firebaseSignOut(auth).catch(() => undefined);
+      });
     });
     return () => setUnauthorizedHandler(null);
   }, []);
