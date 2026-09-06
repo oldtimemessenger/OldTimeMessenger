@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const projectRoot = path.resolve(__dirname, '..');
-const EXPECTED_RELEASE_COMMIT = '63643202cea027995db4c273220d468f779ec59c';
+const EXPECTED_RELEASE_COMMIT = '5fe0df611f77997f9da389c37f7b3fa1535cb123';
 
 function readJson(fileName) {
   return JSON.parse(fs.readFileSync(path.join(projectRoot, fileName), 'utf8'));
