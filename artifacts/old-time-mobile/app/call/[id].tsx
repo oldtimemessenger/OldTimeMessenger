@@ -154,31 +154,35 @@ export default function CallScreen() {
     }
   }, [call, connectAudio]);
 
-  // Persist finished calls into local Recent Calls once per call id.
-  useEffect(() => {
-    if (!call || !session?.id) return;
-    if (!['declined', 'missed', 'ended'].includes(call.status)) return;
-    if (recordedCallId.current === call.id) return;
-    recordedCallId.current = call.id;
+  const recordFinishedCall = useCallback((finished: ManagedCall) => {
+    if (!session?.id) return;
+    if (recordedCallId.current === finished.id) return;
+    recordedCallId.current = finished.id;
 
-    const isOutgoing = call.callerId === session.id;
+    const isOutgoing = finished.callerId === session.id;
     const direction =
-      call.status === 'missed'
+      finished.status === 'missed'
         ? 'missed'
         : isOutgoing
           ? 'outgoing'
           : 'incoming';
 
-    const seconds = call.durationSeconds > 0 ? call.durationSeconds : elapsed;
+    const seconds = finished.durationSeconds > 0 ? finished.durationSeconds : elapsed;
     const duration = seconds > 0 ? durationLabel(seconds) : undefined;
 
     addCall({
       name,
-      type: call.type,
+      type: finished.type,
       direction,
       duration,
     });
-  }, [call, session?.id, name, elapsed, addCall]);
+  }, [session?.id, name, elapsed, addCall]);
+
+  // Persist finished calls into local Recent Calls once per call id.
+  useEffect(() => {
+    if (!call || !['declined', 'missed', 'ended'].includes(call.status)) return;
+    recordFinishedCall(call);
+  }, [call, recordFinishedCall]);
 
   useEffect(() => () => { void audioService.leave(); }, []);
 
@@ -199,6 +203,7 @@ export default function CallScreen() {
   async function hangup() {
     if (!session?.authToken || !call) return;
     if (isFinished) {
+      recordFinishedCall(call);
       setCallCredentials(null);
       setVideoConnected(false);
       setScreenSharing(false);
@@ -209,8 +214,12 @@ export default function CallScreen() {
     }
     setBusy(true);
     try {
-      if (call.status === 'ringing' && isCallee) await declineManagedCall(session.authToken, call.id);
-      else await endManagedCall(session.authToken, call.id);
+      const updated =
+        call.status === 'ringing' && isCallee
+          ? await declineManagedCall(session.authToken, call.id)
+          : await endManagedCall(session.authToken, call.id);
+      setCall(updated);
+      recordFinishedCall(updated);
       setCallCredentials(null);
       setVideoConnected(false);
       setScreenSharing(false);
