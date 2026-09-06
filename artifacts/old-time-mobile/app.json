@@ -125,6 +125,7 @@
     "extra": {
       "router": {},
       "apiDomain": "old-time-messenger--kingvercetti59.replit.app",
+      "releaseCommit": "63643202cea027995db4c273220d468f779ec59c",
       "eas": {
         "projectId": "5d0acf68-ca5f-479f-8fa6-2fbf81342ebb"
       }

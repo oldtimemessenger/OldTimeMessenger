@@ -9,6 +9,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
+        "EXPO_PUBLIC_RELEASE_COMMIT": "63643202cea027995db4c273220d468f779ec59c",
         "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
       }
     },
@@ -21,6 +22,7 @@
       },
       "env": {
         "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
+        "EXPO_PUBLIC_RELEASE_COMMIT": "63643202cea027995db4c273220d468f779ec59c",
         "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
       }
     },
@@ -34,6 +36,7 @@
       },
       "env": {
         "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
+        "EXPO_PUBLIC_RELEASE_COMMIT": "63643202cea027995db4c273220d468f779ec59c",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID": "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0",
         "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
@@ -45,6 +48,7 @@
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
+        "EXPO_PUBLIC_RELEASE_COMMIT": "63643202cea027995db4c273220d468f779ec59c",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID": "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0",
         "EXPO_PUBLIC_ADMOB_TEST_MODE": "false"

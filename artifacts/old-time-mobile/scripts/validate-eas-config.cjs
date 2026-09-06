@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const projectRoot = path.resolve(__dirname, '..');
+const EXPECTED_RELEASE_COMMIT = '63643202cea027995db4c273220d468f779ec59c';
 
 function readJson(fileName) {
   return JSON.parse(fs.readFileSync(path.join(projectRoot, fileName), 'utf8'));
@@ -26,6 +27,9 @@ function validateEasConfig() {
   const app = readJson('app.json').expo;
   const eas = readJson('eas.json');
   const appDomain = normalizeDomain(app.extra?.apiDomain, 'app.json expo.extra.apiDomain');
+  if (app.extra?.releaseCommit !== EXPECTED_RELEASE_COMMIT) {
+    throw new Error(`app.json expo.extra.releaseCommit must be ${EXPECTED_RELEASE_COMMIT}.`);
+  }
   const firebaseConfig = fs.readFileSync(path.join(projectRoot, 'firebaseConfig.js'), 'utf8');
 
   if (!firebaseConfig.includes('projectId: "oldtime-a23af"')) {
@@ -40,9 +44,12 @@ function validateEasConfig() {
     if (profileDomain !== appDomain) {
       throw new Error(`EAS profile "${profileName}" points to ${profileDomain}, but app.json points to ${appDomain}.`);
     }
+    if (profile.env?.EXPO_PUBLIC_RELEASE_COMMIT !== EXPECTED_RELEASE_COMMIT) {
+      throw new Error(`EAS profile "${profileName}" is not pinned to release ${EXPECTED_RELEASE_COMMIT}.`);
+    }
   }
 
-  console.log(`EAS auth configuration valid: ${appDomain}`);
+  console.log(`EAS auth configuration valid: ${appDomain} @ ${EXPECTED_RELEASE_COMMIT}`);
 }
 
 if (require.main === module) {
