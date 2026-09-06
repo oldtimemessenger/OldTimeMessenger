@@ -2,7 +2,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const projectRoot = path.resolve(__dirname, '..');
-const EXPECTED_RELEASE_COMMIT = '5fe0df611f77997f9da389c37f7b3fa1535cb123';
 
 function readJson(fileName) {
   return JSON.parse(fs.readFileSync(path.join(projectRoot, fileName), 'utf8'));
@@ -23,13 +22,18 @@ function normalizeDomain(value, label) {
   return url.hostname;
 }
 
+function normalizeReleaseCommit(value, label) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{40}$/i.test(value.trim())) {
+    throw new Error(`${label} must be a full 40-character Git commit SHA.`);
+  }
+  return value.trim().toLowerCase();
+}
+
 function validateEasConfig() {
   const app = readJson('app.json').expo;
   const eas = readJson('eas.json');
   const appDomain = normalizeDomain(app.extra?.apiDomain, 'app.json expo.extra.apiDomain');
-  if (app.extra?.releaseCommit !== EXPECTED_RELEASE_COMMIT) {
-    throw new Error(`app.json expo.extra.releaseCommit must be ${EXPECTED_RELEASE_COMMIT}.`);
-  }
+  const releaseCommit = normalizeReleaseCommit(app.extra?.releaseCommit, 'app.json expo.extra.releaseCommit');
   const firebaseConfig = fs.readFileSync(path.join(projectRoot, 'firebaseConfig.js'), 'utf8');
 
   if (!firebaseConfig.includes('projectId: "oldtime-a23af"')) {
@@ -44,12 +48,16 @@ function validateEasConfig() {
     if (profileDomain !== appDomain) {
       throw new Error(`EAS profile "${profileName}" points to ${profileDomain}, but app.json points to ${appDomain}.`);
     }
-    if (profile.env?.EXPO_PUBLIC_RELEASE_COMMIT !== EXPECTED_RELEASE_COMMIT) {
-      throw new Error(`EAS profile "${profileName}" is not pinned to release ${EXPECTED_RELEASE_COMMIT}.`);
+    const profileReleaseCommit = normalizeReleaseCommit(
+      profile.env?.EXPO_PUBLIC_RELEASE_COMMIT,
+      `eas.json build.${profileName}.env.EXPO_PUBLIC_RELEASE_COMMIT`,
+    );
+    if (profileReleaseCommit !== releaseCommit) {
+      throw new Error(`EAS profile "${profileName}" is not pinned to release ${releaseCommit}.`);
     }
   }
 
-  console.log(`EAS auth configuration valid: ${appDomain} @ ${EXPECTED_RELEASE_COMMIT}`);
+  console.log(`EAS auth configuration valid: ${appDomain} @ ${releaseCommit}`);
 }
 
 if (require.main === module) {
