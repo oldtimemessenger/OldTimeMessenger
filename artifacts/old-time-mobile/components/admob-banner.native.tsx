@@ -11,7 +11,7 @@ export function AdMobBanner() {
     <View style={styles.container} accessibilityLabel="Advertisement">
       <BannerAd
         unitId={unitId}
-        size={BannerAdSize.LARGE_ANCHORED_ADAPTIVE_BANNER}
+        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
         requestOptions={{ requestNonPersonalizedAdsOnly: true }}
       />
     </View>
