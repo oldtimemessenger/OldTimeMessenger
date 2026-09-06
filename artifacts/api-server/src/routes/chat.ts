@@ -100,6 +100,21 @@ const MAX_IP_REQUESTS_PER_WINDOW = 20;
 const MAX_OTP_ATTEMPTS = 5;
 const MESSAGE_VIEW_EXPIRY_MS = 60_000;
 
+function firebaseAuthFailure(error: unknown): { status: 401 | 503; message: string } {
+  const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : "";
+  if (
+    code === "auth/id-token-expired"
+    || code === "auth/argument-error"
+    || code === "auth/invalid-id-token"
+    || code === "auth/project-not-found"
+  ) {
+    return { status: 401, message: "The Firebase identity token is invalid or expired. Sign in again." };
+  }
+  return { status: 503, message: "Firebase sign-in is temporarily unavailable. Please try again shortly." };
+}
+
 function now(): number {
   return Date.now();
 }
@@ -583,7 +598,8 @@ router.post("/auth/firebase", async (req, res): Promise<void> => {
     res.json(FirebaseSignInResponse.parse({ ...parseUser(activeUser), authToken }));
   } catch (error) {
     req.log.error({ err: error }, "Firebase sign-in failed");
-    res.status(503).json({ error: "Firebase sign-in is temporarily unavailable." });
+    const failure = firebaseAuthFailure(error);
+    res.status(failure.status).json({ error: failure.message });
   }
 });
 

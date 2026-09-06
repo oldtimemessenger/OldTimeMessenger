@@ -44,6 +44,7 @@ function readableFirebaseError(error: unknown): string {
   if (reason.includes('WEAK_PASSWORD') || reason.includes('auth/weak-password')) return 'Use a password with at least 6 characters.';
   if (reason.includes('OPERATION_NOT_ALLOWED') || reason.includes('auth/operation-not-allowed')) return 'Email sign-in is not enabled for this Old Time build.';
   if (reason.includes('TOO_MANY_ATTEMPTS') || reason.includes('auth/too-many-requests')) return 'Too many attempts. Wait a moment and try again.';
+  if (reason.includes('NETWORK_TIMEOUT')) return 'Firebase took too long to respond. Check your connection and try again.';
   if (reason.includes('NETWORK') || reason.includes('network-request-failed')) return 'Could not connect to Firebase. Check your connection and try again.';
   if (reason.includes('auth/popup-closed-by-user')) return 'Google Sign-In was cancelled.';
   return message || 'Sign-in is temporarily unavailable. Please try again.';
@@ -78,33 +79,54 @@ type FirebaseEmailAuthResponse = {
   email: string;
 };
 
+function isFirebaseEmailAuthResponse(value: unknown): value is FirebaseEmailAuthResponse {
+  if (!value || typeof value !== 'object') return false;
+  const body = value as Record<string, unknown>;
+  return ['idToken', 'refreshToken', 'expiresIn', 'localId', 'email']
+    .every((key) => typeof body[key] === 'string' && body[key] !== '');
+}
+
 async function authenticateEmailWithFirebase(
   mode: FirebaseEmailAuthMode,
   email: string,
   password: string,
 ): Promise<FirebaseEmailAuthResponse> {
-  const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:${mode}?key=${firebaseApiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
-    },
-  );
-  const body = await response.json().catch(() => null) as
-    | FirebaseEmailAuthResponse
-    | { error?: { message?: string } }
-    | null;
-  if (!response.ok || !body || !('idToken' in body) || typeof body.idToken !== 'string') {
-    const error = new Error(
-      body && 'error' in body && body.error?.message
-        ? body.error.message
-        : `Firebase email authentication failed (${response.status}).`,
-    ) as Error & { code?: string };
-    error.code = body && 'error' in body ? body.error?.message : undefined;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:${mode}?key=${firebaseApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, returnSecureToken: true }),
+        signal: controller.signal,
+      },
+    );
+    const body = await response.json().catch(() => null) as
+      | FirebaseEmailAuthResponse
+      | { error?: { message?: string } }
+      | null;
+    if (!response.ok || !isFirebaseEmailAuthResponse(body)) {
+      const error = new Error(
+        body && 'error' in body && body.error?.message
+          ? body.error.message
+          : `Firebase email authentication failed (${response.status}).`,
+      ) as Error & { code?: string };
+      error.code = body && 'error' in body ? body.error?.message : undefined;
+      throw error;
+    }
+    return body;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      const timeoutError = new Error('Firebase email authentication timed out.') as Error & { code?: string };
+      timeoutError.code = 'NETWORK_TIMEOUT';
+      throw timeoutError;
+    }
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return body;
 }
 
 export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {

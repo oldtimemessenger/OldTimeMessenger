@@ -75,6 +75,12 @@
         }
       ],
       [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Old Time to access your microphone for voice notes and calls."
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Allow Old Time to access your photos to share them with your friends."
@@ -118,6 +124,7 @@
     },
     "extra": {
       "router": {},
+      "apiDomain": "old-time-messenger--kingvercetti59.replit.app",
       "eas": {
         "projectId": "5d0acf68-ca5f-479f-8fa6-2fbf81342ebb"
       }

@@ -3,6 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
+const { validateEasConfig } = require('./validate-eas-config.cjs');
 
 let metroProcess = null;
 
@@ -531,6 +532,7 @@ async function main() {
   console.log('Building static Expo Go deployment...');
 
   setupSignalHandlers();
+  validateEasConfig();
 
   const domain = getDeploymentDomain();
   const expoPublicReplId = getExpoPublicReplId();

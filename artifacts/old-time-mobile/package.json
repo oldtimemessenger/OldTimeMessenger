@@ -11,8 +11,9 @@
     }
   },
   "scripts": {
-    "dev": "expo start --port $PORT",
+    "dev": "EXPO_PUBLIC_DOMAIN=\"${EXPO_PUBLIC_DOMAIN:-$REPLIT_DEV_DOMAIN}\" expo start --port $PORT",
     "build": "node scripts/build.js",
+    "validate:eas-auth": "node scripts/validate-eas-config.cjs",
     "check:private-navigation": "node scripts/navigation-regression.mjs",
     "serve": "node server/serve.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
