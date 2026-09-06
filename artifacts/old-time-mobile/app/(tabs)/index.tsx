@@ -5,14 +5,17 @@ import { ActivityIndicator, Alert, FlatList, Linking, Modal, Platform, Pressable
 import * as Contacts from 'expo-contacts';
 import * as Crypto from 'expo-crypto';
 import { Image } from 'expo-image';
+import { signOut as firebaseSignOut } from 'firebase/auth';
 import { getGetInboxQueryKey, getListUsersQueryKey, useCreateChat, useGetInbox, useListUsers, useLogout, type InboxItem, type User } from '@workspace/api-client-react';
 import { Avatar, EmptyState, IconButton, LoadingState, Screen, StoryAvatar } from '@/components/ui';
 import { useApp } from '@/context/app-state';
 import { useColors } from '@/hooks/useColors';
 import { typography } from '@/constants/typography';
 import { useQueryClient } from '@tanstack/react-query';
+import { auth } from '@/firebaseConfig';
 import { discoverContacts as discoverServerContacts, getStories, type Story } from '@/lib/social-api';
 import { presenceLabel } from '@/lib/presence';
+import { unregisterDeviceForPush } from '@/lib/push-notifications';
 import { ServerStoryViewer } from '@/components/server-story-viewer';
 import { buildStoryViewerItems } from '@/lib/story-viewer-sequence';
 import { userStoryViewerItemId } from '@/components/story-viewer-content';
@@ -203,11 +206,17 @@ export default function ChatsScreen() {
     }
   }
 
-  function signOut() {
+  async function signOut() {
     setShowProfile(false);
-    logout.mutate(undefined);
-    setSession(null);
+    try {
+      if (session?.authToken) await unregisterDeviceForPush(session.authToken).catch(() => undefined);
+      await logout.mutateAsync(undefined);
+    } catch {
+      // A failed server revoke must not trap someone in a local session.
+    }
     queryClient.clear();
+    setSession(null);
+    await firebaseSignOut(auth).catch(() => undefined);
     router.replace('/');
   }
 

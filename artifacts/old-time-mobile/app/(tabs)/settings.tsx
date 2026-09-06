@@ -111,13 +111,14 @@ export default function SettingsScreen() {
     if (signingOut) return;
     setSigningOut(true);
     try {
-      if (session?.authToken) await unregisterDeviceForPush(session.authToken);
+      if (session?.authToken) await unregisterDeviceForPush(session.authToken).catch(() => undefined);
       await logout.mutateAsync(undefined);
     } catch {
       // A failed server revoke must not trap someone in a local session.
     }
     queryClient.clear();
     setSession(null);
+    await firebaseSignOut(auth).catch(() => undefined);
   }
 
   async function permanentlyDeleteAccount() {
