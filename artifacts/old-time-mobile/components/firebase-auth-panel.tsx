@@ -4,7 +4,6 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import * as Crypto from 'expo-crypto';
 import {
-  GoogleAuthProvider,
   OAuthProvider,
   signInWithCredential,
   signInWithEmailAndPassword,
@@ -32,6 +31,9 @@ type Props = {
 
 const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
 const GOOGLE_REVERSED_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID ?? '';
+const GOOGLE_REDIRECT_URI = GOOGLE_REVERSED_CLIENT_ID
+  ? `${GOOGLE_REVERSED_CLIENT_ID}:/oauthredirect`
+  : undefined;
 
 function readableFirebaseError(error: unknown): string {
   const candidate = error as { code?: unknown; message?: unknown } | null;
@@ -84,6 +86,50 @@ function isFirebaseEmailAuthResponse(value: unknown): value is FirebaseEmailAuth
   const body = value as Record<string, unknown>;
   return ['idToken', 'refreshToken', 'expiresIn', 'localId', 'email']
     .every((key) => typeof body[key] === 'string' && body[key] !== '');
+}
+
+async function authenticateGoogleWithFirebase(idToken: string): Promise<FirebaseEmailAuthResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${firebaseApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postBody: `id_token=${encodeURIComponent(idToken)}&providerId=google.com`,
+          requestUri: 'http://localhost',
+          returnIdpCredential: true,
+          returnSecureToken: true,
+        }),
+        signal: controller.signal,
+      },
+    );
+    const body = await response.json().catch(() => null) as
+      | FirebaseEmailAuthResponse
+      | { error?: { message?: string } }
+      | null;
+    if (!response.ok || !isFirebaseEmailAuthResponse(body)) {
+      const error = new Error(
+        body && 'error' in body && body.error?.message
+          ? body.error.message
+          : `Firebase Google authentication failed (${response.status}).`,
+      ) as Error & { code?: string };
+      error.code = body && 'error' in body ? body.error?.message : undefined;
+      throw error;
+    }
+    return body;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      const timeoutError = new Error('Firebase Google authentication timed out.') as Error & { code?: string };
+      timeoutError.code = 'NETWORK_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function authenticateEmailWithFirebase(
@@ -144,6 +190,7 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
     {
       clientId: GOOGLE_IOS_CLIENT_ID,
       iosClientId: GOOGLE_IOS_CLIENT_ID,
+      redirectUri: GOOGLE_REDIRECT_URI,
       selectAccount: true,
     },
     {
@@ -183,15 +230,14 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
     if (!idToken || processedGoogleToken.current === idToken) return;
     processedGoogleToken.current = idToken;
     setBusy(true);
-    const credential = GoogleAuthProvider.credential(idToken);
-    void signInWithCredential(auth, credential)
-      .then(({ user }) => finishFirebaseSignIn(user).catch((error) => handleExchangeFailure(error, user)))
+    void authenticateGoogleWithFirebase(idToken)
+      .then(({ idToken: firebaseIdToken }) => finishFirebaseTokenSignIn(firebaseIdToken))
       .catch(async (error) => {
         await signOut(auth).catch(() => undefined);
         Alert.alert('Google Sign-In unavailable', readableFirebaseError(error));
       })
       .finally(() => setBusy(false));
-  }, [finishFirebaseSignIn, googleResponse, handleExchangeFailure]);
+  }, [finishFirebaseTokenSignIn, googleResponse]);
 
   useEffect(() => {
     let mounted = true;
