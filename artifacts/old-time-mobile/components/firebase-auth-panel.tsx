@@ -4,11 +4,8 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import * as Crypto from 'expo-crypto';
 import {
-  OAuthProvider,
-  signInWithCredential,
   signInWithEmailAndPassword,
   signOut,
-  type User,
 } from 'firebase/auth';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -88,7 +85,11 @@ function isFirebaseEmailAuthResponse(value: unknown): value is FirebaseEmailAuth
     .every((key) => typeof body[key] === 'string' && body[key] !== '');
 }
 
-async function authenticateGoogleWithFirebase(idToken: string): Promise<FirebaseEmailAuthResponse> {
+async function authenticateProviderWithFirebase(
+  providerId: 'google.com' | 'apple.com',
+  idToken: string,
+  rawNonce?: string,
+): Promise<FirebaseEmailAuthResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
@@ -98,7 +99,11 @@ async function authenticateGoogleWithFirebase(idToken: string): Promise<Firebase
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          postBody: `id_token=${encodeURIComponent(idToken)}&providerId=google.com`,
+          postBody: [
+            `id_token=${encodeURIComponent(idToken)}`,
+            `providerId=${encodeURIComponent(providerId)}`,
+            rawNonce ? `nonce=${encodeURIComponent(rawNonce)}` : null,
+          ].filter(Boolean).join('&'),
           requestUri: 'http://localhost',
           returnIdpCredential: true,
           returnSecureToken: true,
@@ -114,7 +119,7 @@ async function authenticateGoogleWithFirebase(idToken: string): Promise<Firebase
       const error = new Error(
         body && 'error' in body && body.error?.message
           ? body.error.message
-          : `Firebase Google authentication failed (${response.status}).`,
+          : `Firebase ${providerId} authentication failed (${response.status}).`,
       ) as Error & { code?: string };
       error.code = body && 'error' in body ? body.error?.message : undefined;
       throw error;
@@ -122,7 +127,7 @@ async function authenticateGoogleWithFirebase(idToken: string): Promise<Firebase
     return body;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
-      const timeoutError = new Error('Firebase Google authentication timed out.') as Error & { code?: string };
+      const timeoutError = new Error(`Firebase ${providerId} authentication timed out.`) as Error & { code?: string };
       timeoutError.code = 'NETWORK_TIMEOUT';
       throw timeoutError;
     }
@@ -204,33 +209,12 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
     onAuthenticated(result, newProfile);
   }, [exchangeFirebaseToken, onAuthenticated]);
 
-  const finishFirebaseSignIn = useCallback(async (user: User, newProfile?: { name: string; username: string }) => {
-    const idToken = await user.getIdToken(true);
-    await finishFirebaseTokenSignIn(idToken, newProfile);
-  }, [finishFirebaseTokenSignIn]);
-
-  const handleExchangeFailure = useCallback((error: unknown, user: User, newProfile?: { name: string; username: string }) => {
-    Alert.alert(
-      'Finish signing in',
-      readableExchangeError(error),
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Try again',
-          onPress: () => void finishFirebaseSignIn(user, newProfile).catch((retryError) => {
-            Alert.alert('Finish signing in', readableExchangeError(retryError));
-          }),
-        },
-      ],
-    );
-  }, [finishFirebaseSignIn]);
-
   useEffect(() => {
     const idToken = googleResponse?.type === 'success' ? googleResponse.params.id_token : null;
     if (!idToken || processedGoogleToken.current === idToken) return;
     processedGoogleToken.current = idToken;
     setBusy(true);
-    void authenticateGoogleWithFirebase(idToken)
+    void authenticateProviderWithFirebase('google.com', idToken)
       .then(({ idToken: firebaseIdToken }) => finishFirebaseTokenSignIn(firebaseIdToken))
       .catch(async (error) => {
         await signOut(auth).catch(() => undefined);
@@ -278,17 +262,12 @@ export function FirebaseAuthPanel({ onAuthenticated, onModeChange }: Props) {
         throw new Error('Apple did not return an identity token.');
       }
 
-      const provider = new OAuthProvider('apple.com');
-      const firebaseCredential = provider.credential({
-        idToken: appleCredential.identityToken,
+      const firebaseResult = await authenticateProviderWithFirebase(
+        'apple.com',
+        appleCredential.identityToken,
         rawNonce,
-      });
-      const { user } = await signInWithCredential(auth, firebaseCredential);
-      try {
-        await finishFirebaseSignIn(user);
-      } catch (error) {
-        handleExchangeFailure(error, user);
-      }
+      );
+      await finishFirebaseTokenSignIn(firebaseResult.idToken);
     } catch (error) {
       if (isAppleSignInCancellation(error)) return;
       await signOut(auth).catch(() => undefined);
