@@ -217,11 +217,11 @@ export default function CreateScreen() {
                  return <Pressable key={mode} onPress={onPress} style={[styles.formatPill, active && styles.formatActive]} accessibilityRole="button" accessibilityLabel={mode === 'HUBS' ? 'Open Hubs' : mode === 'ROUTES' ? 'Open Routes' : mode === 'ACCESS' ? 'Open Access' : mode === 'PHOTO' ? 'Start photo' : 'Create text post'}><Text style={[styles.formatText, { color: isTextMode ? colors.homeForeground : colors.homeBackground }, active && styles.formatTextActive]}>{mode}</Text></Pressable>;
              })}
            </View>
-          <View style={styles.shutterRow}>
+           <View style={styles.shutterRow}>
             <Pressable onPress={() => void chooseMedia()} style={styles.albumThumb} accessibilityRole="button" accessibilityLabel="Choose from album">
               {media?.type === 'image' ? <Image source={{ uri: media.uri }} style={styles.albumThumbImage} /> : <Ionicons name="albums-outline" size={25} color="#fff" />}
             </Pressable>
-             <Pressable onPress={() => { if (postKind === 'quote') setDetailsOpen(true); else if (cameraOpen && !media) void capturePhoto(); else void openCamera('photo'); }} style={[styles.shutter, { borderColor: cameraForeground }]} accessibilityRole="button" accessibilityLabel={postKind === 'quote' ? 'Write text post' : cameraOpen && !media ? 'Take photo' : 'Open camera'}><View style={[styles.shutterInner, { backgroundColor: cameraForeground }]} /></Pressable>
+             <Pressable onPress={() => postKind === 'quote' ? setDetailsOpen(true) : void openCamera('photo')} style={[styles.shutter, { borderColor: cameraForeground }]} accessibilityRole="button" accessibilityLabel={postKind === 'quote' ? 'Write text post' : 'Open camera'}><View style={[styles.shutterInner, { backgroundColor: cameraForeground }]} /></Pressable>
              <Pressable onPress={() => void publish()} disabled={isPublishing} style={[styles.cameraPostButton, { opacity: isPublishing ? 0.45 : 1 }]} accessibilityRole="button" accessibilityLabel="Post moment"><Text style={[styles.cameraPostText, { color: cameraForeground }]}>{isPublishing ? '...' : 'Post'}</Text></Pressable>
           </View>
            <Pressable onPress={() => setDetailsOpen((current) => !current)} style={styles.drawerHandle} accessibilityRole="button" accessibilityLabel={detailsOpen ? 'Close create options' : 'Open create options'}><Ionicons name={detailsOpen ? 'chevron-down' : 'chevron-up'} size={20} color="#fff" /></Pressable>
