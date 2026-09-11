@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Old Time",
-    "slug": "oldtimeuniversal",
+    "slug": "old-time-messenger",
     "owner": "oldtimes-team",
     "version": "1.0.1",
     "description": "Old Time is a private messenger for chats, updates, calls, and shared moments.",
