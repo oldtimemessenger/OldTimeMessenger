@@ -42,7 +42,9 @@
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID": "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0",
         "EXPO_PUBLIC_SUPABASE_OAUTH_PROVIDERS": "google,apple",
-        "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
+        "EXPO_PUBLIC_ADMOB_TEST_MODE": "true",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kcwawiqtfmravkljfswu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjd2F3aXF0Zm1yYXZrbGpmc3d1IiwiaWF0IjoxNzgyNjk0MTAxLCJleHAiOjIwOTgyNzAxMDF9.n9B31s-MygTLenbsErEG2JPTKIpDjsAsIa_NEJ1_mDU"
       }
     },
     "production": {
@@ -55,7 +57,9 @@
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID": "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0",
         "EXPO_PUBLIC_SUPABASE_OAUTH_PROVIDERS": "google,apple",
-        "EXPO_PUBLIC_ADMOB_TEST_MODE": "false"
+        "EXPO_PUBLIC_ADMOB_TEST_MODE": "false",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kcwawiqtfmravkljfswu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjd2F3aXF0Zm1yYXZrbGpmc3d1IiwiaWF0IjoxNzgyNjk0MTAxLCJleHAiOjIwOTgyNzAxMDF9.n9B31s-MygTLenbsErEG2JPTKIpDjsAsIa_NEJ1_mDU"
       },
       "ios": {
         "image": "macos-sequoia-15.6-xcode-26.2"
