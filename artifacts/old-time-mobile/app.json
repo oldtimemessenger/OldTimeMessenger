@@ -123,7 +123,8 @@
           "optimizeInitialization": true,
           "optimizeAdLoading": true
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
