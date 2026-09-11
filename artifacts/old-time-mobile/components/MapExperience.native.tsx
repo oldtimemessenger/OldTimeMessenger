@@ -99,6 +99,7 @@ export default function MapExperience() {
   const [loading, setLoading] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [showUserLocation, setShowUserLocation] = useState(false);
+  const [locating, setLocating] = useState(false);
   const mapRef = useRef<MapView | null>(null);
   const requestId = useRef(0);
   const regionChangeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -157,18 +158,34 @@ export default function MapExperience() {
   };
 
   const locate = async () => {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Location stays off', 'Allow location access to center the activity map.');
-      return;
+    if (locating) return;
+    setLocating(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'Location stays off',
+          permission.canAskAgain === false
+            ? 'Location access is blocked. Open Settings and allow location for Old Time.'
+            : 'Allow location access to center the activity map.',
+          permission.canAskAgain === false
+            ? [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => void Linking.openSettings() }]
+            : [{ text: 'OK', style: 'cancel' }],
+        );
+        return;
+      }
+      const result = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const next = { latitude: result.coords.latitude, longitude: result.coords.longitude, latitudeDelta: 0.08, longitudeDelta: 0.1 };
+      setShowUserLocation(true);
+      setRegion(next);
+      setCoordinate(next);
+      mapRef.current?.animateToRegion(next, 450);
+      await load(next, true);
+    } catch (error) {
+      Alert.alert('Could not find you', error instanceof Error ? error.message : 'Turn on Location Services and try again.');
+    } finally {
+      setLocating(false);
     }
-    const result = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    const next = { latitude: result.coords.latitude, longitude: result.coords.longitude, latitudeDelta: 0.08, longitudeDelta: 0.1 };
-    setShowUserLocation(true);
-    setRegion(next);
-    setCoordinate(next);
-    mapRef.current?.animateToRegion(next, 450);
-    await load(next, true);
   };
 
   const search = async () => {
@@ -243,9 +260,9 @@ export default function MapExperience() {
         <View style={styles.dockHeader}>
           <View>
             <Text style={[styles.dockTitle, { color: colors.foreground }]}>What’s happening nearby</Text>
-            <Text style={[styles.dockMeta, { color: colors.mutedForeground }]}>{loading ? 'Updating live signals…' : activity ? `${activity.summary.momentCount + activity.summary.storyCount} shared moments · ${activity.summary.activeZoneCount} active zones` : 'Waiting for map signals'}</Text>
+            <Text style={[styles.dockMeta, { color: colors.mutedForeground }]}>{locating ? 'Finding your location…' : loading ? 'Updating live signals…' : activity ? `${activity.summary.momentCount + activity.summary.storyCount} shared moments · ${activity.summary.activeZoneCount} active zones` : 'Waiting for map signals'}</Text>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Use my location" onPress={() => void locate()} style={[styles.iconButton, { backgroundColor: colors.muted }]}><Ionicons name="navigate-outline" size={18} color={colors.foreground} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={locating ? 'Finding your location' : 'Use my location'} accessibilityState={{ busy: locating, disabled: locating }} disabled={locating} onPress={() => void locate()} style={[styles.iconButton, { backgroundColor: colors.muted, opacity: locating ? 0.55 : 1 }]}><Ionicons name={locating ? 'sync-outline' : 'navigate-outline'} size={18} color={colors.foreground} /></Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.layerRow}>
           {layerOptions.map((option) => <Pressable key={option.key} accessibilityRole="tab" accessibilityState={{ selected: layer === option.key }} onPress={() => setLayer(option.key)} style={[styles.layerChip, { backgroundColor: layer === option.key ? colors.primary : colors.muted }]}><Ionicons name={option.icon} size={15} color={layer === option.key ? colors.primaryForeground : colors.foreground} /><Text style={{ color: layer === option.key ? colors.primaryForeground : colors.foreground, fontWeight: '800', fontSize: 12 }}>{option.label}</Text></Pressable>)}
