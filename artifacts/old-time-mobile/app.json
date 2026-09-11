@@ -3,7 +3,7 @@
     "name": "Old Time",
     "slug": "old-time-messenger",
     "owner": "oldtimes-team",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Old Time is a private messenger for chats, updates, calls, and shared moments.",
     "orientation": "portrait",
     "icon": "./assets/images/old-time-feather-logo.png",
