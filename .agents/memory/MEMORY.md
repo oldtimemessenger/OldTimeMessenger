@@ -2,6 +2,7 @@
 - [Expo map SDK compatibility](expo-map-sdk-compatibility.md) — keep the mobile map package on the Expo Go-compatible pin even when generic doctor advice differs.
 - [Story viewer content model](story-viewer-content-model.md) — sequence discriminated viewer items so sponsored content can be inserted without changing navigation.
 - [GitHub sync identity](github-sync-identity.md) — the connected repository is singular `oldtimemessenger/OldTimeMessenger`; the workspace Git remote is backup-only.
+- [GitHub connector publishing](github-connector-publishing.md) — when direct Git push credentials fail, publish the committed diff through the authorized GitHub connection without force-pushing.
 - [Mobile dev API routing](mobile-dev-api-routing.md) — preview builds may inherit a stale production API domain, and local OTP retries can hit resend throttles.
 - [Development readiness checks](development-readiness-checks.md) — readyz must return 200 before release and must not depend on optional providers.
 - [Generated client regeneration](generated-client-regeneration.md) — restart live Metro/Vite workflows after clean API codegen to avoid transient missing-module errors.
