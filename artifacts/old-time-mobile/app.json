@@ -134,14 +134,14 @@
       "apiDomain": "old-time-messenger--kingvercetti59.replit.app",
       "releaseCommit": "f5ded3c98bf6a2f7df384b454d7c967693da74bf",
       "eas": {
-        "projectId": "adb032a4-2531-4fca-b16c-95fbadeed4b4"
+        "projectId": "4cdaddfe-a954-4270-ba26-f6a405e2f9e5"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/adb032a4-2531-4fca-b16c-95fbadeed4b4"
+      "url": "https://u.expo.dev/4cdaddfe-a954-4270-ba26-f6a405e2f9e5"
     }
   }
 }
