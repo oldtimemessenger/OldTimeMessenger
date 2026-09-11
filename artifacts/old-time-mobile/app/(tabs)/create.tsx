@@ -9,7 +9,6 @@ import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, St
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { Avatar, IconButton } from '@/components/OldTimeUi';
-import { CameraFilterOverlay, CameraFilterPicker, type CameraFilterId } from '@/components/CameraFilters';
 import { MediaType, useOldTime } from '@/context/OldTimeContext';
 import { useCreatorApprovals, useCreatorHubMe } from '@/hooks/useCreatorHub';
 import { CreatorHubApi } from '@/lib/api-creator-hub';
@@ -52,7 +51,6 @@ export default function CreateScreen() {
   const [cameraFacing, setCameraFacing] = useState<'back' | 'front'>('back');
   const [captureMode, setCaptureMode] = useState<'picture' | 'video'>('picture');
   const [isRecording, setIsRecording] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<CameraFilterId>('fresh-light');
   const isTextMode = postKind === 'quote';
   const cameraForeground = isTextMode ? colors.homeForeground : colors.homeBackground;
 
@@ -208,7 +206,7 @@ export default function CreateScreen() {
           </View>
           <View style={styles.cameraBody}>
             <Pressable onPress={() => postKind === 'media' && !cameraOpen ? void openCamera('photo') : postKind === 'quote' ? setDetailsOpen(true) : undefined} style={styles.previewFrame} accessibilityRole="button" accessibilityLabel={media ? 'Change selected media' : 'Open full screen camera'}>
-               {postKind === 'quote' ? <View style={[styles.textCanvas, { backgroundColor: colors.secondary }]}><Text style={[styles.textCanvasMark, { color: colors.foreground }]}>“</Text><Text style={[styles.textCanvasHint, { color: colors.foreground }]}>{caption.trim() || 'Write something worth keeping.'}</Text><Text style={[styles.textCanvasAuthor, { color: colors.foreground }]}>@{profile?.handle ?? 'you'}</Text></View> : media ? <View style={styles.filteredPreview}>{media.type === 'video' ? <SelectedVideoPreview uri={media.uri} contentFit="cover" /> : <Image source={{ uri: media.uri }} style={styles.preview} resizeMode="cover" />}<CameraFilterOverlay filterId={selectedFilter} /></View> : cameraOpen ? <View style={styles.filteredPreview}><CameraView ref={cameraRef} style={styles.preview} facing={cameraFacing} flash="off" mode={captureMode} mute={false} /><CameraFilterOverlay filterId={selectedFilter} /></View> : <View style={styles.emptyCamera} />}
+               {postKind === 'quote' ? <View style={[styles.textCanvas, { backgroundColor: colors.secondary }]}><Text style={[styles.textCanvasMark, { color: colors.foreground }]}>“</Text><Text style={[styles.textCanvasHint, { color: colors.foreground }]}>{caption.trim() || 'Write something worth keeping.'}</Text><Text style={[styles.textCanvasAuthor, { color: colors.foreground }]}>@{profile?.handle ?? 'you'}</Text></View> : media ? <View style={styles.cameraMediaPreview}>{media.type === 'video' ? <SelectedVideoPreview uri={media.uri} contentFit="cover" /> : <Image source={{ uri: media.uri }} style={styles.preview} resizeMode="cover" />}</View> : cameraOpen ? <View style={styles.cameraMediaPreview}><CameraView ref={cameraRef} style={styles.preview} facing={cameraFacing} flash="off" mode={captureMode} mute={false} /></View> : <View style={styles.emptyCamera} />}
               {isRecording ? <View style={styles.recordingBadge}><View style={styles.recordingDot} /><Text style={styles.recordingText}>Recording</Text></View> : null}
             </Pressable>
           </View>
@@ -219,7 +217,6 @@ export default function CreateScreen() {
                  return <Pressable key={mode} onPress={onPress} style={[styles.formatPill, active && styles.formatActive]} accessibilityRole="button" accessibilityLabel={mode === 'HUBS' ? 'Open Hubs' : mode === 'ROUTES' ? 'Open Routes' : mode === 'ACCESS' ? 'Open Access' : mode === 'PHOTO' ? 'Start photo' : 'Create text post'}><Text style={[styles.formatText, { color: isTextMode ? colors.homeForeground : colors.homeBackground }, active && styles.formatTextActive]}>{mode}</Text></Pressable>;
              })}
            </View>
-            {postKind === 'media' && cameraOpen ? <View style={styles.filterRail}><CameraFilterPicker selectedId={selectedFilter} onSelect={setSelectedFilter} /></View> : null}
           <View style={styles.shutterRow}>
             <Pressable onPress={() => void chooseMedia()} style={styles.albumThumb} accessibilityRole="button" accessibilityLabel="Choose from album">
               {media?.type === 'image' ? <Image source={{ uri: media.uri }} style={styles.albumThumbImage} /> : <Ionicons name="albums-outline" size={25} color="#fff" />}
@@ -272,7 +269,7 @@ const styles = StyleSheet.create({
   cameraBody: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'center', zIndex: 0 },
   previewFrame: { flex: 1, minHeight: 0, marginHorizontal: 0, borderRadius: 0, overflow: 'hidden', backgroundColor: '#111', justifyContent: 'center' },
   preview: { width: '100%', height: '100%' },
-  filteredPreview: { width: '100%', height: '100%', position: 'relative' },
+  cameraMediaPreview: { width: '100%', height: '100%', position: 'relative' },
   recordingBadge: { position: 'absolute', top: 15, left: 15, borderRadius: 15, paddingHorizontal: 10, height: 30, backgroundColor: 'rgba(0,0,0,0.65)', flexDirection: 'row', alignItems: 'center', gap: 6 },
   recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ff3b30' },
   recordingText: { color: '#fff', fontSize: 11, fontWeight: '800' },
@@ -283,7 +280,6 @@ const styles = StyleSheet.create({
   textCanvasHint: { color: '#fff', fontFamily: 'Fraunces_700Bold', fontSize: 26, lineHeight: 36 },
   textCanvasAuthor: { fontFamily: 'Outfit_700Bold', fontSize: 14, marginTop: 24 },
   cameraFormats: { position: 'absolute', left: 0, right: 0, bottom: 142, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 20, zIndex: 2 },
-  filterRail: { position: 'absolute', left: 0, right: 0, bottom: 166, zIndex: 4 },
   formatText: { fontFamily: 'Outfit_600SemiBold', fontSize: 14 },
   formatTextActive: { color: '#111' },
   formatPill: { backgroundColor: 'transparent', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
