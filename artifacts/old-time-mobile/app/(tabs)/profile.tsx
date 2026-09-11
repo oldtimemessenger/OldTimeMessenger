@@ -95,7 +95,7 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.profileHeader}>
-        <Avatar source={profile?.avatar} name={profile?.name} size={104} accent={profile?.accent} editable onPress={() => void chooseProfilePhoto()} />
+        <Avatar source={profile?.avatar} name={profile?.name} size={104} accent={profile?.accent} onPress={() => void chooseProfilePhoto()} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Create a post"
