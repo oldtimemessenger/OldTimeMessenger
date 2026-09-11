@@ -193,7 +193,7 @@ export type OAuthProvider = 'google' | 'apple';
 
 export function getAuthRedirectUri(flow?: 'recovery') {
   return Linking.createURL('auth/callback', {
-    scheme: 'old-time',
+    scheme: 'old-time-mobile',
     queryParams: flow ? { type: flow } : undefined,
   });
 }
