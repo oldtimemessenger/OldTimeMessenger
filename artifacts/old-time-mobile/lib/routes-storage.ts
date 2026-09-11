@@ -119,6 +119,17 @@ export function formatPace(seconds: number, meters: number) {
   return `${Math.floor(secondsPerKm / 60)}:${String(Math.round(secondsPerKm % 60)).padStart(2, '0')} /km`;
 }
 
+export function activityMetricLabel(activity: RouteActivity) {
+  return activity === 'ride' ? 'Avg speed' : 'Pace';
+}
+
+export function formatActivityMetric(activity: RouteActivity, seconds: number, meters: number) {
+  if (activity !== 'ride') return formatPace(seconds, meters);
+  if (meters < 10 || seconds <= 0) return '—';
+  const kilometersPerHour = (meters / 1000) / (seconds / 3600);
+  return `${kilometersPerHour.toFixed(1)} km/h`;
+}
+
 export function elevationGainMeters(points: RoutePoint[]) {
   return points.reduce((gain, point, index) => {
     const previous = points[index - 1];

@@ -10,12 +10,13 @@ import { useColors } from '@/hooks/useColors';
 import { useOldTime } from '@/context/OldTimeContext';
 import {
   caloriesBurned,
+  activityMetricLabel,
   elapsedSeconds,
   elevationGainMeters,
   emptyRoutesStore,
   formatDistance,
   formatDuration,
-  formatPace,
+  formatActivityMetric,
   loadRoutesStore,
   makeRouteId,
   plannedRouteMetrics,
@@ -39,6 +40,16 @@ const activityOptions: Array<{ key: RouteActivity; label: string; icon: keyof ty
   { key: 'hike', label: 'Hike', icon: 'trail-sign-outline' },
   { key: 'skate', label: 'Skate', icon: 'accessibility-outline' },
 ];
+
+function activityTone(activity: RouteActivity, colors: ReturnType<typeof useColors>) {
+  return {
+    run: colors.routePink,
+    walk: colors.routeTeal,
+    ride: colors.routeBlue,
+    hike: colors.routeOrange,
+    skate: colors.routePurple,
+  }[activity];
+}
 
 type Panel = 'route' | 'challenges' | 'leaderboard';
 type PlanPhase = 'calculating' | 'ready';
@@ -164,6 +175,7 @@ export default function RoutesScreen() {
       ? elevationGainMeters(latestFinished.coordinates)
       : 0;
   const currentCalories = caloriesBurned(currentActivity, currentElapsedForMetrics, store.bodyWeightKg);
+  const currentActivityColor = activityTone(currentActivity, colors);
   const plannedMetrics = useMemo(
     () => planActivity ? plannedRouteMetrics(planActivity, Number(planDistance) || 0, Number(planWeight) || store.bodyWeightKg) : null,
     [planActivity, planDistance, planWeight, store.bodyWeightKg],
@@ -171,6 +183,12 @@ export default function RoutesScreen() {
   const weekDistance = useMemo(
     () => store.finishedRoutes.filter((route) => route.finishedAt >= weekStart()).reduce((total, route) => total + route.distanceMeters, 0),
     [store.finishedRoutes],
+  );
+  const activityWeekDistance = useMemo(
+    () => store.finishedRoutes
+      .filter((route) => route.activity === currentActivity && route.finishedAt >= weekStart())
+      .reduce((total, route) => total + route.distanceMeters, 0),
+    [currentActivity, store.finishedRoutes],
   );
   const routeChallenges = useMemo(() => [...store.challenges].sort((a, b) => b.createdAt - a.createdAt), [store.challenges]);
 
@@ -357,7 +375,7 @@ export default function RoutesScreen() {
           `${routeActivityLabel(route.activity)} on Old Time Routes`,
           formatDistance(route.distanceMeters),
           formatDuration(route.elapsedSeconds),
-          formatPace(route.elapsedSeconds, route.distanceMeters),
+          formatActivityMetric(route.activity, route.elapsedSeconds, route.distanceMeters),
           `${calories} kcal`,
           `${elevation} m elevation`,
           'Recorded with real GPS.',
@@ -393,24 +411,24 @@ export default function RoutesScreen() {
 
       {panel === 'route' ? (
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + TAB_BAR_CONTENT_CLEARANCE }]} showsVerticalScrollIndicator={false}>
-          <View style={[styles.mapCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
-            <RoutesMap coordinates={currentCoordinates} />
+           <View style={[styles.mapCard, { borderColor: currentActivityColor, backgroundColor: colors.card }]}>
+             <RoutesMap coordinates={currentCoordinates} showUserLocation={Boolean(store.activeRoute)} />
             <View style={[styles.mapBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name={store.activeRoute ? 'radio' : 'map-outline'} size={14} color={store.activeRoute ? colors.primary : colors.mutedForeground} />
               <Text style={[styles.mapBadgeText, { color: colors.foreground }]}>{gpsStale ? 'GPS signal stale' : store.activeRoute ? 'GPS recording' : currentCoordinates.length ? 'Current route' : 'No route started'}</Text>
             </View>
           </View>
 
-          <View style={[styles.statsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+           <View style={[styles.statsCard, { backgroundColor: colors.card, borderColor: currentActivityColor }]}>
              <View><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Distance</Text><Text style={[styles.statValue, { color: colors.foreground }]}>{formatDistance(currentDistance)}</Text></View>
              <View><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Time</Text><Text style={[styles.statValue, { color: colors.foreground }]}>{formatDuration(currentElapsedForMetrics)}</Text></View>
-             <View><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Pace</Text><Text style={[styles.statValue, { color: colors.foreground }]}>{formatPace(currentElapsedForMetrics, currentDistance)}</Text></View>
-            <View><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>This week</Text><Text style={[styles.statValue, { color: colors.foreground }]}>{formatDistance(weekDistance)}</Text></View>
+              <View><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{activityMetricLabel(currentActivity)}</Text><Text style={[styles.statValue, { color: colors.foreground }]}>{formatActivityMetric(currentActivity, currentElapsedForMetrics, currentDistance)}</Text></View>
+             <View><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{routeActivityLabel(currentActivity)} week</Text><Text style={[styles.statValue, { color: colors.foreground }]}>{formatDistance(activityWeekDistance)}</Text></View>
           </View>
-           <View style={[styles.metricStrip, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-             <View style={styles.metricItem}><Ionicons name="flame-outline" size={17} color={colors.primary} /><Text style={[styles.metricValue, { color: colors.foreground }]}>{currentCalories} kcal</Text><Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>estimated burn</Text></View>
-             <View style={styles.metricItem}><Ionicons name="trending-up-outline" size={17} color={colors.primary} /><Text style={[styles.metricValue, { color: colors.foreground }]}>{Math.round(currentElevation)} m</Text><Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>elevation gain</Text></View>
-             <View style={styles.metricItem}><Ionicons name="pulse-outline" size={17} color={colors.primary} /><Text style={[styles.metricValue, { color: colors.foreground }]}>{store.activeRoute ? 'LIVE' : currentDistance ? 'READY' : 'IDLE'}</Text><Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>route state</Text></View>
+            <View style={[styles.metricStrip, { backgroundColor: colors.secondary, borderColor: currentActivityColor }]}>
+              <View style={styles.metricItem}><Ionicons name="flame-outline" size={17} color={colors.routeOrange} /><Text style={[styles.metricValue, { color: colors.foreground }]}>{currentCalories} kcal</Text><Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>estimated burn</Text></View>
+              <View style={styles.metricItem}><Ionicons name="trending-up-outline" size={17} color={colors.routeTeal} /><Text style={[styles.metricValue, { color: colors.foreground }]}>{Math.round(currentElevation)} m</Text><Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>elevation gain</Text></View>
+              <View style={styles.metricItem}><Ionicons name="pulse-outline" size={17} color={currentActivityColor} /><Text style={[styles.metricValue, { color: colors.foreground }]}>{store.activeRoute ? 'LIVE' : currentDistance ? 'READY' : 'IDLE'}</Text><Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>route state</Text></View>
            </View>
 
           {!store.activeRoute ? (
@@ -418,15 +436,19 @@ export default function RoutesScreen() {
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Choose what you’re doing</Text>
               <Text style={[styles.sectionBody, { color: colors.mutedForeground }]}>Routes records a real GPS path only after you start. Nothing here is simulated.</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activityRail}>
-                {activityOptions.map((option) => <Pressable key={option.key} onPress={() => openPlan(option.key)} style={[styles.activityChip, { backgroundColor: activity === option.key ? colors.primary : colors.muted }]}><Ionicons name={option.icon} size={16} color={activity === option.key ? colors.primaryForeground : colors.foreground} /><Text style={{ color: activity === option.key ? colors.primaryForeground : colors.foreground, fontWeight: '800', fontSize: 12 }}>{option.label}</Text></Pressable>)}
+                 {activityOptions.map((option) => {
+                   const selected = activity === option.key;
+                   const tone = activityTone(option.key, colors);
+                   return <Pressable key={option.key} onPress={() => openPlan(option.key)} style={[styles.activityChip, { backgroundColor: selected ? tone : colors.card, borderColor: selected ? tone : colors.border }]}><Ionicons name={option.icon} size={16} color={selected ? colors.primaryForeground : tone} /><Text style={{ color: selected ? colors.primaryForeground : colors.foreground, fontWeight: '800', fontSize: 12 }}>{option.label}</Text></Pressable>;
+                 })}
               </ScrollView>
-              <Pressable onPress={() => openPlan(activity)} style={[styles.primaryButton, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel={`Calculate ${activityOptions.find((option) => option.key === activity)?.label ?? activity} route`}><Ionicons name="analytics-outline" size={18} color={colors.primaryForeground} /><Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>Calculate {routeActivityLabel(activity)} route</Text></Pressable>
+               <Pressable onPress={() => openPlan(activity)} style={[styles.primaryButton, { backgroundColor: currentActivityColor }]} accessibilityRole="button" accessibilityLabel={`Calculate ${activityOptions.find((option) => option.key === activity)?.label ?? activity} route`}><Ionicons name="analytics-outline" size={18} color={colors.primaryForeground} /><Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>Calculate {routeActivityLabel(activity)} route</Text></Pressable>
             </>
           ) : (
-            <View style={[styles.activeCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+             <View style={[styles.activeCard, { backgroundColor: colors.card, borderColor: currentActivityColor }]}>
                <View style={styles.activeHeader}><View style={styles.activeCopy}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{routeActivityLabel(store.activeRoute.activity)} in progress</Text><Text style={[styles.sectionBody, { color: colors.mutedForeground }]}>{gpsStale ? 'GPS stopped updating. Distance is paused until a real location fix returns.' : store.activeRoute.validation === 'needs_review' ? 'GPS quality needs review before sharing.' : currentCoordinates.length > 1 && currentDistance < 3 ? 'GPS is locked. Keep moving for a measurable distance.' : currentCoordinates.length ? 'GPS is collecting your path.' : 'Waiting for a GPS fix.'}</Text></View><View style={[styles.liveDot, { backgroundColor: gpsStale || store.activeRoute.validation === 'needs_review' ? colors.destructive : colors.primary }]} /></View>
                {gpsStale ? <Pressable onPress={() => void retryLocation()} accessibilityRole="button" style={[styles.gpsRetry, { backgroundColor: colors.secondary, borderColor: colors.border }]}><Ionicons name="locate-outline" size={16} color={colors.primary} /><View style={styles.activeCopy}><Text style={[styles.gpsRetryTitle, { color: colors.foreground }]}>Try GPS again</Text><Text style={[styles.gpsRetryBody, { color: colors.mutedForeground }]}>Your timer keeps running; no distance is added without a new fix.</Text></View></Pressable> : null}
-              <View style={styles.activeActions}><Pressable onPress={store.activeRoute.status === 'recording' ? pauseRoute : resumeRoute} style={[styles.secondaryAction, { borderColor: colors.border }]}><Ionicons name={store.activeRoute.status === 'recording' ? 'pause' : 'play'} size={16} color={colors.foreground} /><Text style={[styles.secondaryActionText, { color: colors.foreground }]}>{store.activeRoute.status === 'recording' ? 'Pause' : 'Resume'}</Text></Pressable><Pressable onPress={finishRoute} style={[styles.primaryAction, { backgroundColor: colors.primary }]}><Ionicons name="stop" size={16} color={colors.primaryForeground} /><Text style={[styles.primaryActionText, { color: colors.primaryForeground }]}>Finish</Text></Pressable></View>
+               <View style={styles.activeActions}><Pressable onPress={store.activeRoute.status === 'recording' ? pauseRoute : resumeRoute} style={[styles.secondaryAction, { borderColor: colors.border }]}><Ionicons name={store.activeRoute.status === 'recording' ? 'pause' : 'play'} size={16} color={colors.foreground} /><Text style={[styles.secondaryActionText, { color: colors.foreground }]}>{store.activeRoute.status === 'recording' ? 'Pause' : 'Resume'}</Text></Pressable><Pressable onPress={finishRoute} style={[styles.primaryAction, { backgroundColor: currentActivityColor }]}><Ionicons name="stop" size={16} color={colors.primaryForeground} /><Text style={[styles.primaryActionText, { color: colors.primaryForeground }]}>Finish</Text></Pressable></View>
               <Pressable onPress={discardRoute} accessibilityRole="button" accessibilityLabel="Discard route"><Text style={[styles.discardText, { color: colors.destructive }]}>Discard recording</Text></Pressable>
             </View>
           )}

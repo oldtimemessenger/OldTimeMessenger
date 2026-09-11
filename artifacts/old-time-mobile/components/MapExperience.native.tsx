@@ -98,6 +98,7 @@ export default function MapExperience() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [showUserLocation, setShowUserLocation] = useState(false);
   const mapRef = useRef<MapView | null>(null);
   const requestId = useRef(0);
   const regionChangeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -163,6 +164,7 @@ export default function MapExperience() {
     }
     const result = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const next = { latitude: result.coords.latitude, longitude: result.coords.longitude, latitudeDelta: 0.08, longitudeDelta: 0.1 };
+    setShowUserLocation(true);
     setRegion(next);
     setCoordinate(next);
     mapRef.current?.animateToRegion(next, 450);
@@ -186,11 +188,11 @@ export default function MapExperience() {
 
   const publish = async () => {
     try {
-      const created = await request('/map/stories', {
+      const created = await request('/map/pins', {
         method: 'POST',
-        body: JSON.stringify({ ...coordinate, caption: caption.trim(), mediaType: 'quote', mediaUrl: null, visibility: 'friends', expiresAt: new Date(Date.now() + 86400000).toISOString() }),
-      }) as Moment;
-      setSelected(created);
+        body: JSON.stringify({ ...coordinate, caption: caption.trim(), visibility: 'public', expiresAt: null }),
+      }) as NearbyPin;
+      setSelected(activityFromPins([created]).moments[0] ?? null);
       setPlacing(false);
       setCaption('');
       await load(region, true);
@@ -220,7 +222,9 @@ export default function MapExperience() {
         onMapReady={() => setMapReady(true)}
         onRegionChangeComplete={handleRegionChange}
         onPress={handleMapPress}
-        showsUserLocation={false}
+        showsUserLocation={showUserLocation}
+        showsCompass
+        showsScale
         toolbarEnabled={false}
       >
         {mapReady && layer !== 'weather' && (layer === 'all' || layer === 'moments') ? visibleMoments.slice(0, 100).map((moment) => (
@@ -248,10 +252,11 @@ export default function MapExperience() {
         </ScrollView>
         {placing ? (
           <View style={styles.composer}>
-            <Text style={[styles.panelTitle, { color: colors.foreground }]}>Share this spot</Text>
+             <Text style={[styles.panelTitle, { color: colors.foreground }]}>Drop a pin here</Text>
             <TextInput value={query} onChangeText={setQuery} onSubmitEditing={() => void search()} placeholder="Search a place or address" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, backgroundColor: colors.muted }]} />
-            <TextInput value={caption} onChangeText={setCaption} placeholder="What’s happening here?" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, backgroundColor: colors.muted }]} />
-            <View style={styles.actionRow}><Pressable onPress={() => setPlacing(false)}><Text style={{ color: colors.mutedForeground, fontWeight: '800' }}>Cancel</Text></Pressable><Pressable onPress={() => void publish()}><Text style={{ color: colors.primary, fontWeight: '800' }}>Share moment</Text></Pressable></View>
+             <TextInput value={caption} onChangeText={setCaption} placeholder="Add a note about this place" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, backgroundColor: colors.muted }]} />
+             <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Only this selected location is shared. Your live location is never published automatically.</Text>
+             <View style={styles.actionRow}><Pressable onPress={() => setPlacing(false)}><Text style={{ color: colors.mutedForeground, fontWeight: '800' }}>Cancel</Text></Pressable><Pressable onPress={() => void publish()}><Text style={{ color: colors.primary, fontWeight: '800' }}>Drop pin</Text></Pressable></View>
           </View>
         ) : selected ? (
           <View style={styles.selectedPanel}>
@@ -268,7 +273,7 @@ export default function MapExperience() {
         ) : (
           <View style={styles.emptyPanel}><Text style={[styles.panelTitle, { color: colors.foreground }]}>Nothing public is active here yet.</Text><Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Move the map or share a moment from this spot to add a real signal.</Text></View>
         )}
-        {!placing && !selected ? <Pressable accessibilityRole="button" onPress={() => setPlacing(true)} style={[styles.shareButton, { backgroundColor: colors.primary }]}><Ionicons name="add" size={18} color={colors.primaryForeground} /><Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Share a moment here</Text></Pressable> : null}
+       {!placing && !selected ? <Pressable accessibilityRole="button" onPress={() => setPlacing(true)} style={[styles.shareButton, { backgroundColor: colors.primary }]}><Ionicons name="location" size={18} color={colors.primaryForeground} /><Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Drop a pin here</Text></Pressable> : null}
       </View>
       <View style={{ height: TAB_BAR_CONTENT_CLEARANCE }} />
     </View>

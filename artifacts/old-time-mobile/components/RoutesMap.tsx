@@ -2,11 +2,10 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Line, Polyline as SvgPolyline, Rect } from 'react-native-svg';
 import { useColors } from '@/hooks/useColors';
 import type { RoutePoint } from '@/lib/routes-storage';
 
-export default function RoutesMap({ coordinates }: { coordinates: RoutePoint[] }) {
+export default function RoutesMap({ coordinates }: { coordinates: RoutePoint[]; showUserLocation?: boolean }) {
   const colors = useColors();
   const [mapState, setMapState] = React.useState<'loading' | 'ready' | 'fallback'>('loading');
   const mapElement = React.useRef<HTMLDivElement | null>(null);
@@ -31,12 +30,6 @@ export default function RoutesMap({ coordinates }: { coordinates: RoutePoint[] }
       setMapState((current) => current === 'loading' ? 'fallback' : current);
     }, 3500);
     try {
-      const canvas = document.createElement('canvas');
-      if (!canvas.getContext('webgl2')) {
-        setMapState('fallback');
-        if (fallbackTimer) clearTimeout(fallbackTimer);
-        return;
-      }
       const map = new maplibregl.Map({
         container: mapElement.current,
         style: 'https://tiles.openfreemap.org/styles/liberty',
@@ -82,7 +75,7 @@ export default function RoutesMap({ coordinates }: { coordinates: RoutePoint[] }
 
   return (
     <View style={[styles.root, { backgroundColor: colors.muted }]}>
-      <View style={[styles.fallbackLayer, { opacity: mapState === 'ready' ? 0 : 1 }]} pointerEvents="none">
+      <View style={[styles.fallbackLayer, { opacity: mapState === 'ready' ? 0 : 1 }]} pointerEvents={mapState === 'fallback' ? 'auto' : 'none'}>
         <RouteFallback coordinates={coordinates} colors={colors} />
       </View>
       {React.createElement('div', {
@@ -109,50 +102,153 @@ function RouteFallback({
   colors,
 }: {
   coordinates: RoutePoint[];
-  colors: { muted: string; border: string; primary: string; foreground: string; mutedForeground: string };
+  colors: { muted: string; mapWater: string; routeBlue: string; foreground: string; mutedForeground: string };
 }) {
-  const padding = 12;
-  const longitudes = coordinates.map((point) => point.longitude);
+  return <RasterRouteMap coordinates={coordinates} colors={colors} />;
+}
+
+const TILE_SIZE = 256;
+
+function project(latitude: number, longitude: number, zoom: number) {
+  const scale = TILE_SIZE * 2 ** zoom;
+  const safeLatitude = Math.max(-85.0511, Math.min(85.0511, latitude));
+  const sine = Math.sin((safeLatitude * Math.PI) / 180);
+  return {
+    x: ((longitude + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sine) / (1 - sine)) / (4 * Math.PI)) * scale,
+  };
+}
+
+function unproject(x: number, y: number, zoom: number) {
+  const scale = TILE_SIZE * 2 ** zoom;
+  const longitude = (x / scale) * 360 - 180;
+  const latitude = (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / scale))) * 180) / Math.PI;
+  return { latitude, longitude };
+}
+
+function startingCenter(coordinates: RoutePoint[]) {
+  const last = coordinates.at(-1);
+  return last ? { latitude: last.latitude, longitude: last.longitude } : { latitude: 20, longitude: 0 };
+}
+
+function startingZoom(coordinates: RoutePoint[]) {
+  if (!coordinates.length) return 2;
   const latitudes = coordinates.map((point) => point.latitude);
-  const minLongitude = longitudes.length ? Math.min(...longitudes) : -1;
-  const maxLongitude = longitudes.length ? Math.max(...longitudes) : 1;
-  const minLatitude = latitudes.length ? Math.min(...latitudes) : -1;
-  const maxLatitude = latitudes.length ? Math.max(...latitudes) : 1;
-  const longitudeSpan = Math.max(maxLongitude - minLongitude, 0.0001);
-  const latitudeSpan = Math.max(maxLatitude - minLatitude, 0.0001);
-  const project = (point: RoutePoint) => [
-    padding + ((point.longitude - minLongitude) / longitudeSpan) * (100 - padding * 2),
-    100 - padding - ((point.latitude - minLatitude) / latitudeSpan) * (100 - padding * 2),
-  ];
-  const points = coordinates.map(project).map(([x, y]) => `${x},${y}`).join(' ');
-  const current = coordinates.at(-1);
-  const currentPoint = current ? project(current) : [50, 50];
+  const longitudes = coordinates.map((point) => point.longitude);
+  const span = Math.max(Math.max(...latitudes) - Math.min(...latitudes), Math.max(...longitudes) - Math.min(...longitudes));
+  if (span < 0.004) return 16;
+  if (span < 0.02) return 14;
+  if (span < 0.1) return 12;
+  if (span < 0.5) return 10;
+  if (span < 2) return 8;
+  return 5;
+}
+
+function RasterRouteMap({
+  coordinates,
+  colors,
+}: {
+  coordinates: RoutePoint[];
+  colors: { muted: string; mapWater: string; routeBlue: string; foreground: string; mutedForeground: string };
+}) {
+  const [viewport, setViewport] = React.useState({ width: 402, height: 220 });
+  const [center, setCenter] = React.useState(startingCenter(coordinates));
+  const [zoom, setZoom] = React.useState(startingZoom(coordinates));
+  const pan = React.useRef<{ pointerX: number; pointerY: number; centerX: number; centerY: number } | null>(null);
+  const lastTimestamp = coordinates.at(-1)?.timestamp ?? null;
+  const centerPixel = project(center.latitude, center.longitude, zoom);
+  const originX = centerPixel.x - viewport.width / 2;
+  const originY = centerPixel.y - viewport.height / 2;
+  const firstTileX = Math.floor(originX / TILE_SIZE) - 1;
+  const firstTileY = Math.floor(originY / TILE_SIZE) - 1;
+  const tileCountX = Math.ceil(viewport.width / TILE_SIZE) + 3;
+  const tileCountY = Math.ceil(viewport.height / TILE_SIZE) + 3;
+  const routePoints = coordinates.map((point) => {
+    const screen = project(point.latitude, point.longitude, zoom);
+    return `${screen.x - originX},${screen.y - originY}`;
+  }).join(' ');
+  const lastPoint = coordinates.at(-1);
+  const lastScreen = lastPoint ? project(lastPoint.latitude, lastPoint.longitude, zoom) : null;
+  const worldTiles = 2 ** zoom;
+
+  React.useEffect(() => {
+    if (!lastTimestamp) return;
+    const last = coordinates.at(-1);
+    if (last) setCenter({ latitude: last.latitude, longitude: last.longitude });
+  }, [lastTimestamp]);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    pan.current = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      centerX: centerPixel.x,
+      centerY: centerPixel.y,
+    };
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!pan.current) return;
+    const next = unproject(
+      pan.current.centerX - (event.clientX - pan.current.pointerX),
+      pan.current.centerY - (event.clientY - pan.current.pointerY),
+      zoom,
+    );
+    setCenter(next);
+  };
+
+  const handlePointerUp = () => {
+    pan.current = null;
+  };
+
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setZoom((current) => Math.max(1, Math.min(18, current + (event.deltaY < 0 ? 1 : -1))));
+  };
 
   return (
-    <>
-      <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="none">
-        <Rect width="100" height="100" fill={colors.muted} />
-        {[20, 40, 60, 80].map((value) => <Line key={`v-${value}`} x1={value} y1="0" x2={value} y2="100" stroke={colors.border} strokeWidth="0.35" opacity="0.7" />)}
-        {[20, 40, 60, 80].map((value) => <Line key={`h-${value}`} x1="0" y1={value} x2="100" y2={value} stroke={colors.border} strokeWidth="0.35" opacity="0.7" />)}
-        {points ? <SvgPolyline points={points} fill="none" stroke={colors.primary} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> : null}
-        <Circle cx={currentPoint[0]} cy={currentPoint[1]} r="2.4" fill={colors.primary} />
-      </Svg>
-      <View pointerEvents="none" style={styles.fallbackMessage}>
-        <Text style={[styles.fallbackTitle, { color: colors.foreground }]}>
-          {coordinates.length ? 'Route preview' : 'Ready to record'}
-        </Text>
-        <Text style={[styles.fallbackBody, { color: colors.mutedForeground }]}>
-          {coordinates.length ? 'WebGL is unavailable, so the route is shown in a lightweight preview.' : 'Your live route will appear here.'}
-        </Text>
+    <View
+      style={[styles.webFallback, { backgroundColor: colors.mapWater }]}
+      onLayout={(event) => setViewport({ width: Math.max(1, event.nativeEvent.layout.width), height: Math.max(1, event.nativeEvent.layout.height) })}
+    >
+      {React.createElement('div', {
+        onPointerDown: handlePointerDown,
+        onPointerMove: handlePointerMove,
+        onPointerUp: handlePointerUp,
+        onPointerCancel: handlePointerUp,
+        onWheel: handleWheel,
+        style: { position: 'absolute', inset: 0, overflow: 'hidden', cursor: pan.current ? 'grabbing' : 'grab', touchAction: 'none' },
+      }, Array.from({ length: tileCountX * tileCountY }).map((_, index) => {
+        const tileX = firstTileX + (index % tileCountX);
+        const tileY = firstTileY + Math.floor(index / tileCountX);
+        if (tileY < 0 || tileY >= worldTiles) return null;
+        const wrappedTileX = ((tileX % worldTiles) + worldTiles) % worldTiles;
+        return React.createElement('img', {
+          key: `${zoom}-${tileX}-${tileY}`,
+          src: `https://tile.openstreetmap.org/${zoom}/${wrappedTileX}/${tileY}.png`,
+          alt: '',
+          draggable: false,
+          style: { position: 'absolute', width: TILE_SIZE, height: TILE_SIZE, left: tileX * TILE_SIZE - originX, top: tileY * TILE_SIZE - originY, userSelect: 'none' },
+        });
+      }))}
+      {React.createElement('svg', { style: styles.routeOverlay, viewBox: `0 0 ${viewport.width} ${viewport.height}`, preserveAspectRatio: 'none', 'aria-hidden': true },
+        routePoints ? React.createElement('polyline', { points: routePoints, fill: 'none', stroke: colors.routeBlue, strokeWidth: 6, strokeLinecap: 'round', strokeLinejoin: 'round' }) : null,
+        lastScreen ? React.createElement('circle', { cx: lastScreen.x - originX, cy: lastScreen.y - originY, r: 8, fill: colors.routeBlue, stroke: '#fff', strokeWidth: 3 }) : null,
+      )}
+      <View pointerEvents="none" style={[styles.fallbackMessage, { backgroundColor: colors.muted }]}>
+        <Text style={[styles.fallbackTitle, { color: colors.foreground }]}>{coordinates.length ? 'GPS route map' : 'Interactive map ready'}</Text>
+        <Text style={[styles.fallbackBody, { color: colors.mutedForeground }]}>Drag to explore · scroll to zoom · OpenStreetMap</Text>
       </View>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden' },
   fallbackLayer: { ...StyleSheet.absoluteFillObject },
-  fallbackMessage: { position: 'absolute', left: 16, right: 16, bottom: 16, gap: 3 },
+  webFallback: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
+  routeOverlay: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  fallbackMessage: { position: 'absolute', left: 12, right: 12, bottom: 12, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12, gap: 3, opacity: 0.94 },
   fallbackTitle: { fontSize: 13, fontWeight: '900' },
   fallbackBody: { fontSize: 11, fontWeight: '600' },
 });
