@@ -173,6 +173,8 @@ export * from './storyViewer';
 export * from './storyViewerList';
 export * from './storyViewerListItemsItem';
 export * from './storyVisibility';
+export * from './updateAdminUserVerification200';
+export * from './updateAdminUserVerificationBody';
 export * from './updatePresence200';
 export * from './updatePresenceBody';
 export * from './updatePresencePrivacy200';

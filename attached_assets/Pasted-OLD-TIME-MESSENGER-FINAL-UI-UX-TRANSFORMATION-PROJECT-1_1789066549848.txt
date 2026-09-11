@@ -1,0 +1,938 @@
+OLD TIME MESSENGER — FINAL UI/UX TRANSFORMATION
+
+PROJECT #1 ONLY.
+
+The attached image is the visual/design reference for the direction I want.
+
+The feature specification below is the functional source of truth.
+
+Your job is to transform the CURRENT Project #1 application into the new Old Time Messenger experience shown by the design direction, while preserving all existing working functionality.
+
+THIS IS NOT A REBUILD.
+
+THIS IS NOT A PROJECT #2 MIGRATION.
+
+THIS IS NOT A BACKEND REWRITE.
+
+THIS IS A PRODUCTION UI/UX TRANSFORMATION AND FEATURE ORGANIZATION PASS.
+
+==================================================
+
+1. ABSOLUTE PROJECT RULE
+    ==================================================
+
+Project #1 is the canonical production application.
+
+DO NOT:
+
+• copy Project #2 into Project #1
+• migrate Project #2
+• replace Project #1’s architecture
+• rebuild the app from scratch
+• remove working functionality
+• replace real APIs with mock data
+• replace server data with fake local data
+• rewrite authentication
+• rewrite LiveKit
+• rewrite RevenueCat
+• rewrite Stripe
+• rewrite the wallet ledger
+• rewrite the database
+• change EAS configuration
+• change Apple capabilities
+• create an EAS build
+• submit to TestFlight
+
+The existing Project #1 functionality is authoritative.
+
+The UI needs to evolve around the existing application.
+
+==================================================
+2. USE THE ATTACHED IMAGE AS THE VISUAL REFERENCE
+
+Study the attached image carefully.
+
+Use it to understand:
+
+• visual hierarchy
+• spacing
+• navigation style
+• card treatment
+• typography
+• icon treatment
+• proportions
+• use of imagery
+• interaction patterns
+• overall visual personality
+• premium/futuristic feel
+
+Do NOT blindly copy individual elements if they conflict with existing Old Time functionality.
+
+The final product should feel inspired by the reference while still being unmistakably Old Time.
+
+The result should feel like a polished real iOS social application, not a prototype.
+
+==================================================
+3. OLD TIME PRODUCT STRUCTURE
+
+The application should be organized around these primary product areas:
+
+1. Updates
+2. Pace
+3. Map
+4. Chat
+5. Profile
+6. Settings
+
+Profile may be:
+
+• a dedicated navigation button
+• a sixth navigation item
+• or a visually integrated profile button in the navigation/header
+
+Choose the option that creates the cleanest mobile UX.
+
+DO NOT force Profile into Settings simply to preserve an old navigation structure.
+
+Profile is now an important first-class product surface.
+
+The navigation should remain simple and intuitive.
+
+Do not create a cluttered tab bar.
+
+==================================================
+4. FEATURE CONSOLIDATION
+
+Several existing screens currently represent related functionality under different names.
+
+Consolidate them into a coherent product structure.
+
+Use the following final naming/grouping:
+
+⸻
+
+UPDATES
+
+Old Album/Home Feed becomes:
+
+UPDATES
+
+Updates is the primary social content feed.
+
+Include:
+
+• For You
+• Following
+• Interests
+• photo posts
+• video posts
+• quote posts
+• captions
+• locations
+• likes
+• comments
+• replies
+• shares
+• saves
+• reporting
+• creator content
+• stories/moments where applicable
+• notifications/activity access
+
+Updates should feel media-first.
+
+Do not make it look like a traditional Facebook-style feed.
+
+Use a modern immersive social-feed experience.
+
+Existing feed APIs and optimistic interactions must remain functional.
+
+⸻
+
+COMMUNITY
+
+Community/Discover remains a major social discovery feature, but should be visually integrated into the broader Old Time experience.
+
+Community contains:
+
+• Search
+• For You hubs
+• My Hubs
+• Latest hubs
+• Hub discovery
+• Join/leave
+• Create Hub
+• Hub categories
+• Hub detail
+• Hub posts
+• Latest
+• Media
+• Access/Live shortcuts where appropriate
+
+Community should NOT feel like a random separate app.
+
+It should feel like a natural discovery layer within Old Time.
+
+Existing hub permissions and server-side access rules must remain intact.
+
+⸻
+
+CREATE
+
+Create remains the primary content creation experience.
+
+It should feel like a camera-first creation studio.
+
+Support the existing:
+
+• photo
+• video
+• quote/text
+• gallery
+• camera
+• front/back camera
+• flash
+• timer
+• framing
+• visual effects
+• location
+• sound selector
+• hub selection
+• route shortcut
+• live/access shortcut
+
+Do not remove existing creation functionality.
+
+The Create interface should be immersive and should not feel like a normal form.
+
+The floating navigation may disappear while Create is active if that produces the best experience.
+
+⸻
+
+PACE
+
+Pace becomes the complete fitness/activity area.
+
+The existing Routes experience should be grouped under Pace rather than presented as a disconnected product.
+
+Pace includes:
+
+• Start activity
+• Pause
+• Resume
+• Finish
+• Discard
+• Route map
+• Distance
+• Duration
+• Pace
+• Calories
+• Elevation
+• Weekly totals
+• Activity history
+• Planning
+• Challenges
+• Progress
+• Kudos
+• fitness/social functionality
+
+The existing Routes screen can become:
+
+Pace → Activity / Routes
+
+or another clean Pace structure.
+
+Do not invent server-backed route sharing or community leaderboards where they do not exist.
+
+The UI must remain honest about features that are not implemented.
+
+⸻
+
+MAP
+
+Map becomes a first-class Old Time destination.
+
+Do not hide the map as merely a mode inside the home feed.
+
+Map includes:
+
+• Moments
+• Stories
+• Activity
+• Places
+• Weather
+• Discovery
+• Atmosphere
+• location search
+• current location
+• markers
+• clusters
+• place cards
+• map moments
+• privacy controls
+
+The map must remain a real map implementation.
+
+Native:
+React Native Maps.
+
+Web:
+MapLibre.
+
+Do not replace the real map with a decorative fake map.
+
+Map moments retain their existing:
+
+• coordinates
+• captions
+• quote content
+• visibility
+• 24-hour expiration
+
+Generated/discovery content must remain clearly distinguishable from genuine user activity.
+
+Never make generated content appear to be a real person or real live activity.
+
+⸻
+
+CHAT
+
+Chat becomes the complete private communication center.
+
+It includes:
+
+• conversations
+• messages
+• unread counts
+• user search
+• new conversation
+• message composer
+• media
+• voice notes where already supported
+• audio calls
+• video calls
+• call history
+• incoming calls
+• outgoing calls
+
+Calls should NOT become a separate primary navigation tab.
+
+Calls belong naturally inside Chat.
+
+Preserve all existing call lifecycle logic and LiveKit functionality.
+
+Do not create a second socket/realtime call system.
+
+⸻
+
+LIVE / ACCESS
+
+The existing Access functionality should be presented as:
+
+LIVE
+
+or
+
+ACCESS
+
+Choose whichever name produces the cleaner Old Time product experience.
+
+It includes:
+
+• live room discovery
+• topics
+• live indicators
+• room creation
+• room joining
+• speakers
+• listeners
+• participant counts
+• moderation
+• stage controls
+• room chat
+• reactions
+• gifts
+• LiveKit audio
+
+LIVE should feel like a modern social audio destination.
+
+Paid LIVE room access is NOT currently released.
+
+Do not advertise paid room entry.
+
+Current monetization is gifts.
+
+⸻
+
+PROFILE
+
+Create a polished first-class Profile page.
+
+The Profile page should include:
+
+• profile photo
+• display name
+• @handle
+• bio
+• followers
+• following
+• posts
+• liked posts
+• share profile
+• profile settings/edit access
+• creator status where applicable
+• wallet/creator access where appropriate
+
+The current application has profile viewing but lacks a visible profile editing experience.
+
+Add a clean profile editing flow.
+
+Do not invent backend fields that do not exist.
+
+If an edit requires a backend capability that does not currently exist, document it as a separate engineering requirement rather than creating fake persistence.
+
+Profile should feel like a social identity page, not a settings page.
+
+==================================================
+5. SETTINGS
+
+Settings becomes the system/account management area.
+
+Organize it cleanly.
+
+Account:
+
+• profile
+• account information
+• logout
+
+Privacy:
+
+• privacy controls
+• map visibility
+• social controls
+
+Notifications:
+
+• notification settings
+• activity preferences
+
+Money:
+
+• Wallet
+• Creator payouts
+• Withdraw Gold
+
+App:
+
+• appearance
+• preferences
+• support
+• about
+
+Danger Zone:
+
+• delete account
+
+Do not create fake settings.
+
+Only expose functionality that exists or can actually be implemented safely.
+
+==================================================
+6. WALLET / CREATOR
+
+Wallet and creator monetization should receive a major visual upgrade.
+
+Clearly separate:
+
+COINS
+
+Purchased/spendable virtual currency.
+
+GOLD
+
+Creator earnings.
+
+PENDING EARNINGS
+
+Creator earnings that are not yet withdrawable.
+
+The UI must never imply that purchased Coins can be withdrawn as cash.
+
+Keep the existing Phase 6 server-authoritative wallet architecture.
+
+Preserve:
+
+• RevenueCat
+• Coin packs
+• restore purchases
+• server verification
+• wallet ledger
+• Gold
+• pending Gold
+• gifts
+• withdrawal minimum
+• Stripe Connect
+• KYC
+• payout states
+
+Do not let the client determine balances or monetary conversions.
+
+==================================================
+7. NOTIFICATIONS / ACTIVITY
+
+Notifications should become a polished Activity surface.
+
+It can be accessed from Updates/Profile/header depending on the final navigation design.
+
+Display:
+
+• likes
+• comments
+• follows
+• messages
+• calls
+• other server-generated activity
+
+Keep current API behavior.
+
+Do not fabricate realtime notifications.
+
+If push/realtime functionality is not currently implemented, do not pretend it is.
+
+==================================================
+8. POST DESIGN
+
+Create one consistent Post Card system used across:
+
+• Updates
+• Profile
+• Community
+• Hub pages
+• other applicable surfaces
+
+Post cards should support the existing:
+
+• avatar
+• author
+• handle
+• media
+• quote
+• caption
+• location
+• likes
+• comments
+• time
+• like state
+• share
+• report
+
+Make media the priority.
+
+Use consistent interaction placement throughout the app.
+
+==================================================
+9. NAVIGATION DESIGN
+
+Create a navigation system that feels intentional.
+
+Recommended conceptual structure:
+
+UPDATES | PACE | MAP | CHAT | PROFILE
+
+with Settings accessible from Profile.
+
+However, you may choose:
+
+UPDATES | PACE | MAP | CHAT | SETTINGS
+
+with Profile as a persistent profile button.
+
+OR another equivalent structure if the attached reference image clearly suggests a better solution.
+
+The key requirements are:
+
+• Profile must be easily accessible
+• Map must be a first-class experience
+• Chat must contain calls
+• Pace must contain Routes
+• Community must be easy to discover
+• Create must be prominent
+• Settings must remain accessible
+• navigation must not feel crowded
+
+Use the attached reference to make the final decision.
+
+==================================================
+10. DESIGN SYSTEM
+
+Create a centralized Old Time design system.
+
+Define tokens for:
+
+• background
+• elevated background
+• cards
+• text
+• secondary text
+• muted text
+• accent
+• success
+• warning
+• error
+• separators
+• overlays
+• spacing
+• corner radius
+• shadows
+• typography
+
+Do not scatter arbitrary styles throughout the app.
+
+Use reusable components when appropriate.
+
+Examples:
+
+OldTimeButton
+OldTimeIconButton
+OldTimeCard
+OldTimeAvatar
+OldTimeSheet
+OldTimePill
+OldTimeSection
+OldTimeTabBar
+OldTimeMessageBubble
+OldTimeMediaCard
+OldTimeMetricCard
+OldTimeStoryBubble
+OldTimeHeader
+
+Use sensible abstractions, not abstraction for its own sake.
+
+==================================================
+11. VISUAL QUALITY
+
+The final application should feel:
+
+• premium
+• modern
+• iOS-first
+• social
+• cinematic where appropriate
+• clean
+• fast
+• intuitive
+• polished
+
+Avoid:
+
+• generic Expo styling
+• oversized UI
+• excessive cards
+• excessive borders
+• excessive gradients
+• random colors
+• inconsistent icons
+• desktop-like layouts
+• unnecessary text
+• clutter
+• excessive animation
+
+Use whitespace intelligently.
+
+Use imagery as a major part of the experience.
+
+==================================================
+12. DARK/LIGHT MODE
+
+Preserve the existing appearance system.
+
+The redesign must work correctly in:
+
+• light mode
+• dark mode
+
+Do not hard-code colors that break themes.
+
+==================================================
+13. PERFORMANCE
+
+This is a real production mobile application.
+
+Do not sacrifice performance for visuals.
+
+Pay special attention to:
+
+• video feed
+• Map
+• Chat
+• Pace tracking
+• LiveKit
+• animations
+• image loading
+• lists
+• realtime state
+
+Use performant React Native patterns.
+
+Avoid unnecessary global rerenders.
+
+==================================================
+14. BACKEND SAFETY
+
+The following systems are OFF LIMITS unless a UI requirement absolutely cannot be fulfilled without a change:
+
+• Supabase Auth
+• Express API contracts
+• PostgreSQL
+• Drizzle
+• wallet ledger
+• RevenueCat
+• Stripe
+• LiveKit
+• authentication
+• push infrastructure
+• EAS
+• Apple configuration
+• native capabilities
+• ReplayKit
+• production environment configuration
+
+If you believe a UI change requires one of these systems to change:
+
+STOP.
+
+Document:
+
+UI BLOCKER:
+WHY IT IS REQUIRED:
+WHAT BACKEND/NATIVE CHANGE WOULD BE NEEDED:
+
+Do not silently make the change.
+
+==================================================
+15. HONEST PRODUCT UI
+
+The UI must accurately represent the current implementation.
+
+Never show:
+
+• fake users
+• fake followers
+• fake activity
+• fake earnings
+• fake balances
+• fake leaderboards
+• fake live rooms
+• fake notifications
+• fake transactions
+
+If a feature exists in the backend but isn’t actually functional in the current release, do not expose it as fully working without verification.
+
+==================================================
+16. EXISTING FUNCTIONALITY MUST SURVIVE
+
+Before editing each screen:
+
+inspect its existing code.
+
+Identify its:
+
+• API calls
+• hooks
+• state
+• navigation
+• mutations
+• optimistic updates
+• error handling
+• permissions
+• authentication requirements
+• realtime connections
+• deep links
+• native dependencies
+
+Then redesign the presentation layer.
+
+Do not rewrite business logic unnecessarily.
+
+==================================================
+17. IMPLEMENTATION ORDER
+
+Work incrementally.
+
+STEP 1:
+Audit current UI.
+
+STEP 2:
+Create Old Time design tokens.
+
+STEP 3:
+Create shared components.
+
+STEP 4:
+Redesign navigation.
+
+STEP 5:
+Redesign Updates.
+
+STEP 6:
+Redesign Profile.
+
+STEP 7:
+Redesign Chat and call UI.
+
+STEP 8:
+Redesign Map.
+
+STEP 9:
+Redesign Pace/Routes.
+
+STEP 10:
+Redesign Community/Hubs.
+
+STEP 11:
+Redesign Create.
+
+STEP 12:
+Redesign LIVE/Access.
+
+STEP 13:
+Redesign Wallet/Creator/Payments.
+
+STEP 14:
+Redesign Settings.
+
+STEP 15:
+Final cross-app visual consistency pass.
+
+STEP 16:
+Regression testing.
+
+==================================================
+18. GIT SAFETY
+
+Create a checkpoint commit before UI work.
+
+Then use logical commits.
+
+Suggested commits:
+
+UI: design system
+UI: navigation
+UI: Updates
+UI: Profile
+UI: Chat and Calls
+UI: Map
+UI: Pace
+UI: Community
+UI: Create
+UI: Live
+UI: Wallet and Creator
+UI: Settings
+UI: final polish
+
+Do not create an EAS build.
+
+Do not submit to TestFlight.
+
+==================================================
+19. VALIDATION
+
+Run:
+
+• full workspace typecheck
+• API build
+• mobile typecheck
+• private-navigation regression
+• Phase 4 regression
+• Phase 5 regression
+• Phase 6 regression
+• Atmosphere tests
+• EAS validation
+• git diff –check
+
+Verify manually that the redesigned UI still allows:
+
+• sign in
+• sign up
+• profile access
+• profile editing
+• feed loading
+• likes
+• comments
+• sharing
+• hub joining
+• hub posting
+• creating posts
+• camera
+• Map
+• route tracking
+• Chat
+• audio call
+• video call
+• LIVE rooms
+• gifts
+• Wallet
+• RevenueCat restore/purchase surfaces
+• Stripe settings
+• Gold withdrawal
+• account deletion
+
+Do not disable tests.
+
+Do not modify tests just to make them pass.
+
+==================================================
+20. FINAL REPORT
+
+When complete, STOP.
+
+Report:
+
+1. Final navigation structure
+2. Feature grouping decisions
+3. Renamed features
+4. UI design system created
+5. Updates redesign
+6. Profile redesign
+7. Chat redesign
+8. Call redesign
+9. Map redesign
+10. Pace redesign
+11. Community redesign
+12. Create redesign
+13. LIVE redesign
+14. Wallet/Creator redesign
+15. Settings redesign
+16. Files changed
+17. Backend files changed
+18. Database files changed
+19. Native/EAS files changed
+20. Tests run
+21. Tests passed
+22. Any regressions
+23. Any UI blockers
+24. Git checkpoint
+25. Implementation commits
+
+IMPORTANT:
+
+If you discover that a feature from the attached design cannot be implemented without changing backend/native infrastructure, DO NOT fake it.
+
+Document it separately as a blocker.
+
+The goal is a substantial visual transformation of the CURRENT Project #1 application while keeping the production functionality intact.
+
+DO NOT MIGRATE PROJECT #2.
+
+DO NOT REBUILD THE APP.
+
+DO NOT REMOVE WORKING FEATURES.
+
+DO NOT CREATE MOCK DATA.
+
+DO NOT CREATE AN EAS BUILD.
+
+DO NOT SUBMIT TO TESTFLIGHT.
+
+START BY AUDITING THE CURRENT UI AND THE ATTACHED DESIGN REFERENCE, THEN IMPLEMENT THE REDESIGN INCREMENTALLY.

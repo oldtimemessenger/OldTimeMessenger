@@ -1,0 +1,43 @@
+
+⚠️ Detected that your app uses Expo Go for development, this is not recommended when building production apps.
+Learn more: https://expo.fyi/why-not-build-expo-go-for-production
+To suppress this warning, set EAS_BUILD_NO_EXPO_GO_WARNING=true.
+Resolved "production" environment for the build. Learn more: https://docs.expo.dev/eas/environment-variables/#setting-the-environment-for-your-builds
+Environment variables with visibility "Plain text" and "Sensitive" loaded from the "production" environment on EAS: EAS_PROJECT_ID, EXPO_PUBLIC_API_URL, EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY, EXPO_PUBLIC_REVENUECAT_IOS_API_KEY, EXPO_PUBLIC_REVENUECAT_TEST_API_KEY, EXPO_PUBLIC_SUPABASE_ANON_KEY, EXPO_PUBLIC_SUPABASE_URL.
+
+- Incrementing buildNumber from 75 to 76.
+✔ Incremented buildNumber from 75 to 76.
+ios.buildNumber field in app config is ignored when version source is set to remote, but this value will still be in the manifest available via expo-constants. It's recommended to remove this value from app config.
+✔ Using remote iOS credentials (Expo server)
+
+Distribution Certificate is not validated for non-interactive builds.
+Using App Store Connect API Key from EAS credentials service.
+Failed to authenticate with the App Store Connect API key from EAS credentials service: Input is required, but stdin is not readable. Failed to display prompt: Apple Team ID:
+Skipping Provisioning Profile validation on Apple Servers because we aren't authenticated.
+Project Credentials Configuration
+Project                   @oldtimemessengers-team/old-time-messenger
+Bundle Identifier         com.oldtime.messenger
+                          
+App Store Configuration   
+                          
+Distribution Certificate  
+Serial Number             6AB6F7133F323999A21AF41BF65757BC
+Expiration Date           Sun, 04 Jul 2027 07:45:32 PDT
+Apple Team                FC6ZRKNS2N (James Marc (Individual))
+Updated                   2 months ago
+                          
+Provisioning Profile      
+Developer Portal ID       CQV8ZJRN94
+Status                    active
+Expiration                Sun, 04 Jul 2027 07:45:32 PDT
+Apple Team                FC6ZRKNS2N (James Marc (Individual))
+Updated                   2 days ago
+                          
+All credentials are ready to build @oldtimemessengers-team/old-time-messenger (com.oldtime.messenger)
+- Computing project fingerprint
+✔ Computed project fingerprint
+
+Set ascAppId in the submit profile (eas.json) or re-run this command in interactive mode.
+Submission failed
+Error: build:internal command failed.
+Failed to run eas build:internal

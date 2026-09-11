@@ -2,17 +2,14 @@
   "expo": {
     "slug": "old-time-messenger",
     "ios": {
-      "bundleIdentifier": "com.oldtime.messenger"
-    },
-    "extra": {
-      "eas": {
-        "projectId": "738bca8d-4487-4758-a2b5-f6efd9fb3197"
-      }
-    },
-    "ios": {
       "bundleIdentifier": "com.oldtime.messenger",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4cdaddfe-a954-4270-ba26-f6a405e2f9e5"
       }
     }
   }

@@ -2,18 +2,30 @@ import { AccessToken } from "livekit-server-sdk";
 
 const TOKEN_TTL_SECONDS = 10 * 60;
 
+function liveKitConfigError(): string | null {
+  const url = process.env.LIVEKIT_URL?.trim();
+  const apiKey = process.env.LIVEKIT_API_KEY?.trim();
+  const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
+  if (!url || !apiKey || !apiSecret) return "LiveKit is not configured.";
+  try {
+    const parsed = new URL(url);
+    if (!["ws:", "wss:"].includes(parsed.protocol) || !parsed.hostname) {
+      return "LiveKit URL must be a valid ws:// or wss:// endpoint.";
+    }
+  } catch {
+    return "LiveKit URL must be a valid ws:// or wss:// endpoint.";
+  }
+  return null;
+}
+
 export function liveKitConfigured(): boolean {
-  return Boolean(
-    process.env.LIVEKIT_URL
-      && process.env.LIVEKIT_API_KEY
-      && process.env.LIVEKIT_API_SECRET,
-  );
+  return liveKitConfigError() === null;
 }
 
 export function liveKitPublicUrl(): string {
-  const url = process.env.LIVEKIT_URL;
-  if (!url) throw new Error("LiveKit is not configured.");
-  return url;
+  const error = liveKitConfigError();
+  if (error) throw new Error(error);
+  return process.env.LIVEKIT_URL!.trim();
 }
 
 export async function createLiveKitToken(input: {
@@ -21,11 +33,10 @@ export async function createLiveKitToken(input: {
   userId: number;
   canPublish: boolean;
 }): Promise<string> {
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
-  if (!apiKey || !apiSecret || !process.env.LIVEKIT_URL) {
-    throw new Error("LiveKit is not configured.");
-  }
+  const error = liveKitConfigError();
+  if (error) throw new Error(error);
+  const apiKey = process.env.LIVEKIT_API_KEY!;
+  const apiSecret = process.env.LIVEKIT_API_SECRET!;
   const token = new AccessToken(apiKey, apiSecret, {
     identity: `user_${input.userId}`,
     ttl: TOKEN_TTL_SECONDS,

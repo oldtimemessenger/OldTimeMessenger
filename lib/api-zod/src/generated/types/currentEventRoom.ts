@@ -18,6 +18,8 @@ export interface CurrentEventRoom {
   topic: CurrentEventTopic;
   isOpen: boolean;
   isLive: boolean;
+  /** @nullable */
+  liveUntil: number | null;
   hostId: number;
   /** @nullable */
   latitude: number | null;

@@ -456,6 +456,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /admin/users/{userId}/verification:
+    put:
+      operationId: updateAdminUserVerification
+      tags: [admin]
+      summary: Approve or revoke a user's verification badge
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                approved:
+                  type: boolean
+              required: [approved]
+      responses:
+        "200":
+          description: Verification approval updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: number }
+                  approved: { type: boolean }
+                  approvedAt: { type: [number, "null"] }
+                  approvedBy: { type: [number, "null"] }
+                required: [id, approved, approvedAt, approvedBy]
+        "400":
+          description: Invalid user or approval value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not a configured system admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /chats/direct/{userOneId}/{userTwoId}:
     get:
       operationId: getDirectChat
@@ -1973,6 +2021,9 @@ components:
           type: string
         bio:
           type: string
+        verificationBadge:
+          type: boolean
+          description: True only after a server-confirmed verification payment or explicit system-admin approval.
         avatarObjectPath:
           type: [string, "null"]
         birthday:
@@ -1988,7 +2039,7 @@ components:
           type: number
         lastSeenVisible:
           type: boolean
-      required: [id, phone, hasRegisteredPhone, phoneVerified, phoneDiscoveryPermission, name, username, bio, avatarObjectPath, birthday, contactPermission, online, lastSeen, lastSeenVisible]
+      required: [id, phone, hasRegisteredPhone, phoneVerified, phoneDiscoveryPermission, name, username, bio, verificationBadge, avatarObjectPath, birthday, contactPermission, online, lastSeen, lastSeenVisible]
     ContactDiscoveryMatch:
       type: object
       properties:
@@ -2202,9 +2253,12 @@ components:
           type: string
         bio:
           type: string
+        verificationBadge:
+          type: boolean
+          description: True only after a server-confirmed verification payment or explicit system-admin approval.
         avatarObjectPath:
           type: [string, "null"]
-      required: [id, name, username, bio, avatarObjectPath]
+      required: [id, name, username, bio, verificationBadge, avatarObjectPath]
     SocialMedia:
       type: object
       properties:
@@ -2804,6 +2858,7 @@ components:
         topic: { $ref: "#/components/schemas/CurrentEventTopic" }
         isOpen: { type: boolean }
         isLive: { type: boolean }
+        liveUntil: { type: [number, "null"] }
         hostId: { type: number }
         latitude: { type: [number, "null"] }
         longitude: { type: [number, "null"] }
@@ -2831,7 +2886,7 @@ components:
             provider: { type: string, enum: [unconfigured, livekit, agora, daily] }
             configured: { type: boolean }
           required: [provider, configured]
-      required: [id, clubName, title, topic, isOpen, isLive, hostId, latitude, longitude, createdAt, participants, counts, viewer, audio]
+      required: [id, clubName, title, topic, isOpen, isLive, liveUntil, hostId, latitude, longitude, createdAt, participants, counts, viewer, audio]
     CurrentEventRoomList:
       type: object
       properties: { items: { type: array, items: { $ref: "#/components/schemas/CurrentEventRoom" } } }

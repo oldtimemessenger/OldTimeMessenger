@@ -1,0 +1,120 @@
+APPROVED — proceed to PHASE 2.
+
+Project 1 remains the FINAL production project and authoritative source for all production infrastructure.
+
+PHASE 2 GOAL:
+Bring the newer application/UI experience from Project 2 into Project 1, while preserving Project 1’s production infrastructure and feature systems.
+
+IMPORTANT:
+Do NOT perform a wholesale copy of Project 2.
+Do NOT delete Project 2.
+Do NOT modify or replace Project 1’s production EAS/Expo/Apple/native/backend/database infrastructure unless absolutely required for compatibility.
+Do NOT build or submit to Apple yet.
+
+Before changing files:
+
+1. Create a safety Git checkpoint/commit from the current clean Project 1 state.
+2. Follow the Phase 1 migration inventory exactly.
+3. Migrate/rebuild the appropriate Project 2 mobile UI/routes/components into Project 1, prioritizing:
+    * Updates / social feed experience
+    * Stories
+    * Map experience
+    * Chat UI/UX
+    * Camera
+    * Current Events
+    * Settings UI
+    * Profiles/profile cards where applicable
+    * Home/navigation experience
+    * Other newer Project 2 UX identified in the Phase 1 inventory
+4. Navigation MUST be reconciled rather than blindly copied.
+
+Project 1’s required production navigation/features must remain available:
+
+* Updates
+* Pace
+* Map
+* Chat
+* Settings
+* Calls/call detail functionality
+* Wallet
+* Payment Settings
+* Withdraw
+* Any required authentication/onboarding routes
+
+If Project 2 has a dedicated Calls tab that conflicts with Project 1’s current navigation, do NOT automatically replace Project 1’s navigation. Preserve the production call functionality and integrate the newer UI where appropriate.
+
+5. Preserve Project 1’s existing functional integrations:
+    * Firebase authentication
+    * Google/Apple authentication
+    * Supabase
+    * Existing API client/contracts
+    * OpenAPI/generated client boundaries
+    * LiveKit/WebRTC
+    * ReplayKit screen sharing
+    * Push notifications
+    * AdMob
+    * RevenueCat
+    * Wallet/coins
+    * Creator payments/withdrawals
+    * Pace
+    * Discovery
+    * Atmosphere
+    * Existing Stories/post expiry/privacy behavior
+    * Existing production API routes
+6. When Project 2 UI expects data/functions that Project 1 already implements differently, adapt the Project 2 UI to Project 1’s existing contracts instead of replacing the backend contract.
+7. DO NOT copy these wholesale from Project 2:
+    * app.json
+    * eas.json
+    * package.json
+    * pnpm/workspace configuration
+    * database migrations
+    * OpenAPI source/generated API files
+    * EAS project identifiers
+    * Expo owner/project association
+    * Apple configuration
+    * native iOS targets
+    * ReplayKit files
+    * App Group configuration
+    * production environment configuration
+8. Dependencies:
+    Reconcile dependencies carefully.
+    If Project 2 requires a package that Project 1 does not have, determine whether it is actually necessary.
+    Add only required dependencies and preserve Project 1’s existing compatible versions whenever possible.
+    Do not downgrade Project 1 production dependencies simply to match Project 2.
+9. TypeScript/build safety:
+    After each logical migration group, run the appropriate typecheck/lint/tests available in the project.
+    Fix import/path/navigation errors caused by the migration.
+    Do not hide errors with any, disabled TypeScript checks, or temporary hacks.
+10. Git checkpoints:
+    Work in logical groups and commit after each completed group.
+    At minimum create separate commits for:
+
+* UI/components migration
+* Route/navigation reconciliation
+* Dependency/import reconciliation
+* Final Phase 2 stabilization
+
+11. Do NOT run:
+
+* production EAS build
+* EAS submit
+* TestFlight submission
+* App Store submission
+
+At the end of Phase 2, provide:
+
+A. Exact files added
+B. Exact files modified
+C. Exact files intentionally left authoritative from Project 1
+D. Any Project 2 files that could NOT safely be migrated and why
+E. Dependencies added/changed
+F. Navigation changes
+G. Any TypeScript/lint/test results
+H. Every Git commit hash created
+I. Any remaining blockers before Phase 3
+
+Then STOP and wait for approval.
+
+Do not delete Project 2.
+Do not delete old Project 1 functionality simply because Project 2 has a newer-looking implementation.
+The objective is: Project 1 production foundation + Project 2 improved application experience.

@@ -11,6 +11,8 @@ import callsRouter from "./calls";
 import authBirthdayRouter from "./auth-birthday";
 import accountRouter from "./account";
 import atmosphereRouter from "./atmosphere";
+import adminRouter from "./admin";
+import creatorHubRouter from "./creator-hub";
 
 const router: IRouter = Router();
 
@@ -27,5 +29,7 @@ router.use(currentEventsRouter);
 router.use(discoveryRouter);
 router.use(atmosphereRouter);
 router.use(callsRouter);
+router.use(adminRouter);
+router.use(creatorHubRouter);
 
 export default router;

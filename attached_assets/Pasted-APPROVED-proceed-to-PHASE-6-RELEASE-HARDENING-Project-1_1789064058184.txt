@@ -1,0 +1,319 @@
+APPROVED — proceed to PHASE 6 RELEASE HARDENING.
+
+Project 1 remains the FINAL canonical production project.
+
+PHASE 6 ONLY:
+Harden the financial, wallet, RevenueCat, creator earnings, LIVE monetization, and payout systems.
+
+Do NOT work on Calls, Current Events audio, Pace, AdMob, Story positioning, authentication, or unrelated UI in this phase.
+
+Do NOT migrate Project 2 code.
+Do NOT change the Expo/EAS project association.
+Do NOT change Apple bundle IDs or signing configuration.
+Do NOT submit to TestFlight.
+Do NOT create a production EAS build yet.
+
+Before modifying anything:
+
+1. Create a Git checkpoint from the current clean state.
+2. Audit the existing RevenueCat, wallet, Coins, Gold, gifting, creator payment, and withdrawal implementation before making changes.
+
+PHASE 6A — DEFINE THE MONEY MODEL
+
+There must be a strict distinction between:
+
+1. Purchased Coins
+2. Creator Gold / earnings
+3. Withdrawable creator balance
+4. Real-money payouts
+
+Do not allow UI wording to imply that purchased Coins are directly withdrawable.
+
+Review and correct the existing wording around:
+
+* 90 Coins = $1
+* 90 Gold = $1
+
+Determine exactly what each balance represents.
+
+The server must remain authoritative for all monetary/virtual-currency calculations.
+
+Do not trust client-provided balances, prices, conversion rates, or payout amounts.
+
+PHASE 6B — IMMUTABLE LEDGER
+
+Audit the existing balance-changing operations:
+
+* Coin purchases
+* Coin spending
+* Gifts
+* Gold/creator earnings
+* Refunds
+* Reversals
+* Withdrawals
+* Payout completion/failure
+
+If a durable immutable ledger does not currently exist, implement one using the existing database architecture.
+
+Requirements:
+
+* Every balance-changing transaction gets a unique idempotency key.
+* Repeated requests must not double-credit or double-debit.
+* Ledger entries must be auditable.
+* Balance changes must be transactional.
+* Client retries must be safe.
+* Failed operations must not partially modify balances.
+* Server calculates all monetary values.
+* Never allow negative balances unless explicitly supported by a documented business rule.
+
+Do not simply add another client-side balance field.
+
+PHASE 6C — REVENUECAT
+
+Review:
+
+* mobile/lib/revenuecat.tsx
+* lib/revenuecat.ts
+* RevenueCat provider
+* server purchase verification
+* wallet credit flow
+
+Verify the intended flow:
+
+Apple/Google purchase
+→ RevenueCat
+→ transaction verification
+→ server
+→ idempotent purchase record
+→ wallet credit
+
+Requirements:
+
+* Valid purchases credit exactly once.
+* Duplicate transaction delivery does not credit twice.
+* Restore purchases does not duplicate credits.
+* Invalid purchases are rejected.
+* Missing RevenueCat configuration fails clearly.
+* Missing offerings do not silently look like “no products available.”
+* Product IDs are explicitly mapped to known coin packs.
+* Client cannot choose an arbitrary credit amount.
+* Server must determine the amount of Coins granted for each product.
+
+If the existing architecture already has server-side RevenueCat verification, preserve it and strengthen it rather than replacing it.
+
+PHASE 6D — COINS AND GIFTS
+
+Audit every place Coins can be spent:
+
+* Chat
+* Current Events
+* Creator gifts
+* Pace gifts
+* Any other virtual-item system
+
+For every transaction:
+
+sender balance
+→ debit
+→ gift/event transaction
+→ recipient Gold/earnings credit where applicable
+
+This must be atomic and idempotent.
+
+Prevent:
+
+* double taps
+* retry duplication
+* replayed requests
+* negative balances
+* unauthorized gifting
+* gifting after room/event termination
+* gifting to invalid recipients
+* client-side balance manipulation
+
+PHASE 6E — CREATOR GOLD / EARNINGS
+
+Separate creator earnings from purchased Coins.
+
+The creator’s earned Gold must have a clear server-controlled conversion rule.
+
+Do not use floating-point arithmetic for monetary settlement.
+
+Use integer minor units or another deterministic representation for real-money values.
+
+Document:
+
+* Coin purchase value
+* Coin spend value
+* Gold earned from gifts
+* creator/platform split
+* withdrawable amount
+* minimum withdrawal if one exists
+
+If any of these rules are not currently finalized in the codebase, do not invent business terms silently. Identify them as product decisions required before launch.
+
+PHASE 6F — LIVE ROOM MONETIZATION
+
+Audit Current Event paid-room controls.
+
+The previous audit found UI controls displaying “coming soon.”
+
+Determine whether the current product intends to support:
+
+* free rooms
+* paid entry rooms
+* creator-controlled pricing
+* gifts
+
+If paid rooms are implemented in the current product, enforce access server-side.
+
+Never rely on UI visibility alone.
+
+A user without entitlement/payment must not receive a usable LiveKit room token merely because they know a room ID.
+
+Room pricing and entitlement checks must happen server-side.
+
+If paid-room functionality is not yet intended for the immediate release, keep the UI honest and clearly identify it as not yet available rather than exposing nonfunctional controls.
+
+PHASE 6G — STRIPE / CREATOR PAYOUTS
+
+Audit:
+
+* payment-settings.tsx
+* withdraw.tsx
+* creator payment routes
+* Stripe integration
+
+Required states:
+
+* payout account not connected
+* onboarding required
+* onboarding incomplete
+* KYC/action required
+* payout pending
+* payout successful
+* payout failed
+* payout reversed
+* withdrawal rejected
+* insufficient withdrawable balance
+
+Payout operations must be idempotent.
+
+Never deduct a creator balance permanently before the payout state is safely recorded.
+
+Do not allow the same withdrawal request to create multiple payouts.
+
+If Stripe webhook verification is already implemented, preserve and strengthen it.
+
+If webhook verification or reconciliation is missing, identify it explicitly as a release blocker.
+
+PHASE 6H — SECURITY
+
+Review authorization around:
+
+* wallet balance
+* purchase verification
+* gifting
+* creator earnings
+* withdrawal
+* payout status
+* LIVE room entitlements
+
+A user must never be able to alter their own:
+
+* Coins
+* Gold
+* earnings
+* withdrawal amount
+* payout status
+* purchase credit
+* entitlement
+
+through client requests.
+
+PHASE 6I — TESTING
+
+Add focused deterministic tests for:
+
+1. Purchase credited once
+2. Duplicate purchase ignored
+3. Restore purchase doesn’t double-credit
+4. Gift debits sender once
+5. Gift credits recipient once
+6. Duplicate gift request ignored
+7. Insufficient balance rejected
+8. Unauthorized gift rejected
+9. Ended room gift rejected if applicable
+10. Withdrawal cannot be duplicated
+11. Failed withdrawal does not incorrectly destroy creator balance
+12. Invalid RevenueCat purchase rejected
+13. Client cannot choose arbitrary Coin credit
+14. Client cannot modify Gold
+15. Client cannot modify withdrawal amount
+
+Run:
+
+* mobile typecheck
+* API typecheck
+* existing private-navigation check
+* existing atmosphere tests
+* Phase 4 regression
+* Phase 5 regression
+* new Phase 6 regression tests
+* git diff –check
+
+Do not fake provider responses as proof of production functionality. Mock/provider-isolated tests are useful for deterministic logic, but clearly label the remaining real-provider tests.
+
+PHASE 6J — PHYSICAL PROVIDER TEST REQUIREMENTS
+
+Document the exact real-device/provider tests still required:
+
+REVENUECAT:
+
+* TestFlight/sandbox product availability
+* Purchase
+* Restore
+* Duplicate transaction handling
+* Failed transaction
+* Correct wallet credit
+
+STRIPE:
+
+* Creator onboarding
+* KYC/action-required state
+* Withdrawal
+* Pending state
+* Success
+* Failure/reversal
+* Webhook reconciliation
+
+LIVE MONETIZATION:
+
+* Free room
+* Paid room if currently enabled
+* Unauthorized user
+* Entitled user
+* Gift transaction
+
+Do not claim any of these are physically verified unless they actually are.
+
+At the end provide:
+
+A. Exact files modified
+B. Exact database changes/migrations
+C. Exact ledger/accounting model
+D. RevenueCat flow
+E. Coins vs Gold rules
+F. Creator payout flow
+G. LIVE monetization behavior
+H. Security changes
+I. Tests and results
+J. Provider/physical-device tests still required
+K. Remaining Critical/High risks
+L. Git checkpoint commit
+M. Git implementation commit
+
+Then STOP and wait for approval.
+
+Do not create a production EAS build.
+Do not submit to TestFlight.

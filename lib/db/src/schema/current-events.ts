@@ -24,6 +24,7 @@ export const currentEventRoomsTable = pgTable(
     longitude: doublePrecision("longitude"),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
     endedAt: pgBigint("ended_at", { mode: "number" }),
+    liveUntil: pgBigint("live_until", { mode: "number" }),
   },
   (table) => ({
     liveTopicIndex: index("current_event_rooms_live_topic_idx").on(table.isLive, table.topic),
@@ -81,12 +82,14 @@ export const currentEventGiftsTable = pgTable(
     senderId: integer("sender_id").notNull(),
     recipientId: integer("recipient_id").notNull(),
     gift: text("gift").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
     coins: integer("coins").notNull(),
     gold: integer("gold").notNull(),
     createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
   },
   (table) => ({
     roomCreatedIndex: index("current_event_gifts_room_created_idx").on(table.roomId, table.createdAt),
+    idempotencyIndex: uniqueIndex("current_event_gifts_idempotency_idx").on(table.idempotencyKey),
   }),
 );
 
@@ -126,6 +129,7 @@ export const creatorWithdrawalsTable = pgTable(
   {
     id: serial("id").primaryKey(),
     userId: integer("user_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
     gold: integer("gold").notNull(),
     amountCents: integer("amount_cents").notNull(),
     currency: text("currency").notNull().default("usd"),
@@ -139,7 +143,30 @@ export const creatorWithdrawalsTable = pgTable(
   (table) => ({
     userCreatedIndex: index("creator_withdrawals_user_created_idx").on(table.userId, table.createdAt),
     processingUserIndex: index("creator_withdrawals_user_status_idx").on(table.userId, table.status),
+    idempotencyIndex: uniqueIndex("creator_withdrawals_idempotency_idx").on(table.idempotencyKey),
     transferIndex: uniqueIndex("creator_withdrawals_transfer_idx").on(table.stripeTransferId),
     payoutIndex: uniqueIndex("creator_withdrawals_payout_idx").on(table.stripePayoutId),
+  }),
+);
+
+export const virtualCurrencyLedgerTable = pgTable(
+  "virtual_currency_ledger",
+  {
+    id: serial("id").primaryKey(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    userId: integer("user_id").notNull(),
+    account: text("account").notNull(),
+    delta: integer("delta").notNull(),
+    balanceAfter: integer("balance_after").notNull(),
+    entryType: text("entry_type").notNull(),
+    referenceId: text("reference_id"),
+    relatedUserId: integer("related_user_id"),
+    roomId: integer("room_id"),
+    createdAt: pgBigint("created_at", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    idempotencyIndex: uniqueIndex("virtual_currency_ledger_idempotency_idx").on(table.idempotencyKey),
+    userAccountCreatedIndex: index("virtual_currency_ledger_user_account_created_idx").on(table.userId, table.account, table.createdAt),
+    referenceIndex: index("virtual_currency_ledger_reference_idx").on(table.referenceId),
   }),
 );

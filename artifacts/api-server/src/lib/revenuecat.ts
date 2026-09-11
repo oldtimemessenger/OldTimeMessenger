@@ -32,36 +32,21 @@ type RevenueCatPage<T> = {
 
 const REVENUECAT_API_ORIGIN = "https://api.revenuecat.com";
 const MAX_REVENUECAT_PAGES = 100;
-const CUSTOM_COIN_STEP = 450;
-const MAX_CUSTOM_COINS = 900_000;
 
-function coinAmountForStoreIdentifier(storeIdentifier: string): number | undefined {
-  const legacyAndRecommendedAmounts: Record<string, number> = {
-    oldtime_coins_100: 100,
-    oldtime_coins_550: 550,
-    oldtime_coins_1200: 1200,
-    oldtime_coins_1000: 1000,
-    oldtime_coins_5000: 5000,
-    oldtime_coins_10000: 10000,
-    oldtime_coins_25000: 25000,
-    oldtime_coins_50000: 50000,
-    oldtime_coins_100000: 100000,
-  };
-  const knownAmount = legacyAndRecommendedAmounts[storeIdentifier];
-  if (knownAmount) return knownAmount;
+export const KNOWN_COIN_PRODUCTS = {
+  oldtime_coins_100: 100,
+  oldtime_coins_550: 550,
+  oldtime_coins_1000: 1000,
+  oldtime_coins_1200: 1200,
+  oldtime_coins_5000: 5000,
+  oldtime_coins_10000: 10000,
+  oldtime_coins_25000: 25000,
+  oldtime_coins_50000: 50000,
+  oldtime_coins_100000: 100000,
+} as const;
 
-  const match = /^oldtime_coins_(\d+)$/.exec(storeIdentifier);
-  if (!match) return undefined;
-  const amount = Number(match[1]);
-  if (
-    !Number.isSafeInteger(amount)
-    || amount < CUSTOM_COIN_STEP
-    || amount > MAX_CUSTOM_COINS
-    || amount % CUSTOM_COIN_STEP !== 0
-  ) {
-    return undefined;
-  }
-  return amount;
+export function coinAmountForStoreIdentifier(storeIdentifier: string): number | undefined {
+  return KNOWN_COIN_PRODUCTS[storeIdentifier as keyof typeof KNOWN_COIN_PRODUCTS];
 }
 
 async function request(path: string) {

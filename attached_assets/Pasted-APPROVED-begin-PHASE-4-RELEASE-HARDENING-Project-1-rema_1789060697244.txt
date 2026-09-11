@@ -1,0 +1,133 @@
+APPROVED — begin PHASE 4 RELEASE HARDENING.
+
+Project 1 remains the FINAL canonical project.
+Project 2 migration is complete and no further source migration is required.
+
+This phase focuses ONLY on authentication/session handling, API-origin resolution, and deep-link configuration.
+
+Do NOT work on calls, RevenueCat, wallet, push notifications, Pace, ReplayKit, ads, or other unrelated features in this phase.
+
+Before modifying anything:
+
+1. Create a Git checkpoint commit from the current clean state.
+2. Inspect the existing implementation and confirm the exact files that need modification.
+3. Do not modify Expo/EAS project association, Apple bundle IDs, signing credentials, App Group, ReplayKit target, or production backend contracts.
+
+PHASE 4A — AUTHENTICATION
+
+Fix the identified authentication risk:
+
+components/firebase-auth-panel.tsx currently uses requestUri: http://localhost for Google/Apple exchange.
+
+Determine the correct native authentication redirect flow for the existing Project 1 Expo configuration and registered app scheme.
+
+Requirements:
+
+* Google Sign-In must use the correct native redirect.
+* Apple Sign-In must continue using the existing Apple configuration.
+* Email authentication must continue working.
+* Firebase authentication/session exchange must continue using the existing backend.
+* Do not replace Firebase with another auth provider.
+* Do not change the backend authentication contract unless absolutely necessary.
+* Do not hardcode development-only localhost behavior into production.
+
+PHASE 4B — SESSION / AUTH GATING
+
+Review:
+
+* app/_layout.tsx
+* app/index.tsx
+* app/(tabs)/_layout.tsx
+* existing auth/session providers
+
+Fix stale-session and cold-start behavior.
+
+Expected behavior:
+
+* Valid authenticated session → app opens normally.
+* Expired/invalid session → session is cleared and user reaches a stable auth state.
+* Logged-out user cannot get stuck in a redirect loop.
+* Logged-in user should not unnecessarily see onboarding.
+* Profile setup should resume correctly if incomplete.
+* Cold start must resolve authentication deterministically.
+
+Do not break the existing five-tab navigation:
+Updates / Pace / Map / Chat / Settings.
+
+PHASE 4C — API ORIGIN
+
+Review:
+
+* lib/api-base-url.ts
+* mobile/lib/mobile-api.ts
+* lib/api-client-react/src/custom-fetch.ts
+* related API configuration
+
+Ensure native production builds resolve the intended production API deterministically.
+
+The production API is:
+old-time-messenger–kingvercetti59.replit.app
+
+Do not make the browser origin the fallback for native production builds.
+
+If a required production API origin is missing or invalid, fail clearly rather than silently making requests to an incorrect host.
+
+Do not break web preview behavior.
+
+PHASE 4D — DEEP LINKS
+
+Review the existing Expo scheme and all Current Event/deep-link route handling.
+
+The audit identified a mismatch between:
+oldtime://current-event/…
+
+and the configured Expo scheme:
+old-time-mobile
+
+Determine the intended production scheme from Project 1’s existing configuration and make all generated/shared links consistent with it.
+
+Verify:
+
+* cold-start deep link
+* warm-start deep link
+* authenticated user
+* unauthenticated user
+* Current Event route
+* existing call/deep-link routes if applicable
+
+Do not introduce a second competing scheme.
+
+PHASE 4E — TESTS
+
+Run:
+
+* mobile typecheck
+* API typecheck
+* existing private-navigation check
+* git diff –check
+* any existing auth/deep-link tests available
+
+Add focused tests where practical for:
+
+* invalid session handling
+* API origin resolution
+* deep-link route parsing
+
+Do not create fake tests that only test implementation details without meaningful behavior.
+
+IMPORTANT:
+Do not perform a production EAS build.
+Do not submit to TestFlight.
+Do not change database schema unless absolutely unavoidable.
+Do not modify unrelated features.
+
+At the end provide:
+
+A. Exact files modified
+B. Exact behavior fixed
+C. Any configuration changes
+D. Tests executed and results
+E. Any remaining authentication/deep-link risks
+F. Git commit hash
+
+Then STOP and wait for approval before Phase 5.

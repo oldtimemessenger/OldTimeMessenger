@@ -1,0 +1,103 @@
+We have confirmed that Project 1 is the production Expo/EAS project for Old Time Messenger and is already connected to the existing App Store/TestFlight application.
+
+Project 2 is a newer/better rebuild of essentially the same Old Time application.
+
+IMPORTANT: I want Project 2’s COMPLETE APPLICATION brought into Project 1.
+
+This means I want to preserve Project 2’s:
+
+* UI
+* screens
+* navigation
+* components
+* features
+* functionality
+* social features
+* chat
+* feed/Updates
+* Map
+* Pace
+* profiles
+* authentication screens
+* settings
+* calls/rooms
+* media functionality
+* and the overall application experience
+
+Project 1 should become the FINAL production project.
+
+However, Project 1’s existing Expo/EAS/Apple/TestFlight infrastructure must be preserved.
+
+DO NOT create a new EAS project.
+DO NOT create a new App Store app.
+DO NOT change the bundle identifier.
+DO NOT change the App Store Connect App ID.
+DO NOT regenerate Apple credentials.
+DO NOT remove the existing EAS project association.
+
+Project 1’s authoritative production identity is:
+
+Expo owner: oldtimes-team
+Expo slug: old-time-messenger
+EAS project ID: 4cdaddfe-a954-4270-ba26-f6a405e2f9e5
+iOS bundle ID: com.oldtime.messenger
+Android package: com.oldtime.messenger
+Apple Team ID: FC6ZRKNS2N
+App Store Connect App ID: 6787469528
+Broadcast extension: com.oldtime.messenger.broadcast
+App Group: group.com.oldtime.messenger
+
+The goal is:
+
+PROJECT 2 APPLICATION
++
+PROJECT 1 PRODUCTION EXPO/EAS/APPLE INFRASTRUCTURE
+
+PROJECT 1 FINAL APPLICATION
+
+Before making ANY changes, perform a full comparison of Project 1 and Project 2.
+
+Compare:
+
+1. Source structure
+2. Screens
+3. Navigation
+4. Components
+5. Dependencies
+6. Expo configuration
+7. app.json/app.config
+8. eas.json
+9. Native iOS configuration
+10. Android configuration
+11. Expo plugins
+12. Supabase configuration
+13. Firebase configuration
+14. API configuration
+15. Environment variables
+16. EAS configuration
+17. Apple configuration
+18. Broadcast/ReplayKit configuration
+19. LiveKit configuration
+20. AdMob configuration
+21. RevenueCat configuration
+22. Any database/API assumptions
+23. Any functionality in Project 2 that requires additional configuration from Project 1
+
+Then produce a migration plan.
+
+Do NOT modify files yet.
+Do NOT delete anything.
+Do NOT run a production build.
+Do NOT submit to Apple.
+
+The migration plan must clearly identify:
+
+* What from Project 2 will become the final application code
+* What from Project 1 must be preserved
+* Any conflicts between the two
+* Any dependencies that need to be reconciled
+* Any environment variables that need to be preserved
+* Any native configuration that must be merged
+* Any files that should NOT be copied from Project 2
+
+STOP after the audit and migration plan. Wait for my approval before modifying anything.

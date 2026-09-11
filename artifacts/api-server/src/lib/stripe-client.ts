@@ -3,7 +3,7 @@ import Stripe from "stripe";
 /**
  * Fetches a fresh key so Replit connector credential rotation is respected.
  */
-async function getStripeCredentials(): Promise<{ secretKey: string }> {
+async function getStripeCredentials(): Promise<{ secretKey: string; publishableKey: string | null }> {
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const token = process.env.REPL_IDENTITY
     ? `repl ${process.env.REPL_IDENTITY}`
@@ -18,15 +18,29 @@ async function getStripeCredentials(): Promise<{ secretKey: string }> {
     { headers: { Accept: "application/json", X_REPLIT_TOKEN: token }, signal: AbortSignal.timeout(10_000) },
   );
   if (!response.ok) throw new Error(`Unable to load Stripe credentials (${response.status}).`);
-  const data = await response.json() as { items?: Array<{ settings?: { secret_key?: unknown } }> };
+  const data = await response.json() as {
+    items?: Array<{ settings?: { secret_key?: unknown; publishable_key?: unknown } }>;
+  };
   const secretKey = data.items?.[0]?.settings?.secret_key;
   if (typeof secretKey !== "string" || !secretKey) {
     throw new Error("Stripe is not configured. Connect Stripe in the Integrations tab.");
   }
-  return { secretKey };
+  const publishableKey = data.items?.[0]?.settings?.publishable_key;
+  return {
+    secretKey,
+    publishableKey: typeof publishableKey === "string" && publishableKey ? publishableKey : null,
+  };
 }
 
 export async function getUncachableStripeClient(): Promise<Stripe> {
   const { secretKey } = await getStripeCredentials();
   return new Stripe(secretKey);
+}
+
+export async function getStripePublishableKey(): Promise<string> {
+  const { publishableKey } = await getStripeCredentials();
+  if (!publishableKey) {
+    throw new Error("Stripe publishable key is not configured.");
+  }
+  return publishableKey;
 }

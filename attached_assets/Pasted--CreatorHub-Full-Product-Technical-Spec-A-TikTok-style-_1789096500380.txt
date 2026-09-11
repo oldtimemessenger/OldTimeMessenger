@@ -1,0 +1,212 @@
+# CreatorHub — Full Product & Technical Spec
+*A TikTok-style platform with Creator + Business accounts, affiliate tracking, and automatic revenue share.*
+
+Give this whole document to Replit's AI Agent as your build brief. It's organized so you can build in phases (Phase 1 → 5) instead of all at once.
+
+---
+
+## 1. Product Overview
+
+**What it is:** A social/content platform where:
+- Regular users can apply to become **Creators**.
+- Brands can apply to become **verified Business accounts**.
+- Businesses can **recruit creators** and **approve creator applications** to promote specific products.
+- Every product promoted by a creator gets a **unique trackable affiliate link**.
+- Sales made through that link **automatically pay the creator a commission** (minimum 10%, business can set higher).
+- Posts can include a **"shop this" mini-cart** so viewers can buy without leaving the app.
+
+**Core roles:**
+| Role | Description |
+|---|---|
+| **Viewer/User** | Default account. Can browse, follow, buy via creator links. |
+| **Creator** | Approved applicant. Can post content, tag products, get a shareable storefront/link, earns commission. |
+| **Business** | Verified brand account. Can list products, recruit/approve creators, set commission rates, view analytics. |
+| **Admin** | Internal team. Approves business verification, moderates, handles disputes/payouts. |
+
+---
+
+## 2. Core User Flows
+
+### 2.1 Becoming a Creator
+1. User fills out **Creator Application Form** (see §6.1).
+2. Application goes to a review queue — reviewed by **Admin** (platform-level) *and/or* auto-eligible if they meet thresholds (follower count, account age, etc. — configurable).
+3. On approval: account flips `role = creator`, unlocks creator dashboard, gets a **Creator Storefront** page (`/@username/shop`) and a **unique referral code**.
+4. On rejection: user gets reason + can reapply after a cooldown (e.g. 30 days).
+
+### 2.2 Becoming a verified Business
+1. Business fills out **Business Verification Form** (see §6.2) — includes legal business name, EIN/Tax ID, business email domain, website, business documents (upload), payout bank/Stripe details.
+2. **Cannot switch account type to "Business" until verification is approved.** UI must lock this — no self-serve toggle. Only Admin approval flips `is_verified_business = true` and unlocks Business mode.
+3. Once verified, business gets a ✅ verified badge, product catalog tools, and the Business Dashboard.
+
+### 2.3 Business recruits/approves Creators
+- Business can **browse/search creators** (by niche, follower count, engagement rate) and send **collab invites**.
+- Business can also **post open campaigns** ("Looking for creators to promote X product, 15% commission") that creators apply to.
+- Business **approves or declines** each creator per-product or per-campaign — this generates the trackable link only after approval (prevents unauthorized promotion).
+
+### 2.4 Affiliate Link + Purchase Flow
+1. On approval, system generates a unique tracked link: `https://yourapp.com/r/{creatorCode}/{productId}`.
+2. Creator shares link or tags product directly in a post (shoppable cart UI, see §2.5).
+3. Click → sets a tracking cookie/session (attribution window, e.g. 7 or 30 days, configurable) → redirects to product/checkout.
+4. On purchase: order is tagged with `creator_id`, `business_id`, `commission_rate`.
+5. System calculates commission (`order_subtotal * commission_rate`, min 10%) and creates a **pending payout record**.
+6. Funds settle (e.g., after return-window/refund period, like 14 days) → auto-payout to creator via **Stripe Connect**.
+
+### 2.5 Shoppable Cart on Posts
+- When creating a post, Creator/Business can **tag products** from the business's catalog (if approved to promote them).
+- Post renders a small **"🛍 Shop this"** pill/drawer — tapping opens a mini product cart overlay (image, price, "Add to cart" / "Buy now") without leaving the feed.
+- Checkout can be native (in-app cart + Stripe Checkout) or deep-link to the business's own store — either way, attribution tag travels with it.
+
+---
+
+## 3. Database Schema (suggested — Postgres)
+
+```sql
+users (
+  id, username, email, password_hash, role ENUM('user','creator','business','admin'),
+  is_verified_business BOOLEAN DEFAULT false,
+  creator_status ENUM('none','pending','approved','rejected') DEFAULT 'none',
+  referral_code TEXT UNIQUE,
+  stripe_connect_id TEXT,
+  bio, avatar_url, follower_count, created_at
+)
+
+creator_applications (
+  id, user_id, answers JSONB, niche, social_links JSONB,
+  status ENUM('pending','approved','rejected'), reviewed_by, reviewed_at, created_at
+)
+
+business_verifications (
+  id, user_id, legal_business_name, tax_id, website, business_email,
+  documents JSONB (file URLs), status ENUM('pending','approved','rejected'),
+  reviewed_by, reviewed_at, created_at
+)
+
+products (
+  id, business_id, title, description, price, images JSONB,
+  default_commission_rate NUMERIC DEFAULT 0.10, -- min 10%, enforce >=0.10 at DB/app layer
+  inventory_count, active BOOLEAN, created_at
+)
+
+campaigns (
+  id, business_id, title, description, commission_rate,
+  status ENUM('open','closed'), created_at
+)
+
+creator_product_approvals (
+  id, creator_id, product_id, campaign_id NULLABLE, business_id,
+  status ENUM('pending','approved','declined'), commission_rate,
+  referral_link_slug UNIQUE, created_at
+)
+
+posts (
+  id, author_id, caption, media_urls JSONB, tagged_products JSONB (product_ids), created_at
+)
+
+clicks (
+  id, referral_link_slug, session_id, ip_hash, user_agent, clicked_at
+)
+
+orders (
+  id, buyer_id NULLABLE, product_id, business_id, creator_id NULLABLE,
+  referral_link_slug NULLABLE, subtotal, commission_rate, commission_amount,
+  status ENUM('pending','paid','refunded'), created_at
+)
+
+payouts (
+  id, creator_id, order_id, amount, status ENUM('pending','settled','paid','failed'),
+  stripe_transfer_id, settle_after_date, paid_at, created_at
+)
+```
+
+---
+
+## 4. Tech Stack (Replit-friendly)
+
+- **Frontend:** Next.js (React) + Tailwind CSS
+- **Backend:** Next.js API routes or Node/Express
+- **Database:** PostgreSQL (Replit's built-in Postgres or Neon/Supabase)
+- **Auth:** NextAuth.js or Clerk (email/password + optional OAuth)
+- **Payments/Payouts:** **Stripe Connect (Express accounts)** — this is the standard way to auto-split payments and pay out creators. Business's checkout uses `application_fee` or a transfer to the creator's connected account.
+- **File uploads (verification docs, media):** Replit Object Storage or S3/Cloudinary
+- **Background jobs** (settle payouts, expire attribution cookies): a queue like `bullmq` + Redis, or a simple cron (Replit Scheduled Deployments)
+- **Video/media hosting:** Cloudinary or Mux for creator video posts
+
+---
+
+## 5. Commission Engine Rules (business logic to hard-code)
+
+1. **Minimum commission = 10%.** Enforce server-side: reject any `commission_rate < 0.10` at the API layer, not just the UI.
+2. Business sets rate per product or per campaign (10%–100%, their choice, above the floor).
+3. Commission is calculated on **order subtotal** (excluding tax/shipping) unless business opts to include those.
+4. Attribution model: **last-click, 7–30 day cookie window** (configurable).
+5. Payout only triggers after a **settlement/refund window** (e.g., 14 days post-purchase) to protect against refunds.
+6. Use **Stripe Connect transfers** so money moves: Buyer → Platform → (Business cut, Creator cut) automatically. Platform can also take a small cut (e.g., 2–5%) as its own revenue.
+
+---
+
+## 6. Forms
+
+### 6.1 Creator Application Form
+- Full name, username, email
+- Social links (Instagram/TikTok/YouTube handles)
+- Follower count / niche (fashion, tech, food, etc.)
+- Why do you want to be a creator? (short text)
+- Content samples (upload or link)
+- Agree to Creator Terms + tax info (W-9/W-8BEN collection before first payout)
+
+### 6.2 Business Verification Form
+- Legal business name
+- Business type (LLC, Corp, Sole Prop)
+- Tax ID / EIN
+- Business website + email (must match domain)
+- Proof of business (upload: business license, incorporation doc, or utility bill)
+- Contact person name + phone
+- Payout details (connect Stripe account during onboarding)
+- Agree to Business Terms + commission floor (10%) disclosure
+
+Both forms should write to their respective `*_applications` / `*_verifications` tables with `status = pending`, and appear in an **Admin Review Queue** with Approve/Reject + reason buttons.
+
+---
+
+## 7. Dashboards
+
+### Creator Dashboard
+- Earnings overview (pending / settled / paid)
+- Active product approvals + their tracked links (copy-link, QR code)
+- Click/conversion analytics per link
+- Payout history + connected bank (Stripe)
+- Incoming campaign invites from businesses
+
+### Business Dashboard
+- Verification status / badge
+- Product catalog management (CRUD)
+- Campaign creation (open call for creators)
+- Creator applications inbox (approve/decline per creator/product)
+- Sales + commission paid analytics, per creator leaderboard
+- Payout/ledger view
+
+### Admin Dashboard
+- Creator application review queue
+- Business verification review queue
+- Global commission floor setting (default 10%)
+- Dispute/refund handling
+- Platform-wide analytics
+
+---
+
+## 8. Build Phases (give Replit one phase at a time for best results)
+
+1. **Phase 1 — Core app:** Auth, user profiles, basic feed/posts, roles table.
+2. **Phase 2 — Applications:** Creator application form + admin approval queue.
+3. **Phase 3 — Business verification:** Verification form, admin approval, lock business toggle behind approval.
+4. **Phase 4 — Products + campaigns:** Product catalog, campaign posting, creator approval-per-product, referral link generation.
+5. **Phase 5 — Commerce:** Shoppable cart UI on posts, Stripe Connect integration, click tracking, order → commission → payout pipeline.
+6. **Phase 6 — Dashboards & analytics:** Creator/business/admin dashboards with real numbers.
+
+---
+
+## 9. Notes / Things to decide before building
+- Attribution window length (7 vs 30 days)?
+- Does the platform take its own cut of sales, or only facilitate payments?
+- In-app checkout vs. redirect to business's own store?
+- Tax form collection (W-9 for US creators) before first payout — required for 1099 reporting once a creator crosses $600/year in the US.

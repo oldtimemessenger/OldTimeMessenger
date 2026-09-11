@@ -5,6 +5,8 @@ description: The API client generator cleans its output before rewriting generat
 
 Run API client code generation before restarting live Metro or Vite workflows. A clean generation can temporarily remove generated entrypoints; a live bundler may report a missing generated module even when generation and typechecking ultimately succeed.
 
+When a mobile artifact has a local generated client alongside the workspace package, configure both fetch instances before importing an endpoint from the workspace package. They do not share module-level base URL or auth state.
+
 **Why:** Live development servers can observe the short clean-output window during codegen and cache the missing-module failure.
 
-**How to apply:** After codegen, confirm generated entrypoints exist, restart the affected workflow once, then check its logs before treating the error as a source problem.
+**How to apply:** After codegen, confirm generated entrypoints exist, restart the affected workflow once, then check its logs before treating the error as a source problem. For mobile-only screens, prefer the local generated client when it contains the endpoint; if using the workspace client to bridge a stale local copy, initialize both clients in the shared API setup.

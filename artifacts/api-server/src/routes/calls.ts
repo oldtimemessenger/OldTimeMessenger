@@ -6,6 +6,7 @@ import { requireChatAuth } from "../lib/chat-auth";
 import { createLiveKitToken, liveKitConfigured, liveKitPublicUrl } from "../lib/livekit";
 import { sendPushToUsers } from "../lib/push-notifications";
 import { emitToUser } from "../lib/realtime";
+import { ACCEPTED_CALL_MAX_MS, isCallTerminal } from "../lib/call-lifecycle";
 
 const router: IRouter = Router();
 const callIdSchema = z.coerce.number().int().positive();
@@ -19,21 +20,25 @@ function callRoomName(callId: number): string {
   return `call_${callId}`;
 }
 
-async function expireMissedCalls(): Promise<void> {
+async function expireStaleCalls(): Promise<void> {
   const timestamp = Date.now();
-  const expired = await db.update(callsTable)
+  const missed = await db.update(callsTable)
     .set({ status: "missed", missedAt: timestamp })
     .where(and(eq(callsTable.status, "ringing"), lt(callsTable.createdAt, timestamp - RING_TIMEOUT_MS)))
     .returning();
-  for (const call of expired) {
-    const payload = { callId: call.id, status: call.status, endedAt: null, missedAt: call.missedAt };
+  const ended = await db.update(callsTable)
+    .set({ status: "ended", endedAt: timestamp })
+    .where(and(eq(callsTable.status, "accepted"), lt(callsTable.acceptedAt, timestamp - ACCEPTED_CALL_MAX_MS)))
+    .returning();
+  for (const call of [...missed, ...ended]) {
+    const payload = { callId: call.id, status: call.status, endedAt: call.endedAt, missedAt: call.missedAt };
     emitToUser(call.callerId, "call-updated", payload);
     emitToUser(call.calleeId, "call-updated", payload);
   }
 }
 
 const missedCallExpiryTimer = setInterval(() => {
-  void expireMissedCalls().catch((error) => console.error("Missed call expiry failed", error));
+  void expireStaleCalls().catch((error) => console.error("Call expiry failed", error));
 }, 15_000);
 missedCallExpiryTimer.unref();
 
@@ -56,8 +61,20 @@ function serializeCall(call: typeof callsTable.$inferSelect) {
   };
 }
 
+async function serializeCallForUser(call: typeof callsTable.$inferSelect, userId: number) {
+  const otherUserId = call.callerId === userId ? call.calleeId : call.callerId;
+  const [otherUser] = await db.select({ id: usersTable.id, name: usersTable.name })
+    .from(usersTable)
+    .where(eq(usersTable.id, otherUserId))
+    .limit(1);
+  return {
+    ...serializeCall(call),
+    otherUser: otherUser ? { id: otherUser.id, name: otherUser.name } : null,
+  };
+}
+
 async function callForParticipant(callId: number, userId: number) {
-  await expireMissedCalls();
+  await expireStaleCalls();
   const [call] = await db.select().from(callsTable).where(and(
     eq(callsTable.id, callId),
     or(eq(callsTable.callerId, userId), eq(callsTable.calleeId, userId)),
@@ -79,11 +96,11 @@ router.use((_req, res, next) => {
 router.get("/calls", async (req, res): Promise<void> => {
   const userId = await requireChatAuth(req, res);
   if (userId === null) return;
-  await expireMissedCalls();
+  await expireStaleCalls();
   const calls = await db.select().from(callsTable)
     .where(or(eq(callsTable.callerId, userId), eq(callsTable.calleeId, userId)))
     .orderBy(desc(callsTable.createdAt)).limit(100);
-  res.json({ items: calls.map(serializeCall) });
+  res.json({ items: await Promise.all(calls.map((call) => serializeCallForUser(call, userId))) });
 });
 
 router.post("/calls", async (req, res): Promise<void> => {
@@ -94,7 +111,7 @@ router.post("/calls", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Choose another Old Time user to call." });
     return;
   }
-  await expireMissedCalls();
+  await expireStaleCalls();
   const [callee] = await db.select({ id: usersTable.id }).from(usersTable)
     .where(eq(usersTable.id, parsed.data.calleeId)).limit(1);
   if (!callee) {
@@ -133,7 +150,7 @@ router.post("/calls", async (req, res): Promise<void> => {
     body: parsed.data.type === "video" ? "You have an incoming Old Time video call." : "You have an incoming Old Time audio call.",
     data: { callId: created.id, route: "call", type: parsed.data.type },
   });
-  res.status(201).json(serializeCall(created));
+  res.status(201).json(await serializeCallForUser(created, callerId));
 });
 
 router.get("/calls/:callId", async (req, res): Promise<void> => {
@@ -143,7 +160,7 @@ router.get("/calls/:callId", async (req, res): Promise<void> => {
   if (!callId.success) { res.status(400).json({ error: "A valid call ID is required." }); return; }
   const call = await callForParticipant(callId.data, userId);
   if (!call) { res.status(404).json({ error: "Call not found." }); return; }
-  res.json(serializeCall(call));
+  res.json(await serializeCallForUser(call, userId));
 });
 
 router.post("/calls/:callId/accept", async (req, res): Promise<void> => {
@@ -153,11 +170,17 @@ router.post("/calls/:callId/accept", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: "A valid call ID is required." }); return; }
   const call = await callForParticipant(parsed.data, userId);
   if (!call) { res.status(404).json({ error: "Call not found." }); return; }
-  if (call.calleeId !== userId || call.status !== "ringing") { res.status(409).json({ error: "This call cannot be accepted." }); return; }
+  if (call.calleeId !== userId) { res.status(403).json({ error: "Only the recipient can accept this call." }); return; }
+  if (call.status === "accepted") { res.json(await serializeCallForUser(call, userId)); return; }
+  if (call.status !== "ringing") { res.status(409).json({ error: "This call cannot be accepted." }); return; }
   const [updated] = await db.update(callsTable).set({ status: "accepted", acceptedAt: Date.now() })
     .where(and(eq(callsTable.id, call.id), eq(callsTable.status, "ringing"))).returning();
-  if (!updated) { res.status(409).json({ error: "This call has already changed." }); return; }
-  emitCall(updated); res.json(serializeCall(updated));
+  if (!updated) {
+    const latest = await callForParticipant(call.id, userId);
+    if (latest?.status === "accepted") { res.json(await serializeCallForUser(latest, userId)); return; }
+    res.status(409).json({ error: "This call has already changed." }); return;
+  }
+  emitCall(updated); res.json(await serializeCallForUser(updated, userId));
 });
 
 router.post("/calls/:callId/decline", async (req, res): Promise<void> => {
@@ -167,11 +190,17 @@ router.post("/calls/:callId/decline", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: "A valid call ID is required." }); return; }
   const call = await callForParticipant(parsed.data, userId);
   if (!call) { res.status(404).json({ error: "Call not found." }); return; }
-  if (call.calleeId !== userId || call.status !== "ringing") { res.status(409).json({ error: "This call cannot be declined." }); return; }
+  if (call.calleeId !== userId) { res.status(403).json({ error: "Only the recipient can decline this call." }); return; }
+  if (call.status === "declined") { res.json(await serializeCallForUser(call, userId)); return; }
+  if (call.status !== "ringing") { res.status(409).json({ error: "This call cannot be declined." }); return; }
   const [updated] = await db.update(callsTable).set({ status: "declined", declinedAt: Date.now() })
     .where(and(eq(callsTable.id, call.id), eq(callsTable.status, "ringing"))).returning();
-  if (!updated) { res.status(409).json({ error: "This call has already changed." }); return; }
-  emitCall(updated); res.json(serializeCall(updated));
+  if (!updated) {
+    const latest = await callForParticipant(call.id, userId);
+    if (latest?.status === "declined") { res.json(await serializeCallForUser(latest, userId)); return; }
+    res.status(409).json({ error: "This call has already changed." }); return;
+  }
+  emitCall(updated); res.json(await serializeCallForUser(updated, userId));
 });
 
 router.post("/calls/:callId/end", async (req, res): Promise<void> => {
@@ -183,11 +212,18 @@ router.post("/calls/:callId/end", async (req, res): Promise<void> => {
   if (!call) { res.status(404).json({ error: "Call not found." }); return; }
   // Ending a call is intentionally idempotent. The other participant may have
   // ended it between the caller's last poll and this request.
-  if (!["ringing", "accepted"].includes(call.status)) { res.json(serializeCall(call)); return; }
+  if (isCallTerminal(call.status as "ringing" | "accepted" | "declined" | "ended" | "missed")) { res.json(await serializeCallForUser(call, userId)); return; }
   const [updated] = await db.update(callsTable).set({ status: "ended", endedAt: Date.now() })
     .where(and(eq(callsTable.id, call.id), inArray(callsTable.status, ["ringing", "accepted"]))).returning();
-  if (!updated) { res.status(409).json({ error: "This call has already changed." }); return; }
-  emitCall(updated); res.json(serializeCall(updated));
+  if (!updated) {
+    const latest = await callForParticipant(call.id, userId);
+    if (latest && isCallTerminal(latest.status as "ringing" | "accepted" | "declined" | "ended" | "missed")) {
+      res.json(await serializeCallForUser(latest, userId));
+      return;
+    }
+    res.status(409).json({ error: "This call has already changed." }); return;
+  }
+  emitCall(updated); res.json(await serializeCallForUser(updated, userId));
 });
 
 router.post("/calls/:callId/token", async (req, res): Promise<void> => {

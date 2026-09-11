@@ -120,6 +120,8 @@ import type {
   StoryReply,
   StoryReplyInput,
   StoryViewerList,
+  UpdateAdminUserVerification200,
+  UpdateAdminUserVerificationBody,
   UpdatePresence200,
   UpdatePresenceBody,
   UpdatePresencePrivacy200,
@@ -228,13 +230,6 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
-
 export const getReadinessCheckUrl = () => {
 
 
@@ -306,13 +301,6 @@ export function useReadinessCheck<TData = Awaited<ReturnType<typeof readinessChe
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
-
 export const getRequestOtpUrl = () => {
 
 
@@ -1025,12 +1013,6 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
   return withQueryKey(query, queryOptions.queryKey);
 }
 
-
-
-
-
-
-
 export const getDiscoverContactsUrl = () => {
 
 
@@ -1425,11 +1407,86 @@ export function useGetInbox<TData = Awaited<ReturnType<typeof getInbox>>, TError
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export const getUpdateAdminUserVerificationUrl = (userId: number,) => {
+
+
+
+
+  return `/api/admin/users/${userId}/verification`
+}
+
+/**
+ * @summary Approve or revoke a user's verification badge
+ */
+export const updateAdminUserVerification = async (userId: number,
+    updateAdminUserVerificationBody: UpdateAdminUserVerificationBody, options?: Parameters<typeof customFetch>[1]): Promise<UpdateAdminUserVerification200> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<UpdateAdminUserVerification200>(getUpdateAdminUserVerificationUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateAdminUserVerificationBody)
+  }
+);}
 
 
 
 
 
+export const getUpdateAdminUserVerificationMutationKey = () => ['updateAdminUserVerification'] as const;
+
+export const getUpdateAdminUserVerificationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminUserVerification>>, TError,UpdateAdminUserVerificationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAdminUserVerification>>, TError,UpdateAdminUserVerificationMutationVariables, TContext> => {
+
+const mutationKey = getUpdateAdminUserVerificationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAdminUserVerification>>, UpdateAdminUserVerificationMutationVariables> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  updateAdminUserVerification(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAdminUserVerificationMutationResult = NonNullable<Awaited<ReturnType<typeof updateAdminUserVerification>>>
+    export type UpdateAdminUserVerificationMutationBody = BodyType<UpdateAdminUserVerificationBody>
+    export type UpdateAdminUserVerificationMutationError = ErrorType<ErrorResponse>
+    export type UpdateAdminUserVerificationMutationVariables = {userId: number;data: BodyType<UpdateAdminUserVerificationBody>}
+
+    /**
+ * @summary Approve or revoke a user's verification badge
+ */
+export const useUpdateAdminUserVerification = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminUserVerification>>, TError,UpdateAdminUserVerificationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAdminUserVerification>>,
+        TError,
+        UpdateAdminUserVerificationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateAdminUserVerificationMutationOptions(options));
+    }
 
 export const getGetDirectChatUrl = (userOneId: number,
     userTwoId: number,) => {
@@ -1506,13 +1563,6 @@ export function useGetDirectChat<TData = Awaited<ReturnType<typeof getDirectChat
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
-
 export const getCreateChatUrl = () => {
 
 
@@ -9311,13 +9361,13 @@ export type GetStorageObjectQueryError = ErrorType<ErrorResponse>
  */
 
 export function useGetStorageObject<TData = Awaited<ReturnType<typeof getStorageObject>>, TError = ErrorType<ErrorResponse>>(
- objectPath: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStorageObject>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  objectPath: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStorageObject>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetStorageObjectQueryOptions(objectPath,options)
+   const queryOptions = getGetStorageObjectQueryOptions(objectPath,options)
 
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
-  return withQueryKey(query, queryOptions.queryKey);
+   return withQueryKey(query, queryOptions.queryKey);
 }

@@ -1,0 +1,243 @@
+APPROVED — proceed to PHASE 5 RELEASE HARDENING.
+
+Project 1 remains the FINAL canonical production project.
+
+PHASE 5 ONLY:
+Harden and audit the existing Calls and Current Events functionality.
+
+Do NOT work on RevenueCat, Wallet, Pace, AdMob, Story positioning, or unrelated features in this phase.
+
+Do NOT migrate Project 2 code.
+Do NOT replace the existing LiveKit implementation.
+Do NOT change the production Expo/EAS project association.
+Do NOT change Apple bundle IDs, signing configuration, App Group, or ReplayKit configuration.
+Do NOT build or submit to TestFlight yet.
+
+Before changes:
+
+1. Create a Git checkpoint from the current clean state.
+2. Inspect the complete existing call and Current Events flow before modifying anything.
+
+PRIMARY GOAL:
+
+Make the existing LiveKit-based calling and Current Events implementation reliable enough for physical-device testing.
+
+PHASE 5A — ONE-TO-ONE CALLS
+
+Review:
+
+* artifacts/old-time-mobile/app/call/[id].tsx
+* artifacts/api-server/src/routes/calls.ts
+* artifacts/api-server/src/lib/livekit.ts
+* lib/realtime.ts
+* existing call API/client modules
+* app/_layout.tsx
+* notification/deep-link handling related to calls
+
+Verify the complete lifecycle:
+
+Caller:
+create call
+→ receive call ID
+→ receive LiveKit credentials
+→ join room
+→ publish media
+→ receive participant state
+→ end call
+
+Receiver:
+receive call event/notification
+→ open call
+→ accept
+→ receive token
+→ join same LiveKit room
+→ publish/subscribe
+→ end call
+
+Ensure both users use a deterministic room identity and that authorization is enforced server-side.
+
+Fix:
+
+* duplicate call creation
+* duplicate acceptance
+* accepting an already-ended call
+* ending an already-ended call
+* stale call state
+* reconnect loops
+* socket disconnect/reconnect
+* token expiration
+* unauthorized participant access
+* race conditions between API and socket events
+
+Use idempotent server behavior wherever appropriate.
+
+PHASE 5B — CALL BACKGROUND / COLD START
+
+Review what happens when:
+
+1. App is foregrounded.
+2. App is backgrounded.
+3. App is terminated.
+4. Network temporarily disappears.
+5. Network reconnects.
+6. User receives a call while the app is backgrounded.
+7. User receives a call after the app was terminated.
+8. User taps the notification/deep link.
+
+Do not claim this is physically verified unless a real device is actually available.
+
+Where native/provider behavior cannot be guaranteed statically, clearly document it as a physical-device test requirement.
+
+Add robust socket retry/backoff where appropriate.
+
+Ensure missed calls remain recoverable through call history/API state even if the real-time socket event was missed.
+
+PHASE 5C — CURRENT EVENTS AUDIO
+
+Review:
+
+* artifacts/old-time-mobile/app/current-event/[id].tsx
+* artifacts/api-server/src/routes/current-events.ts
+* LiveKit integration
+* room/token generation
+* participant authorization
+* room identity
+* moderation/host permissions
+* room lifecycle
+
+Ensure:
+
+* host can create/start a room
+* authorized users can join
+* users join the same LiveKit room
+* audio publish/subscribe permissions are correct
+* leaving removes the participant correctly
+* reconnect works
+* ended rooms cannot be rejoined
+* unauthorized users cannot obtain usable tokens
+* room IDs cannot be guessed/used to bypass authorization
+
+Do not implement fake/mock audio behavior.
+
+PHASE 5D — CURRENT EVENTS REALTIME REACTIONS
+
+Audit current reaction fanout.
+
+The intended behavior is:
+
+User A reacts
+→ server validates/rate-limits
+→ all authorized room participants receive the reaction
+→ User A and other participants stay synchronized.
+
+If reactions are intentionally ephemeral, document that clearly.
+If persistence is required by the current product, implement it using the existing backend/database architecture.
+
+Make the behavior idempotent so duplicate socket events do not cause duplicate UI state.
+
+PHASE 5E — CURRENT EVENTS CHAT
+
+Verify:
+
+* authorized participants only
+* moderation controls
+* room membership
+* message delivery
+* reconnect behavior
+* room termination behavior
+* ephemeral retention behavior
+
+Do not change the retention model unless the current product requires it.
+If it remains ephemeral, make the UI wording clear.
+
+PHASE 5F — SECURITY / PROVIDER READINESS
+
+Review LiveKit configuration handling.
+
+Production must not silently appear functional when LiveKit credentials are missing.
+
+Ensure:
+
+* missing URL/key/secret produces a clear server-side failure
+* invalid configuration is observable
+* users receive a recoverable error instead of an infinite loading state
+* tokens are short-lived and scoped appropriately
+* users cannot publish/subscribe beyond their authorized role
+
+Do not expose LiveKit secrets to the mobile client.
+
+PHASE 5G — TESTING
+
+Run all applicable existing tests plus:
+
+* mobile typecheck
+* API typecheck
+* private-navigation check
+* git diff –check
+* focused call lifecycle tests
+* Current Events authorization tests
+* token authorization tests
+* duplicate/race-condition tests where practical
+
+If a test requires a real iPhone, DO NOT fake the result.
+
+Instead document:
+
+PHYSICAL DEVICE TEST REQUIRED
+
+and provide the exact steps that must be performed on two iPhones.
+
+At minimum, document this real-device test matrix:
+
+CALLS:
+A → B call
+B accepts
+A/B audio
+A ends
+B sees ended state
+
+B rejects
+A sees rejected state
+
+B misses call
+B sees missed call in history
+
+App backgrounded during call
+
+Network disconnect/reconnect
+
+Cold-start incoming call/notification
+
+CURRENT EVENTS:
+A creates room
+B joins
+A/B hear same audio
+B leaves
+A continues
+
+B reconnects
+
+Unauthorized user attempts to join
+
+Room ends
+B cannot rejoin
+
+Reactions synchronize between A/B
+
+Chat synchronizes between A/B
+
+At the end provide:
+
+A. Exact files modified
+B. Exact behavior fixed
+C. Security changes
+D. Tests run and results
+E. Physical-device tests still required
+F. Any remaining Critical/High risks
+G. Git checkpoint commit
+H. Phase 5 implementation commit
+
+Then STOP.
+
+Do not create an EAS production build.
+Do not submit to TestFlight.

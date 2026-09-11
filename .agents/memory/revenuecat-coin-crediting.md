@@ -7,4 +7,4 @@ RevenueCat owns the coin product catalog and prices. The API owns wallet balance
 
 **Why:** A mobile client can be modified, requests can be replayed, and store prices vary by locale. Trusting a client-provided product, amount, or transaction would allow free or duplicate wallet credits.
 
-**How to apply:** Identify RevenueCat customers as `oldtime-user-{numericUserId}`. Query their purchases server-side, map only known active RevenueCat product identifiers to coin amounts, and insert each provider purchase ID into an idempotency ledger before increasing the wallet.
+**How to apply:** Identify RevenueCat customers as `oldtime-user-{numericUserId}`, never the Supabase auth UUID. Query their purchases server-side, map only known active RevenueCat product identifiers to coin amounts, and insert each provider purchase ID into an idempotency ledger before increasing the wallet. Allow a short retry window after a native purchase because provider purchase records may propagate asynchronously.

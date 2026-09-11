@@ -41,6 +41,7 @@ function parseUser(user: typeof usersTable.$inferSelect) {
     name: user.name,
     username: user.username,
     bio: user.bio,
+    avatarObjectPath: user.avatarObjectPath ?? null,
     birthday: user.birthday,
     contactPermission: user.contactPermission,
     online: user.online,

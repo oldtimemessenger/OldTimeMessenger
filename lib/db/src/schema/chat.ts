@@ -26,6 +26,11 @@ export const usersTable = pgTable("chat_users", {
   name: text("name").notNull(),
   username: text("username").notNull().unique(),
   bio: text("bio").notNull().default(""),
+  // These are server-managed timestamps. A badge is earned by a confirmed
+  // verification payment or an explicit admin approval, never by profile input.
+  verificationPaidAt: pgBigint("verification_paid_at", { mode: "number" }),
+  verificationApprovedAt: pgBigint("verification_approved_at", { mode: "number" }),
+  verificationApprovedBy: integer("verification_approved_by"),
   avatarObjectPath: text("avatar_object_path"),
   birthday: date("birthday", { mode: "string" }),
   contactPermission: text("contact_permission").notNull().default("everyone"),
@@ -33,6 +38,8 @@ export const usersTable = pgTable("chat_users", {
   lastSeen: pgBigint("last_seen", { mode: "number" }).notNull(),
   lastSeenVisible: boolean("last_seen_visible").notNull().default(true),
   chatPresence: text("chat_presence").notNull().default("available"),
+  paceDefaultAudience: text("pace_default_audience").notNull().default("community"),
+  cameraAccessUntil: pgBigint("camera_access_until", { mode: "number" }),
 }, (table) => ({
   phoneDiscoveryHashIndex: uniqueIndex("chat_users_phone_discovery_hash_idx").on(table.phoneDiscoveryHash),
 }));

@@ -50,6 +50,7 @@ import {
 import { requireChatAuth } from "../lib/chat-auth";
 import { fileForObjectPath, MAX_UPLOAD_BYTES } from "../lib/chat-storage";
 import { sendPushToUsers } from "../lib/push-notifications";
+import { hasVerificationBadge } from "../lib/verification";
 
 const router: IRouter = Router();
 const SOCIAL_VIEW_EXPIRY_MS = 30_000;
@@ -225,12 +226,21 @@ function handleForUser(user: { id: number; name: string; username?: string | nul
   return normalized || `user${user.id}`;
 }
 
-function publicUser(user: { id: number; name: string; username?: string | null; bio?: string | null; avatarObjectPath?: string | null }) {
+function publicUser(user: {
+  id: number;
+  name: string;
+  username?: string | null;
+  bio?: string | null;
+  avatarObjectPath?: string | null;
+  verificationPaidAt?: number | null;
+  verificationApprovedAt?: number | null;
+}) {
   return {
     id: user.id,
     name: user.name,
     username: handleForUser(user),
     bio: user.bio ?? "",
+    verificationBadge: hasVerificationBadge(user),
     avatarObjectPath: user.avatarObjectPath ?? null,
   };
 }
@@ -261,8 +271,8 @@ async function directChatForUsers(userOneId: number, userTwoId: number) {
 
 async function serializeMessageRequest(request: MessageRequest) {
   const [sender, recipient] = await Promise.all([
-    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(eq(usersTable.id, request.senderId)).limit(1),
-    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(eq(usersTable.id, request.recipientId)).limit(1),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt }).from(usersTable).where(eq(usersTable.id, request.senderId)).limit(1),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt }).from(usersTable).where(eq(usersTable.id, request.recipientId)).limit(1),
   ]);
   return {
     id: request.id,
@@ -422,7 +432,7 @@ async function serializePosts(posts: SocialPost[], viewerId: number) {
   const [authors, likes, reposts, saves, comments, viewerLikes, viewerReposts, viewerSaves, viewerViews, follows, postHubs] =
     await Promise.all([
       db
-        .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
+        .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt })
         .from(usersTable)
         .where(inArray(usersTable.id, authorIds)),
       db
@@ -960,6 +970,8 @@ router.get("/social/posts/:postId/comments", async (req, res): Promise<void> => 
       authorUsername: usersTable.username,
       authorBio: usersTable.bio,
       authorAvatarObjectPath: usersTable.avatarObjectPath,
+      authorVerificationPaidAt: usersTable.verificationPaidAt,
+      authorVerificationApprovedAt: usersTable.verificationApprovedAt,
     })
     .from(socialCommentsTable)
     .innerJoin(usersTable, eq(usersTable.id, socialCommentsTable.authorId))
@@ -1004,6 +1016,8 @@ router.get("/social/posts/:postId/comments", async (req, res): Promise<void> => 
         username: handleForUser({ id: comment.authorId, name: comment.authorName, username: comment.authorUsername }),
         bio: comment.authorBio ?? "",
         avatarObjectPath: comment.authorAvatarObjectPath ?? null,
+        verificationPaidAt: comment.authorVerificationPaidAt,
+        verificationApprovedAt: comment.authorVerificationApprovedAt,
       },
       liked: likedIds.has(comment.id),
       likeCount: likeCountById.get(comment.id) ?? 0,
@@ -1057,13 +1071,15 @@ router.post("/social/posts/:postId/comments", async (req, res): Promise<void> =>
       name: usersTable.name,
       username: usersTable.username,
       bio: usersTable.bio,
+      verificationPaidAt: usersTable.verificationPaidAt,
+      verificationApprovedAt: usersTable.verificationApprovedAt,
     })
     .from(usersTable)
     .where(eq(usersTable.id, viewerId))
     .limit(1);
   res.status(201).json({
     ...created,
-    author: author ? publicUser(author) : { id: viewerId, name: "You", username: `user${viewerId}`, bio: "", avatarObjectPath: null },
+    author: author ? publicUser(author) : { id: viewerId, name: "You", username: `user${viewerId}`, bio: "", verificationBadge: false, avatarObjectPath: null },
     liked: false,
     likeCount: 0,
   });
@@ -1351,12 +1367,12 @@ router.get("/social/privacy/exclusions", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   if (viewerId === null) return;
   const rows = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt })
     .from(socialSharingExclusionsTable)
     .innerJoin(usersTable, eq(usersTable.id, socialSharingExclusionsTable.excludedUserId))
     .where(eq(socialSharingExclusionsTable.ownerId, viewerId))
     .orderBy(asc(usersTable.name));
-  res.json({ items: rows.map((user) => ({ ...user, username: handleForUser(user), bio: user.bio ?? "" })) });
+  res.json({ items: rows.map((user) => publicUser(user)) });
 });
 
 router.put("/social/privacy/exclusions/:userId", async (req, res): Promise<void> => {
@@ -1514,7 +1530,7 @@ router.get("/social/users/search", async (req, res): Promise<void> => {
   }
   const blocked = await blockedUserIds(viewerId);
   const users = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, contactPermission: usersTable.contactPermission })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, contactPermission: usersTable.contactPermission, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt })
     .from(usersTable)
     .where(
       and(
@@ -1560,7 +1576,7 @@ router.get("/social/users/:userId/card", async (req, res): Promise<void> => {
   const targetId = parseId(req.params.userId);
   if (viewerId === null || targetId === null) return;
   const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, contactPermission: usersTable.contactPermission })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, contactPermission: usersTable.contactPermission, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt })
     .from(usersTable)
     .where(eq(usersTable.id, targetId))
     .limit(1);
@@ -1629,7 +1645,7 @@ router.get("/social/users/:userId/connections", async (req, res): Promise<void> 
     ? socialFollowsTable.followingId
     : socialFollowsTable.followerId;
   const rows = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt })
     .from(socialFollowsTable)
     .innerJoin(usersTable, eq(usersTable.id, relatedUserId))
     .where(and(
@@ -2097,14 +2113,14 @@ async function serializeStories(stories: Story[], viewerId: number) {
   const authorIds = [...new Set(stories.map((story) => story.authorId))];
   const taggedIds = [...new Set(stories.flatMap((story) => story.taggedUserIds ?? []))];
   const [authors, views, reactions, mine, myReactions, taggedUsers] = await Promise.all([
-    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(inArray(usersTable.id, authorIds)),
+    db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt }).from(usersTable).where(inArray(usersTable.id, authorIds)),
     db.select({ storyId: socialStoryViewersTable.storyId, count: sql<number>`count(*)` }).from(socialStoryViewersTable).where(inArray(socialStoryViewersTable.storyId, storyIds)).groupBy(socialStoryViewersTable.storyId),
     db.select({ storyId: socialStoryReactionsTable.storyId, count: sql<number>`count(*)` }).from(socialStoryReactionsTable).where(inArray(socialStoryReactionsTable.storyId, storyIds)).groupBy(socialStoryReactionsTable.storyId),
     db.select({ storyId: socialStoryViewersTable.storyId }).from(socialStoryViewersTable).where(and(eq(socialStoryViewersTable.viewerId, viewerId), inArray(socialStoryViewersTable.storyId, storyIds))),
     db.select({ storyId: socialStoryReactionsTable.storyId }).from(socialStoryReactionsTable).where(and(eq(socialStoryReactionsTable.userId, viewerId), inArray(socialStoryReactionsTable.storyId, storyIds))),
     taggedIds.length
-      ? db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(inArray(usersTable.id, taggedIds))
-      : Promise.resolve([] as Array<{ id: number; name: string; username: string; bio: string }>),
+      ? db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt }).from(usersTable).where(inArray(usersTable.id, taggedIds))
+      : Promise.resolve([] as Array<{ id: number; name: string; username: string; bio: string; avatarObjectPath: string | null; verificationPaidAt: number | null; verificationApprovedAt: number | null }>),
   ]);
   const authorById = new Map(authors.map((author) => [author.id, author]));
   const viewsById = new Map(views.map((row) => [row.storyId, Number(row.count)]));
@@ -2118,10 +2134,10 @@ async function serializeStories(stories: Story[], viewerId: number) {
       id: story.id, kind: story.kind, content: story.content, textPosition: story.textPosition ?? null, visibility: story.visibility, media: story.media,
       createdAt: story.createdAt, expiresAt: story.expiresAt,
       location: story.latitude !== null && story.longitude !== null ? { latitude: story.latitude, longitude: story.longitude } : null,
-      author: author ? publicUser(author) : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}`, bio: "", avatarObjectPath: null },
+      author: author ? publicUser(author) : { id: story.authorId, name: "Old Time user", username: `user${story.authorId}`, bio: "", verificationBadge: false, avatarObjectPath: null },
       taggedUsers: (story.taggedUserIds ?? [])
         .map((id) => taggedById.get(id))
-        .filter((user): user is { id: number; name: string; username: string; bio: string } => Boolean(user))
+        .filter((user): user is { id: number; name: string; username: string; bio: string; avatarObjectPath: string | null; verificationPaidAt: number | null; verificationApprovedAt: number | null } => Boolean(user))
         .map((user) => publicUser(user)),
       viewer: { viewed: viewed.has(story.id), isOwner: story.authorId === viewerId, reacted: reacted.has(story.id) },
       counts: { views: viewsById.get(story.id) ?? 0, reactions: reactionsById.get(story.id) ?? 0 },
@@ -2161,7 +2177,7 @@ type ChatNote = typeof chatNotesTable.$inferSelect;
 async function serializeNotes(notes: ChatNote[]) {
   if (!notes.length) return [];
   const owners = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt })
     .from(usersTable)
     .where(inArray(usersTable.id, notes.map((note) => note.ownerId)));
   const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
@@ -2173,7 +2189,7 @@ async function serializeNotes(notes: ChatNote[]) {
     expiresAt: note.expiresAt,
     owner: ownerById.get(note.ownerId)
       ? publicUser(ownerById.get(note.ownerId)!)
-      : { id: note.ownerId, name: "Old Time user", username: `user${note.ownerId}`, bio: "" },
+      : { id: note.ownerId, name: "Old Time user", username: `user${note.ownerId}`, bio: "", verificationBadge: false, avatarObjectPath: null },
     viewer: { isOwner: false },
   }));
 }
@@ -2445,8 +2461,8 @@ router.post("/social/stories/:storyId/replies", async (req, res): Promise<void> 
     void sendPushToUsers([access.story.authorId], { title: "Old Time", body: "Someone replied to your story." })
       .catch((error) => req.log.warn({ err: error }, "Unable to queue story reply push notification"));
   }
-  const [author] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(eq(usersTable.id, access.viewerId)).limit(1);
-  res.status(201).json({ ...reply, author: author ? publicUser(author) : { id: access.viewerId, name: "Old Time user", username: `user${access.viewerId}`, bio: "" } });
+  const [author] = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt }).from(usersTable).where(eq(usersTable.id, access.viewerId)).limit(1);
+  res.status(201).json({ ...reply, author: author ? publicUser(author) : { id: access.viewerId, name: "Old Time user", username: `user${access.viewerId}`, bio: "", verificationBadge: false, avatarObjectPath: null } });
 });
 router.get("/social/stories/:storyId/replies", async (req, res): Promise<void> => {
   const access = await accessibleStory(req, res); if (!access) return;
@@ -2462,6 +2478,8 @@ router.get("/social/stories/:storyId/replies", async (req, res): Promise<void> =
         name: usersTable.name,
         username: usersTable.username,
         bio: usersTable.bio,
+        verificationPaidAt: usersTable.verificationPaidAt,
+        verificationApprovedAt: usersTable.verificationApprovedAt,
       },
     })
     .from(socialStoryRepliesTable)
@@ -2492,8 +2510,8 @@ router.delete("/social/close-friends/:userId", async (req, res): Promise<void> =
 });
 router.get("/social/close-friends", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
-  const rows = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath }).from(socialCloseFriendsTable).innerJoin(usersTable, eq(usersTable.id, socialCloseFriendsTable.memberId)).where(eq(socialCloseFriendsTable.ownerId, viewerId));
-  res.json({ items: rows.map((row) => ({ ...row, username: handleForUser(row), bio: row.bio ?? "" })) });
+  const rows = await db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, avatarObjectPath: usersTable.avatarObjectPath, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt }).from(socialCloseFriendsTable).innerJoin(usersTable, eq(usersTable.id, socialCloseFriendsTable.memberId)).where(eq(socialCloseFriendsTable.ownerId, viewerId));
+  res.json({ items: rows.map((row) => publicUser(row)) });
 });
 
 router.post("/social/highlights", async (req, res): Promise<void> => {
@@ -2524,8 +2542,8 @@ router.get("/social/highlights", async (req, res): Promise<void> => {
 });
 router.get("/social/notifications", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
-  const rows = await db.select({ notification: socialNotificationsTable, name: usersTable.name, username: usersTable.username, bio: usersTable.bio }).from(socialNotificationsTable).innerJoin(usersTable, eq(usersTable.id, socialNotificationsTable.actorId)).where(eq(socialNotificationsTable.recipientId, viewerId)).orderBy(desc(socialNotificationsTable.createdAt)).limit(parseLimit(req.query.limit));
-  res.json({ items: rows.map(({ notification, name, username, bio }) => ({ ...notification, actor: { id: notification.actorId, name, username: handleForUser({ id: notification.actorId, name, username }), bio: bio ?? "" } })) });
+  const rows = await db.select({ notification: socialNotificationsTable, name: usersTable.name, username: usersTable.username, bio: usersTable.bio, verificationPaidAt: usersTable.verificationPaidAt, verificationApprovedAt: usersTable.verificationApprovedAt }).from(socialNotificationsTable).innerJoin(usersTable, eq(usersTable.id, socialNotificationsTable.actorId)).where(eq(socialNotificationsTable.recipientId, viewerId)).orderBy(desc(socialNotificationsTable.createdAt)).limit(parseLimit(req.query.limit));
+  res.json({ items: rows.map(({ notification, name, username, bio, verificationPaidAt, verificationApprovedAt }) => ({ ...notification, actor: publicUser({ id: notification.actorId, name, username, bio, verificationPaidAt, verificationApprovedAt }) })) });
 });
 router.put("/social/notifications/:notificationId/read", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;

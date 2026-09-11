@@ -6,41 +6,67 @@ import {
   currentEventWalletsTable,
   paceCommentLikesTable,
   paceRouteCommentsTable,
+  paceRouteExercisesTable,
   paceRouteGiftsTable,
   paceRouteLikesTable,
   paceRoutesTable,
   paceDiscoveryHistoryTable,
+  virtualCurrencyLedgerTable,
   socialBlocksTable,
   usersTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
+import { giftPrices, requestIdempotencyKey } from "../lib/money";
+import { ensureWalletWithLedger } from "../lib/wallet-ledger";
 
 const router: IRouter = Router();
 const routePoint = z.object({
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
 });
+const exerciseInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  sets: z.number().int().min(1).max(100),
+  reps: z.number().int().min(1).max(500),
+  weight: z.number().finite().min(0).max(10_000).nullable().optional(),
+});
 const routeInput = z.object({
   title: z.string().trim().min(2).max(80),
   description: z.string().trim().max(800).default(""),
   kind: z.enum(["route", "challenge"]).default("route"),
-  visibility: z.enum(["public", "private"]).default("public"),
+  visibility: z.enum(["public", "private"]).optional(),
+  audience: z.enum(["community", "public"]).optional(),
   activity: z.enum(["run", "walk", "bike", "hike", "jog", "swim", "strength", "yoga", "dance", "skate"]).default("run"),
+  activityGroup: z.enum(["distance", "ride", "swim", "studio", "strength"]).optional(),
   difficulty: z.enum(["easy", "steady", "hard"]).default("steady"),
-  distanceKm: z.number().finite().positive().max(250),
+  distanceKm: z.number().finite().min(0).max(250),
   elevationM: z.number().int().min(0).max(10_000).default(0),
   durationMin: z.number().int().positive().max(1_440),
-  startLatitude: z.number().finite().min(-90).max(90),
-  startLongitude: z.number().finite().min(-180).max(180),
+  calories: z.number().int().min(0).max(100_000).nullable().optional(),
+  startLatitude: z.number().finite().min(-90).max(90).default(0),
+  startLongitude: z.number().finite().min(-180).max(180).default(0),
   locationLabel: z.string().trim().min(2).max(120).default("Nearby"),
-  routeCoordinates: z.array(routePoint).min(2).max(120),
+  routeCoordinates: z.array(routePoint).max(120).default([]),
+  exerciseLog: z.array(exerciseInput).max(30).default([]),
+}).superRefine((input, context) => {
+  const group = input.activityGroup ?? activityGroupFor(input.activity);
+  if (group !== "studio" && group !== "strength" && input.routeCoordinates.length < 2) {
+    context.addIssue({ code: "custom", path: ["routeCoordinates"], message: "A route needs at least two points." });
+  }
+  if (group !== "studio" && group !== "strength" && input.distanceKm <= 0) {
+    context.addIssue({ code: "custom", path: ["distanceKm"], message: "A route needs a positive distance." });
+  }
+  if (group === "strength" && input.exerciseLog.length === 0) {
+    context.addIssue({ code: "custom", path: ["exerciseLog"], message: "Strength activities need at least one exercise." });
+  }
 });
 const commentInput = z.object({ content: z.string().trim().min(1).max(1_000) });
 const giftInput = z.object({ gift: z.enum(["coffee", "idea", "heart", "gem", "studio", "time_is_up"]) });
-const giftPrices = { coffee: 25, idea: 100, heart: 200, gem: 500, studio: 1_000, time_is_up: 10_000 } as const;
 
 type PaceRoute = typeof paceRoutesTable.$inferSelect;
 type Point = { latitude: number; longitude: number };
+type PaceActivityGroup = "distance" | "ride" | "swim" | "studio" | "strength";
+type PaceExercise = { name: string; sets: number; reps: number; weight?: number | null };
 
 function parseId(value: unknown) {
   const parsed = z.coerce.number().int().positive().safeParse(value);
@@ -68,7 +94,22 @@ const DISCOVERY_NOUNS = ["Loop", "Out-and-Back", "Circuit", "Cruise", "Climb", "
 const DISTANCE_OPTIONS = [1.8, 2.4, 3.1, 3.8, 4.6, 5.2, 6.1, 7.4, 8.6, 9.8, 11.2, 12.6, 14.5, 16.8, 19.4, 22.1, 25.7, 31.5, 38.4, 46.2];
 const ACTIVITY_SPEEDS: Record<PaceActivity, number> = { run: 8.6, walk: 4.9, bike: 19.5, hike: 4.2, jog: 7.1, swim: 2.6, strength: 1, yoga: 1, dance: 3.8, skate: 12.5 };
 const ACTIVITY_ELEVATION: Record<PaceActivity, number> = { run: 9, walk: 6, bike: 12, hike: 28, jog: 8, swim: 0, strength: 0, yoga: 0, dance: 0, skate: 4 };
+const ACTIVITY_GROUPS: Record<PaceActivity, PaceActivityGroup> = {
+  run: "distance", walk: "distance", hike: "distance", jog: "distance",
+  bike: "ride", skate: "ride", swim: "swim", dance: "studio", yoga: "studio", strength: "strength",
+};
+const CALORIES_PER_MINUTE: Record<PaceActivityGroup, number> = {
+  distance: 10, ride: 9, swim: 8, studio: 7, strength: 6,
+};
 // The catalog has more than 200 million deterministic combinations before per-user history is applied.
+
+function activityGroupFor(activity: PaceActivity): PaceActivityGroup {
+  return ACTIVITY_GROUPS[activity];
+}
+
+function caloriesFor(activity: PaceActivity, durationMin: number) {
+  return Math.max(1, Math.round(durationMin * CALORIES_PER_MINUTE[activityGroupFor(activity)]));
+}
 
 function seededNumber(seed: number) {
   const value = Math.sin(seed * 12.9898) * 43_758.5453;
@@ -119,9 +160,20 @@ async function buildSuggestions(center: Point | null, viewerId: number, requeste
   const results: Array<Record<string, unknown>> = [];
   for (let index = 0; index < 96 && results.length < 6; index += 1) {
     const variant = Math.abs(baseSeed + index * 104729);
-    const distanceKmValue = DISTANCE_OPTIONS[variant % DISTANCE_OPTIONS.length];
-    const elevationM = Math.round(distanceKmValue * ACTIVITY_ELEVATION[activity] * (0.55 + seededNumber(variant + 7) * 1.2));
-    const durationMin = Math.max(5, Math.round(distanceKmValue / ACTIVITY_SPEEDS[activity] * 60 * (0.92 + seededNumber(variant + 13) * 0.18)));
+    const group = activityGroupFor(activity);
+    const distanceKmValue = group === "studio" || group === "strength"
+      ? 0
+      : group === "swim"
+        ? [0.2, 0.4, 0.6, 0.8, 1.0, 1.5][variant % 6]
+        : DISTANCE_OPTIONS[variant % DISTANCE_OPTIONS.length];
+    const elevationM = group === "distance" || group === "ride"
+      ? Math.round(distanceKmValue * ACTIVITY_ELEVATION[activity] * (0.55 + seededNumber(variant + 7) * 1.2))
+      : 0;
+    const durationMin = group === "strength"
+      ? 30 + (variant % 4) * 10
+      : group === "studio"
+        ? 25 + (variant % 5) * 10
+        : Math.max(5, Math.round(distanceKmValue / ACTIVITY_SPEEDS[activity] * 60 * (0.92 + seededNumber(variant + 13) * 0.18)));
     const difficulty = elevationM / Math.max(distanceKmValue, 1) > 18 ? "hard" : distanceKmValue > 8 ? "steady" : "easy";
     const id = `suggested-${viewerId}-${locationCell}-${activity}-${variant}`;
     if (excluded.has(id)) continue;
@@ -132,16 +184,21 @@ async function buildSuggestions(center: Point | null, viewerId: number, requeste
       suggested: true as const,
       kind: "route" as const,
       visibility: "public" as const,
+      audience: "community" as const,
       title: `${adjective} ${noun}`,
       activity,
+      activityGroup: group,
       distanceKm: distanceKmValue,
       elevationM,
       durationMin,
+      calories: caloriesFor(activity, durationMin),
       difficulty,
-      description: `${ACTIVITY_LABELS[activity]} route idea with a different shape for this area and this moment. Save it only if it feels right.`,
+      description: `${ACTIVITY_LABELS[activity]} idea with a different shape for this area and this moment. Save it only if it feels right.`,
       locationLabel: center ? "Near your current area" : globalCenters[variant % globalCenters.length].label,
       distanceFromYouKm: center ? 0 : null,
-      routeCoordinates: suggestedCoordinates(centerPoint, distanceKmValue, variant),
+      routeCoordinates: group === "distance" || group === "ride" || group === "swim"
+        ? suggestedCoordinates(centerPoint, distanceKmValue || 1, variant)
+        : [],
     });
   }
   return results;
@@ -168,7 +225,9 @@ async function activeRoute(routeId: number, viewerId?: number) {
     .where(and(
       eq(paceRoutesTable.id, routeId),
       eq(paceRoutesTable.deleted, false),
-      viewerId === undefined ? eq(paceRoutesTable.visibility, "public") : sql`(${paceRoutesTable.visibility} = 'public' OR ${paceRoutesTable.authorId} = ${viewerId})`,
+      viewerId === undefined
+        ? sql`(${paceRoutesTable.audience} = 'public' OR ${paceRoutesTable.visibility} = 'public')`
+        : sql`((${paceRoutesTable.audience} IN ('community', 'public') OR ${paceRoutesTable.visibility} = 'public') OR ${paceRoutesTable.authorId} = ${viewerId})`,
     ))
     .limit(1);
   return route;
@@ -178,12 +237,13 @@ async function serializeRoutes(routes: PaceRoute[], viewerId: number, origin: Po
   if (!routes.length) return [];
   const ids = routes.map((route) => route.id);
   const authorIds = [...new Set(routes.map((route) => route.authorId))];
-  const [authors, likes, comments, gifts, viewerLikes] = await Promise.all([
+  const [authors, likes, comments, gifts, viewerLikes, exercises] = await Promise.all([
     db.select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, avatarObjectPath: usersTable.avatarObjectPath }).from(usersTable).where(inArray(usersTable.id, authorIds)),
     db.select({ routeId: paceRouteLikesTable.routeId, count: sql<number>`count(*)` }).from(paceRouteLikesTable).where(inArray(paceRouteLikesTable.routeId, ids)).groupBy(paceRouteLikesTable.routeId),
     db.select({ routeId: paceRouteCommentsTable.routeId, count: sql<number>`count(*)` }).from(paceRouteCommentsTable).where(and(inArray(paceRouteCommentsTable.routeId, ids), eq(paceRouteCommentsTable.deleted, false))).groupBy(paceRouteCommentsTable.routeId),
     db.select({ routeId: paceRouteGiftsTable.routeId, count: sql<number>`count(*)` }).from(paceRouteGiftsTable).where(inArray(paceRouteGiftsTable.routeId, ids)).groupBy(paceRouteGiftsTable.routeId),
     db.select({ routeId: paceRouteLikesTable.routeId }).from(paceRouteLikesTable).where(and(eq(paceRouteLikesTable.userId, viewerId), inArray(paceRouteLikesTable.routeId, ids))),
+    db.select().from(paceRouteExercisesTable).where(inArray(paceRouteExercisesTable.routeId, ids)).orderBy(asc(paceRouteExercisesTable.sortOrder)),
   ]);
   const authorById = new Map(authors.map((author) => [author.id, author]));
   const countBy = (rows: Array<{ routeId: number; count: number }>) => new Map(rows.map((row) => [row.routeId, Number(row.count)]));
@@ -191,6 +251,12 @@ async function serializeRoutes(routes: PaceRoute[], viewerId: number, origin: Po
   const likeCounts = countBy(likes);
   const commentCounts = countBy(comments);
   const giftCounts = countBy(gifts);
+  const exercisesByRoute = new Map<number, PaceExercise[]>();
+  for (const exercise of exercises) {
+    const existing = exercisesByRoute.get(exercise.routeId) ?? [];
+    existing.push({ name: exercise.name, sets: exercise.sets, reps: exercise.reps, weight: exercise.weight });
+    exercisesByRoute.set(exercise.routeId, existing);
+  }
   return routes.map((route) => {
     const author = authorById.get(route.authorId);
     return {
@@ -199,12 +265,16 @@ async function serializeRoutes(routes: PaceRoute[], viewerId: number, origin: Po
       title: route.title,
       description: route.description,
       kind: route.kind,
-      visibility: route.visibility,
+      visibility: route.visibility === "private" ? "private" : (route.audience === "public" ? "public" : "community"),
+      audience: route.visibility === "private" ? "community" : (route.audience === "public" ? "public" : "community"),
       activity: route.activity,
+      activityGroup: route.activityGroup || activityGroupFor(route.activity as PaceActivity),
       difficulty: route.difficulty,
       distanceKm: route.distanceKm,
       elevationM: route.elevationM,
       durationMin: route.durationMin,
+      calories: route.calories ?? caloriesFor(route.activity as PaceActivity, route.durationMin),
+      exerciseLog: exercisesByRoute.get(route.id) ?? [],
       startLatitude: route.startLatitude,
       startLongitude: route.startLongitude,
       locationLabel: route.locationLabel,
@@ -232,6 +302,7 @@ router.get("/pace/feed", async (req, res): Promise<void> => {
     longitude: z.coerce.number().finite().min(-180).max(180).optional(),
     limit: z.coerce.number().int().min(1).max(50).default(30),
     activity: z.enum(["run", "walk", "bike", "hike", "jog", "swim", "strength", "yoga", "dance", "skate"]).default("run"),
+    mode: z.enum(["community", "for-you"]).default("community"),
     exclude: z.string().trim().max(20_000).optional(),
   }).safeParse(req.query);
   if (!query.success) {
@@ -242,9 +313,12 @@ router.get("/pace/feed", async (req, res): Promise<void> => {
     ? { latitude: query.data.latitude, longitude: query.data.longitude }
     : null;
   const blocked = await blockedIds(viewerId);
+  const audienceCondition = query.data.mode === "for-you"
+    ? sql`(${paceRoutesTable.audience} = 'public' OR ${paceRoutesTable.visibility} = 'public')`
+    : sql`(${paceRoutesTable.visibility} <> 'private' OR ${paceRoutesTable.authorId} = ${viewerId})`;
   const routes = await db.select().from(paceRoutesTable).where(and(
     eq(paceRoutesTable.deleted, false),
-    sql`(${paceRoutesTable.visibility} = 'public' OR ${paceRoutesTable.authorId} = ${viewerId})`,
+    audienceCondition,
   )).orderBy(desc(paceRoutesTable.createdAt)).limit(query.data.limit * 2);
   const visible = routes
     .filter((route) => !blocked.has(route.authorId))
@@ -285,8 +359,42 @@ router.post("/pace/routes", async (req, res): Promise<void> => {
     return;
   }
   const now = Date.now();
-  const [route] = await db.insert(paceRoutesTable).values({ ...parsed.data, authorId: viewerId, createdAt: now, updatedAt: now }).returning();
+  const { exerciseLog, audience: requestedAudience, visibility: legacyVisibility, activityGroup: requestedGroup, ...routeValues } = parsed.data;
+  const audience = requestedAudience ?? (legacyVisibility === "public" ? "public" : "community");
+  const activityGroup = requestedGroup ?? activityGroupFor(routeValues.activity);
+  const [route] = await db.insert(paceRoutesTable).values({
+    ...routeValues,
+    authorId: viewerId,
+    visibility: legacyVisibility === "private" ? "private" : audience,
+    audience,
+    activityGroup,
+    calories: routeValues.calories ?? caloriesFor(routeValues.activity, routeValues.durationMin),
+    createdAt: now,
+    updatedAt: now,
+  }).returning();
+  if (exerciseLog.length) {
+    await db.insert(paceRouteExercisesTable).values(exerciseLog.map((exercise, index) => ({ ...exercise, routeId: route.id, sortOrder: index })));
+  }
   res.status(201).json((await serializeRoutes([route], viewerId, { latitude: route.startLatitude, longitude: route.startLongitude }))[0]);
+});
+
+router.get("/pace/preferences", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const [user] = await db.select({ paceDefaultAudience: usersTable.paceDefaultAudience }).from(usersTable).where(eq(usersTable.id, viewerId)).limit(1);
+  res.json({ defaultAudience: user?.paceDefaultAudience === "public" ? "public" : "community" });
+});
+
+router.put("/pace/preferences", async (req, res): Promise<void> => {
+  const viewerId = await requireChatAuth(req, res);
+  if (viewerId === null) return;
+  const parsed = z.object({ defaultAudience: z.enum(["community", "public"]) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Choose Community or Public." });
+    return;
+  }
+  await db.update(usersTable).set({ paceDefaultAudience: parsed.data.defaultAudience }).where(eq(usersTable.id, viewerId));
+  res.json(parsed.data);
 });
 
 router.put("/pace/routes/:routeId/like", async (req, res): Promise<void> => {
@@ -366,25 +474,77 @@ router.post("/pace/routes/:routeId/gifts", async (req, res): Promise<void> => {
   const routeId = parseId(req.params.routeId);
   const parsed = giftInput.safeParse(req.body);
   if (viewerId === null || routeId === null || !parsed.success) return;
+  const idempotencyKey = requestIdempotencyKey(req, viewerId, "pace-gift");
+  if (!idempotencyKey) {
+    res.status(400).json({ error: "A unique gift request key is required. Please try again." });
+    return;
+  }
   const route = await activeRoute(routeId, viewerId);
   if (!route || route.authorId === viewerId) {
     res.status(400).json({ error: "Choose a route shared by another Pace member." });
     return;
   }
+  const [existingGift] = await db.select().from(paceRouteGiftsTable)
+    .where(eq(paceRouteGiftsTable.idempotencyKey, idempotencyKey)).limit(1);
+  if (existingGift) {
+    if (existingGift.routeId !== routeId || existingGift.gift !== parsed.data.gift) {
+      res.status(409).json({ error: "That gift request key was already used for another gift." });
+      return;
+    }
+    const [wallet] = await db.select({ coins: currentEventWalletsTable.coins })
+      .from(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, viewerId)).limit(1);
+    res.json({ success: true, gift: existingGift.gift, coinsSpent: existingGift.coins, goldEarned: existingGift.gold, coinsRemaining: wallet?.coins ?? 0 });
+    return;
+  }
   const coins = giftPrices[parsed.data.gift];
   const gold = Math.floor(coins * 0.8);
   const result = await db.transaction(async (tx) => {
-    await tx.insert(currentEventWalletsTable).values({ userId: viewerId, updatedAt: Date.now() }).onConflictDoNothing();
-    await tx.insert(currentEventWalletsTable).values({ userId: route.authorId, updatedAt: Date.now() }).onConflictDoNothing();
+    await ensureWalletWithLedger(tx, viewerId);
+    await ensureWalletWithLedger(tx, route.authorId);
     const [debited] = await tx.update(currentEventWalletsTable)
       .set({ coins: sql`${currentEventWalletsTable.coins} - ${coins}`, updatedAt: Date.now() })
       .where(and(eq(currentEventWalletsTable.userId, viewerId), gte(currentEventWalletsTable.coins, coins)))
       .returning({ coins: currentEventWalletsTable.coins });
     if (!debited) return null;
-    await tx.update(currentEventWalletsTable)
+    const [credited] = await tx.update(currentEventWalletsTable)
       .set({ gold: sql`${currentEventWalletsTable.gold} + ${gold}`, updatedAt: Date.now() })
-      .where(eq(currentEventWalletsTable.userId, route.authorId));
-    const [gift] = await tx.insert(paceRouteGiftsTable).values({ routeId, senderId: viewerId, recipientId: route.authorId, gift: parsed.data.gift, coins, gold, createdAt: Date.now() }).returning();
+      .where(eq(currentEventWalletsTable.userId, route.authorId))
+      .returning({ gold: currentEventWalletsTable.gold });
+    if (!credited) throw new Error("Recipient wallet is unavailable.");
+    const [gift] = await tx.insert(paceRouteGiftsTable).values({
+      routeId,
+      senderId: viewerId,
+      recipientId: route.authorId,
+      gift: parsed.data.gift,
+      idempotencyKey,
+      coins,
+      gold,
+      createdAt: Date.now(),
+    }).returning();
+    await tx.insert(virtualCurrencyLedgerTable).values([
+      {
+        idempotencyKey: `${idempotencyKey}:sender`,
+        userId: viewerId,
+        account: "coins",
+        delta: -coins,
+        balanceAfter: debited.coins,
+        entryType: "pace_gift_spend",
+        referenceId: String(gift.id),
+        relatedUserId: route.authorId,
+        createdAt: Date.now(),
+      },
+      {
+        idempotencyKey: `${idempotencyKey}:recipient`,
+        userId: route.authorId,
+        account: "gold",
+        delta: gold,
+        balanceAfter: credited.gold,
+        entryType: "pace_gift_earn",
+        referenceId: String(gift.id),
+        relatedUserId: viewerId,
+        createdAt: Date.now(),
+      },
+    ]);
     return { gift, coinsRemaining: debited.coins };
   });
   if (!result) { res.status(402).json({ error: "You need more Coins to send this gift." }); return; }

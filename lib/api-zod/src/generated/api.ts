@@ -65,6 +65,7 @@ export const FirebaseSignInResponse = zod.union([zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
@@ -106,6 +107,7 @@ export const VerifyOtpResponse = zod.union([zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
@@ -140,6 +142,7 @@ export const CompleteBirthdayResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
@@ -223,6 +226,7 @@ export const ListUsersResponseItem = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
@@ -260,6 +264,7 @@ export const DiscoverContactsResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
@@ -353,6 +358,7 @@ export const UpdateUserProfileResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
@@ -399,6 +405,7 @@ export const GetInboxResponseItem = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable(),
   "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
   "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
@@ -430,6 +437,28 @@ export const GetInboxResponseItem = zod.object({
   "unreadCount": zod.number()
 })
 export const GetInboxResponse = zod.array(GetInboxResponseItem)
+
+
+/**
+ * @summary Approve or revoke a user's verification badge
+ */
+
+
+
+export const UpdateAdminUserVerificationParams = zod.object({
+  "userId": zod.coerce.number().int().min(1)
+})
+
+export const UpdateAdminUserVerificationBody = zod.object({
+  "approved": zod.boolean()
+})
+
+export const UpdateAdminUserVerificationResponse = zod.object({
+  "id": zod.number(),
+  "approved": zod.boolean(),
+  "approvedAt": zod.number().nullable(),
+  "approvedBy": zod.number().nullable()
+})
 
 
 /**
@@ -842,6 +871,7 @@ export const GetSocialFeedResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
@@ -929,6 +959,7 @@ export const CreateSocialPostResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
@@ -1085,6 +1116,7 @@ export const GetSocialPostCommentsResponseItem = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "liked": zod.boolean()
@@ -1123,6 +1155,7 @@ export const CreateSocialPostCommentResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "liked": zod.boolean()
@@ -1199,6 +1232,7 @@ export const SearchSocialResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 })),
   "posts": zod.array(zod.object({
@@ -1231,6 +1265,7 @@ export const SearchSocialResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
@@ -1264,6 +1299,7 @@ export const GetSocialUserCardResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }).and(zod.object({
   "followerCount": zod.number(),
@@ -1327,6 +1363,7 @@ export const GetSocialUserPostsResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
@@ -1396,6 +1433,7 @@ export const ListMessageRequestsResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "recipient": zod.object({
@@ -1403,6 +1441,7 @@ export const ListMessageRequestsResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "status": zod.enum(['pending', 'accepted', 'declined']),
@@ -1430,6 +1469,7 @@ export const CreateMessageRequestResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "recipient": zod.object({
@@ -1437,6 +1477,7 @@ export const CreateMessageRequestResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "status": zod.enum(['pending', 'accepted', 'declined']),
@@ -1486,6 +1527,7 @@ export const GetSocialPrivacyExclusionsResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }))
 })
@@ -1650,6 +1692,7 @@ export const GetSavedSocialPostsResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "counts": zod.object({
@@ -1714,6 +1757,7 @@ export const GetStoriesResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 })).optional(),
   "createdAt": zod.number(),
@@ -1723,6 +1767,7 @@ export const GetStoriesResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
@@ -1827,6 +1872,7 @@ export const CreateStoryResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 })).optional(),
   "createdAt": zod.number(),
@@ -1836,6 +1882,7 @@ export const CreateStoryResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
@@ -1871,6 +1918,7 @@ export const GetNotesResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
@@ -1902,6 +1950,7 @@ export const CreateNoteResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
@@ -1939,6 +1988,7 @@ export const UpdateNoteResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
@@ -2030,6 +2080,7 @@ export const GetNearbyStoriesResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 })).optional(),
   "createdAt": zod.number(),
@@ -2039,6 +2090,7 @@ export const GetNearbyStoriesResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
@@ -2115,6 +2167,7 @@ export const GetStoryResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 })).optional(),
   "createdAt": zod.number(),
@@ -2124,6 +2177,7 @@ export const GetStoryResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }),
   "viewer": zod.object({
@@ -2232,6 +2286,7 @@ export const GetStoryRepliesResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 })
 }))
@@ -2267,6 +2322,7 @@ export const ReplyToStoryResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 })
 })
@@ -2296,6 +2352,7 @@ export const GetCloseFriendsResponse = zod.object({
   "name": zod.string(),
   "username": zod.string(),
   "bio": zod.string(),
+  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
   "avatarObjectPath": zod.string().nullable()
 }))
 })
@@ -2954,6 +3011,7 @@ export const GetCurrentEventRoomsResponse = zod.object({
   "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
   "isOpen": zod.boolean(),
   "isLive": zod.boolean(),
+  "liveUntil": zod.number().nullable(),
   "hostId": zod.number(),
   "latitude": zod.number().nullable(),
   "longitude": zod.number().nullable(),
@@ -3021,6 +3079,7 @@ export const CreateCurrentEventRoomResponse = zod.object({
   "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
   "isOpen": zod.boolean(),
   "isLive": zod.boolean(),
+  "liveUntil": zod.number().nullable(),
   "hostId": zod.number(),
   "latitude": zod.number().nullable(),
   "longitude": zod.number().nullable(),
@@ -3071,6 +3130,7 @@ export const GetCurrentEventRoomResponse = zod.object({
   "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
   "isOpen": zod.boolean(),
   "isLive": zod.boolean(),
+  "liveUntil": zod.number().nullable(),
   "hostId": zod.number(),
   "latitude": zod.number().nullable(),
   "longitude": zod.number().nullable(),
@@ -3121,6 +3181,7 @@ export const JoinCurrentEventRoomResponse = zod.object({
   "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
   "isOpen": zod.boolean(),
   "isLive": zod.boolean(),
+  "liveUntil": zod.number().nullable(),
   "hostId": zod.number(),
   "latitude": zod.number().nullable(),
   "longitude": zod.number().nullable(),
@@ -3208,6 +3269,7 @@ export const SetCurrentEventHandResponse = zod.object({
   "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
   "isOpen": zod.boolean(),
   "isLive": zod.boolean(),
+  "liveUntil": zod.number().nullable(),
   "hostId": zod.number(),
   "latitude": zod.number().nullable(),
   "longitude": zod.number().nullable(),
@@ -3264,6 +3326,7 @@ export const UpdateCurrentEventParticipantResponse = zod.object({
   "topic": zod.enum(['for-you', 'politics', 'markets', 'tech', 'culture', 'sports', 'world']),
   "isOpen": zod.boolean(),
   "isLive": zod.boolean(),
+  "liveUntil": zod.number().nullable(),
   "hostId": zod.number(),
   "latitude": zod.number().nullable(),
   "longitude": zod.number().nullable(),

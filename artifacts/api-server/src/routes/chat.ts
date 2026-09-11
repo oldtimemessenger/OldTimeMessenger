@@ -58,6 +58,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { registerPushToken, sendPushToUsers, unregisterPushToken } from "../lib/push-notifications";
+import { hasVerificationBadge } from "../lib/verification";
 import { disconnectUser, emitToChat, emitToUser } from "../lib/realtime";
 import {
   callerMatches,
@@ -130,6 +131,7 @@ function parseUser(user: ChatUser, viewerId = user.id) {
     name: user.name,
     username: user.username,
     bio: user.bio,
+    verificationBadge: hasVerificationBadge(user),
     avatarObjectPath: user.avatarObjectPath,
     birthday: viewerId === user.id ? user.birthday : null,
     contactPermission: user.contactPermission,

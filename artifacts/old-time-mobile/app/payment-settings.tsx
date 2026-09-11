@@ -8,84 +8,110 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Screen } from '@/components/ui';
-import { useApp } from '@/context/app-state';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 
 function errorMessage(error: unknown) {
-  if (error && typeof error === 'object') {
-    const value = error as { message?: unknown; error?: unknown; data?: { error?: unknown; message?: unknown }; body?: { error?: unknown; message?: unknown } };
-    for (const item of [value.data?.error, value.data?.message, value.body?.error, value.body?.message, value.error, value.message]) {
-      if (typeof item === 'string' && item) return item;
-    }
-  }
-  return 'Old Time could not update payout settings. Please try again.';
+  return error instanceof Error ? error.message : 'Old Time could not update payout settings.';
 }
 
 export default function PaymentSettingsScreen() {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { session } = useApp();
+  const actionColor = colors.authNavy;
   const options = getGetCreatorPayoutSettingsQueryOptions();
-  const settingsQuery = useGetCreatorPayoutSettings({ query: { queryKey: options.queryKey, enabled: Boolean(session?.authToken), retry: 1 } });
+  const settings = useGetCreatorPayoutSettings({ query: { queryKey: options.queryKey, retry: 1 } });
   const onboarding = useCreateCreatorPayoutOnboardingLink();
   const refresh = useCallback(() => queryClient.invalidateQueries({ queryKey: options.queryKey }), [options.queryKey, queryClient]);
 
-  useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+  useFocusEffect(useCallback(() => {
+    void refresh();
+  }, [refresh]));
+
   useEffect(() => {
-    const listener = AppState.addEventListener('change', (state) => { if (state === 'active') void refresh(); });
-    const links = Linking.addEventListener('url', () => void refresh());
-    return () => { listener.remove(); links.remove(); };
+    const listener = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refresh();
+    });
+    return () => listener.remove();
   }, [refresh]);
 
-  const account = settingsQuery.data?.account;
+  const account = settings.data?.account;
   const enabled = account?.payoutsEnabled === true;
-  const payoutDestination = settingsQuery.data?.payoutDestination;
-  async function openStripe() {
+
+  const openStripe = async () => {
     try {
-      const link = await onboarding.mutateAsync(undefined);
-      const supported = await Linking.canOpenURL(link.url);
-      if (!supported) throw new Error('This device cannot open the secure Stripe setup page.');
+      const link = await onboarding.mutateAsync();
+      if (!(await Linking.canOpenURL(link.url))) throw new Error('This device cannot open the secure Stripe setup page.');
       await Linking.openURL(link.url);
     } catch (error) {
       Alert.alert('Stripe setup unavailable', errorMessage(error));
     }
-  }
+  };
 
   return (
-    <Screen>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} style={styles.icon} accessibilityRole="button" accessibilityLabel="Go back"><Ionicons name="chevron-back" size={28} color={colors.foreground} /></Pressable>
-        <Text style={[styles.title, { color: colors.foreground }]}>Payment Settings</Text><View style={styles.icon} />
-      </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Ionicons name={enabled ? 'checkmark-circle' : 'business-outline'} size={30} color={enabled ? colors.primary : colors.mutedForeground} />
-          <View style={{ flex: 1 }}><Text style={[styles.cardTitle, { color: colors.foreground }]}>{enabled ? 'Payouts enabled' : 'Stripe payout setup'}</Text>
-            <Text style={[styles.sub, { color: colors.mutedForeground }]}>{enabled ? 'Your creator earnings are ready for withdrawal.' : 'Complete secure setup with Stripe to receive creator earnings.'}</Text></View>
-        </View>
-        {settingsQuery.isLoading ? <ActivityIndicator color={colors.primary} /> : (
-          <View style={[styles.list, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Row label="Account status" value={account?.status?.replace('_', ' ') ?? 'Unavailable'} colors={colors} />
-            <Row label="Details submitted" value={account?.detailsSubmitted ? 'Yes' : 'No'} colors={colors} />
-            <Row label="Payouts enabled" value={enabled ? 'Yes' : 'No'} colors={colors} last />
-          </View>
-        )}
-        {payoutDestination ? <View style={[styles.bank, { backgroundColor: colors.secondary }]}><Ionicons name={payoutDestination.type === 'card' ? 'card-outline' : 'business-outline'} size={20} color={colors.primary} /><Text style={[styles.bankText, { color: colors.foreground }]}>{payoutDestination.label} ending in {payoutDestination.last4}</Text></View> : null}
-        {settingsQuery.isError ? <Text style={[styles.error, { color: colors.destructive }]}>{errorMessage(settingsQuery.error)}</Text> : null}
-        <Pressable disabled={onboarding.isPending} onPress={() => void openStripe()} style={[styles.button, { backgroundColor: colors.primary, opacity: onboarding.isPending ? 0.6 : 1 }]} accessibilityRole="button" accessibilityLabel="Open secure Stripe payout setup">
-          {onboarding.isPending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{enabled ? 'Manage payout details in Stripe' : 'Set up payouts in Stripe'}</Text>}
+    <ScrollView style={[styles.screen, { backgroundColor: colors.background }]} contentContainerStyle={[styles.content, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 }]}>
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Ionicons name="chevron-back" size={20} color={colors.foreground} />
         </Pressable>
-        <Text style={[styles.note, { color: colors.mutedForeground }]}>Bank and card details are collected and managed only by Stripe. Old Time does not collect or store them.</Text>
-      </ScrollView>
-    </Screen>
+        <Text style={[styles.title, { color: colors.foreground }]}>Payment Settings</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
+      <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.heroIcon}><Ionicons name="business-outline" size={28} color={actionColor} /></View>
+        <View style={styles.heroCopy}>
+          <Text style={[styles.heroTitle, { color: colors.foreground }]}>Stripe payout setup</Text>
+          <Text style={[styles.heroBody, { color: colors.mutedForeground }]}>Complete secure setup with Stripe to receive creator earnings.</Text>
+        </View>
+      </View>
+
+      {settings.isLoading ? <ActivityIndicator color={actionColor} style={styles.loader} /> : (
+        <View style={[styles.statusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <StatusRow label="Account status" value={account?.status?.replace(/_/g, ' ') ?? 'Unavailable'} colors={colors} />
+          <StatusRow label="Details submitted" value={account?.detailsSubmitted ? 'Yes' : 'Not yet'} colors={colors} />
+          <StatusRow label="Payouts enabled" value={enabled ? 'Yes' : 'Not yet'} colors={colors} last />
+        </View>
+      )}
+
+      {settings.isError ? <Text style={[styles.error, { color: colors.destructive }]}>{errorMessage(settings.error)}</Text> : null}
+
+      <Pressable disabled={onboarding.isPending} onPress={() => void openStripe()} style={[styles.primaryButton, { backgroundColor: actionColor, opacity: onboarding.isPending ? 0.55 : 1 }]} accessibilityRole="button" accessibilityLabel="Open secure Stripe payout setup">
+        {onboarding.isPending ? <ActivityIndicator color="#ffffff" /> : <><Ionicons name="open-outline" size={18} color="#ffffff" /><Text style={styles.primaryButtonText}>{enabled ? 'Manage payout details in Stripe' : 'Set up payouts in Stripe'}</Text></>}
+      </Pressable>
+
+      <Text style={[styles.note, { color: colors.mutedForeground }]}>Bank and card details are collected and managed only by Stripe. Old Time does not collect or store them.</Text>
+    </ScrollView>
   );
 }
-function Row({ label, value, colors, last }: { label: string; value: string; colors: ReturnType<typeof useColors>; last?: boolean }) {
-  return <View style={[styles.row, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}><Text style={[styles.rowLabel, { color: colors.foreground }]}>{label}</Text><Text style={[styles.rowValue, { color: colors.mutedForeground }]}>{value}</Text></View>;
+
+function StatusRow({ label, value, colors, last }: { label: string; value: string; colors: ReturnType<typeof useColors>; last?: boolean }) {
+  return <View style={[styles.statusRow, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}><Text style={[styles.statusLabel, { color: colors.foreground }]}>{label}</Text><Text style={[styles.statusValue, { color: colors.mutedForeground }]}>{value}</Text></View>;
 }
+
 const styles = StyleSheet.create({
-  header: { height: 58, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10 }, icon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' }, title: { fontSize: 20, fontWeight: '800' },
-  content: { padding: 20, gap: 16 }, card: { borderWidth: 1, borderRadius: 18, padding: 17, flexDirection: 'row', gap: 13 }, cardTitle: { fontSize: 17, fontWeight: '800' }, sub: { fontSize: 14, lineHeight: 20, marginTop: 4 }, list: { borderWidth: 1, borderRadius: 18, overflow: 'hidden' }, row: { minHeight: 55, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, rowLabel: { fontSize: 15 }, rowValue: { fontSize: 14, textTransform: 'capitalize' }, bank: { borderRadius: 14, padding: 14, flexDirection: 'row', gap: 10, alignItems: 'center' }, bankText: { fontSize: 14, fontWeight: '600' }, button: { height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 }, buttonText: { color: '#fff', fontSize: 16, fontWeight: '800' }, note: { textAlign: 'center', fontSize: 13, lineHeight: 19, paddingHorizontal: 12 }, error: { fontSize: 14, lineHeight: 19 },
+  screen: { flex: 1 },
+  content: { paddingHorizontal: 20, gap: 18 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  backButton: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  headerSpacer: { width: 44 },
+  title: { fontFamily: 'Fraunces_900Black', fontSize: 24 },
+  hero: { borderRadius: 24, borderWidth: 1, padding: 20, flexDirection: 'row', alignItems: 'center', gap: 16 },
+  heroIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  heroCopy: { flex: 1 },
+  heroTitle: { fontFamily: 'Fraunces_900Black', fontSize: 20, letterSpacing: -0.3 },
+  heroBody: { fontFamily: 'Outfit_500Medium', fontSize: 14, lineHeight: 20, marginTop: 4 },
+  loader: { marginVertical: 28 },
+  statusCard: { borderWidth: 1, borderRadius: 24, overflow: 'hidden' },
+  statusRow: { minHeight: 64, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  statusLabel: { fontFamily: 'Outfit_700Bold', fontSize: 15 },
+  statusValue: { fontFamily: 'Outfit_500Medium', fontSize: 14, textTransform: 'capitalize' },
+  error: { fontFamily: 'Outfit_500Medium', fontSize: 14, lineHeight: 20 },
+  primaryButton: { minHeight: 56, borderRadius: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  primaryButtonText: { color: '#ffffff', fontFamily: 'Outfit_700Bold', fontSize: 16 },
+  secondaryButton: { minHeight: 56, borderRadius: 28, borderWidth: 1, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  secondaryButtonText: { flex: 1, fontFamily: 'Outfit_700Bold', fontSize: 15 },
+  note: { fontFamily: 'Outfit_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center', paddingHorizontal: 12 },
 });

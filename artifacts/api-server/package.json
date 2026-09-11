@@ -8,7 +8,11 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:atmosphere": "esbuild src/lib/atmosphere-engine.test.ts --bundle --platform=node --format=esm --outfile=/tmp/atmosphere-engine.test.mjs && node /tmp/atmosphere-engine.test.mjs"
+    "test:atmosphere": "esbuild src/lib/atmosphere-engine.test.ts --bundle --platform=node --format=esm --outfile=/tmp/atmosphere-engine.test.mjs && node /tmp/atmosphere-engine.test.mjs",
+    "test:phase5": "esbuild src/lib/phase5-regression.test.ts --bundle --platform=node --format=esm --outfile=/tmp/phase5-regression.test.mjs && node /tmp/phase5-regression.test.mjs",
+    "test:phase6": "esbuild src/lib/phase6-regression.test.ts --bundle --platform=node --format=esm --outfile=/tmp/phase6-regression.test.mjs && node /tmp/phase6-regression.test.mjs",
+    "test:verification": "esbuild src/lib/verification.test.ts --bundle --platform=node --format=esm --outfile=/tmp/verification.test.mjs && node /tmp/verification.test.mjs"
+    ,"test:creator-hub": "esbuild src/lib/creator-hub.test.ts --bundle --platform=node --format=esm --outfile=/tmp/creator-hub.test.mjs && node /tmp/creator-hub.test.mjs"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

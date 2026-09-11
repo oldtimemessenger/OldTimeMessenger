@@ -16,13 +16,25 @@
 - [External discovery embeds](external-discovery-embeds.md) — third-party discovery uses official embeds only; native Old Time content gains priority as supply grows.
 - [EAS pnpm compatibility](eas-pnpm-compatibility.md) — EAS may run an older pnpm than packageManager declares; avoid catalog dependency specs in build workspaces.
 - [EAS update setup](eas-update-setup.md) — first OTA publish needs expo-updates plus the project URL/runtime config; verify CLI-generated config before committing.
+- [EAS iOS build image schema](eas-ios-build-image-schema.md) — put the Xcode image under each profile's `ios.image`; a profile-level `image` is rejected by EAS CLI.
+- [EAS local source uploads](eas-local-source-uploads.md) — running EAS from the mobile artifact uploads the local workspace, not necessarily GitHub `main`; verify the build's commit hash.
+- [EAS App Store submission schema](eas-app-store-submission-schema.md) — App Store Connect ID belongs at `submit.production.ios.ascAppId`, not directly under the submit profile.
 - [EAS to TestFlight handoff](eas-testflight-handoff.md) — preflight the exact paid-build profile; EAS completion and TestFlight availability are separate.
+- [EAS PKCS#12 compatibility](eas-pkcs12-compatibility.md) — certificates created with OpenSSL may need legacy PKCS#12 encryption for EAS macOS keychain import.
 - [Phone identity boundaries](phone-identity-boundaries.md) — phone discovery stays optional, separate from Firebase login and message permissions.
 - [Mobile advertising boundaries](mobile-advertising-boundaries.md) — central policy governs public placements; private communication surfaces stay permanently ad-free.
 - [Deployment status and placeholder behavior](deployment-status-quirk.md) — an existing production URL can still serve the not-live placeholder when the current build is unsuccessful.
 - [Mobile startup hydration](mobile-startup-hydration.md) — native storage hydration must always settle before hiding the splash screen, with a timeout fallback for stalled TestFlight launches.
+- [Expo production API environment](expo-production-api-environment.md) — production EAS profiles must explicitly inject the API host before native launch.
+- [Expo Launch production variables](expo-launch-production-variables.md) — Expo Launch consumes the Replit production environment for EXPO_PUBLIC_* values; verify presence without printing values.
 - [Photo-to-chat handoff](photo-chat-handoff.md) — preserve captured media through both existing/new chat branches and never block its draft on message history.
 - [LiveKit mobile screen sharing](livekit-mobile-screen-sharing.md) — Android uses Media Projection; iPhone needs a signed ReplayKit broadcast extension before exposing Share.
 - [Pace domain boundary](pace-domain-boundary.md) — Pace owns route activity and community interactions while reusing the existing Coins/Gold wallet ledger.
 - [Atmosphere honesty boundary](atmosphere-honesty-boundary.md) — generated discovery may fill quiet surfaces but must never impersonate people, engagement, or LIVE activity.
 - [Pace discovery history](pace-discovery-history.md) — generated Pace route ideas need per-user impression history and deterministic exclusions to avoid repeating combinations.
+- [Pace adaptive motivation](pace-adaptive-motivation.md) — begin with a private on-device rival; adapt to real session data and never present it as a real person or leaderboard.
+- [Firebase Admin identity operations](firebase-admin-identity-operations.md) — token verification can work while Admin user deletion fails if the Identity Toolkit API is disabled for the credential project.
+- [Realtime media state boundaries](realtime-media-state-boundaries.md) — accepted calls and live media connections are separate states; reconnects must resync server history and fail closed when audio is unavailable.
+- [LIVE gift delivery](live-gift-delivery.md) — post-commit room broadcasts are authoritative; deduplicate animations by gift record ID and never replay them on reconnect.
+- [Monorepo package install target](monorepo-package-install-target.md) — target one workspace package explicitly when adding an artifact-specific dependency.
+- [Verification badge enforcement](verification-badge-enforcement.md) — expose a badge only from server-confirmed payment or system-admin approval, never client input.

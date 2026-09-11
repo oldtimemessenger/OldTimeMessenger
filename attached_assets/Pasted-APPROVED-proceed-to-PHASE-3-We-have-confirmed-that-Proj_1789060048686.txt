@@ -1,0 +1,99 @@
+APPROVED — proceed to PHASE 3.
+
+We have confirmed that Project 2 is already an ancestor of Project 1, so there is NO source migration required.
+
+Project 1 remains the FINAL canonical production project.
+
+PHASE 3 GOAL:
+Perform a read-only functional and UI audit of the CURRENT Project 1 application against the intended Old Time Messenger product.
+
+DO NOT modify application source yet.
+DO NOT change dependencies.
+DO NOT change Expo/EAS configuration.
+DO NOT change backend/database/native configuration.
+DO NOT build or submit to Apple.
+DO NOT delete Project 2.
+
+Audit the CURRENT Project 1 codebase and identify what is:
+
+1. Already implemented and working
+2. Implemented but incomplete
+3. Implemented but disconnected from the current UI/navigation
+4. Placeholder/mock functionality
+5. Broken or likely to break at runtime
+6. Missing entirely
+7. Conflicting with the intended current product design
+
+Audit at minimum:
+
+MOBILE:
+
+* Authentication/onboarding
+* Updates
+* Stories
+* Pace
+* Map
+* Chat
+* Settings
+* Profiles/profile cards
+* Camera/media
+* Current Events
+* Calls/call detail flow
+* Wallet/Coins
+* Creator/payment settings
+* Withdrawals
+* Discovery
+* Atmosphere
+* Push notifications
+* AdMob placement/policy
+* RevenueCat/subscriptions
+
+BACKEND:
+
+* Authentication/session flow
+* API routes
+* Chat/message flow
+* Stories/posts
+* Map/location functionality
+* Discovery/Atmosphere
+* Pace
+* Calls/LiveKit
+* Wallet/coins
+* Creator payments
+* Push tokens
+* Database/API consistency
+
+IMPORTANT PRODUCT REQUIREMENTS TO CHECK:
+
+* Exactly 5 primary tabs:
+    Updates, Pace, Map, Chat, Settings
+* Calls must remain accessible through the production call flow, but there should NOT be a legacy dedicated Calls tab.
+* Updates should provide the modern social/media feed experience.
+* Chat should behave like a modern WhatsApp-style messaging experience.
+* Map should support the planned story/location/discovery experience.
+* Generated Atmosphere/Discovery content must never be represented as real users, real live activity, real gifts, or real money.
+* Pace should retain the fitness/activity experience.
+* Production integrations must remain intact.
+* Ads must not appear in chat, calls, settings, payments, authentication, or private events.
+* No rewarded ads.
+* Production authentication must remain functional.
+* Existing LiveKit/WebRTC functionality must remain intact.
+
+For every finding, provide:
+
+A. File/path
+B. Current behavior
+C. Expected behavior
+D. Severity: Critical / High / Medium / Low
+E. Recommended fix
+F. Whether the fix is mobile UI, backend, database, configuration, or dependency related
+
+Also identify the TOP 10 issues that should be fixed before the next TestFlight build.
+
+At the end:
+
+* Do not modify anything.
+* Do not create a build.
+* Do not submit to Apple.
+* Provide the complete audit report.
+* STOP and wait for approval.

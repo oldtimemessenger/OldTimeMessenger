@@ -107,6 +107,8 @@ export interface User {
   name: string;
   username: string;
   bio: string;
+  /** True only after a server-confirmed verification payment or explicit system-admin approval. */
+  verificationBadge: boolean;
   /** @nullable */
   avatarObjectPath: string | null;
   /**
@@ -251,6 +253,8 @@ export interface SocialUser {
   name: string;
   username: string;
   bio: string;
+  /** True only after a server-confirmed verification payment or explicit system-admin approval. */
+  verificationBadge: boolean;
   /** @nullable */
   avatarObjectPath: string | null;
 }
@@ -1126,6 +1130,8 @@ export interface CurrentEventRoom {
   topic: CurrentEventTopic;
   isOpen: boolean;
   isLive: boolean;
+  /** @nullable */
+  liveUntil: number | null;
   hostId: number;
   /** @nullable */
   latitude: number | null;
@@ -1385,6 +1391,19 @@ export type UpdateUserProfileBody = {
      */
   phoneNumber?: string | null;
   phoneDiscoveryPermission?: UpdateUserProfileBodyPhoneDiscoveryPermission;
+};
+
+export type UpdateAdminUserVerificationBody = {
+  approved: boolean;
+};
+
+export type UpdateAdminUserVerification200 = {
+  id: number;
+  approved: boolean;
+  /** @nullable */
+  approvedAt: number | null;
+  /** @nullable */
+  approvedBy: number | null;
 };
 
 export type ListMessagesParams = {

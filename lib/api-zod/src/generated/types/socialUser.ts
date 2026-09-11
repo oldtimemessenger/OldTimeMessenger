@@ -11,6 +11,8 @@ export interface SocialUser {
   name: string;
   username: string;
   bio: string;
+  /** True only after a server-confirmed verification payment or explicit system-admin approval. */
+  verificationBadge: boolean;
   /** @nullable */
   avatarObjectPath: string | null;
 }

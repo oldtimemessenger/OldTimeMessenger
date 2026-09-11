@@ -1,0 +1,236 @@
+do the same thing drop rhe code for Pace the whole thing
+I’ll package the exact current Pace implementation the same way, including recording, activity-specific metrics, Strength logging, feed visibility, API routes, schema, and dependencies. I’ll leave the app code unchanged.
+The exact current Pace implementation is packaged in the Old Time Pace source bundle card above.
+
+It includes:
+
+app/(tabs)/pace.tsx
+lib/pace-api.ts
+lib/pace-recorder.ts
+app.json
+package.json
+eas.json
+api-server/src/routes/pace.ts
+api-server/src/routes/index.ts
+lib/db/src/schema/pace.ts
+lib/db/migrations/0018_pace.sql
+lib/db/migrations/0021_pace_routes_and_gifts.sql
+lib/db/migrations/0022_pace_route_visibility.sql
+lib/db/migrations/0025_pace_discovery_history.sql
+lib/db/migrations/0026_pace_activity_model.sql
+The bundle contains the exact implementation for:
+
+Run, walk, hike, jog, bike, skate, swim, dance, yoga, and Strength
+Activity-specific metrics
+GPS route recording
+Pause, resume, finish, and recovery
+Background recording while the phone is locked
+Strength exercises, sets, reps, and weight
+Community and For You feeds
+Pace audience preferences
+Route publishing
+Likes, comments, and gifts
+Coins and Gold behavior
+Suggested Pace content and impression history
+API validation and serialization
+Database schema and migrations
+Native location permissions and build configuration
+is it true you can make beautiful face filter like a professional app for me? 😳😳 as a feature in my ap? like even better than 360 studio?
+Yes—this is feasible as an Old Time feature. I’m checking the current camera stack so I can distinguish what can be added directly from what needs a native camera/effects layer.
+Yes. We can add a professional face-filter system to Old Time, but I want to be honest: I can make it feel premium and highly polished, but I cannot promise it will be objectively better than 360 until we test it on real iPhones and Android phones.
+
+Your current camera is here:
+
+artifacts/old-time-mobile/app/camera.tsx
+It currently uses:
+
+expo-camera
+CameraView
+It already supports:
+
+Front/back camera
+Photo capture
+Video recording
+Flash
+Zoom
+Text mode
+Preview
+Camera switching
+It does not currently have face detection, skin retouching, makeup, or AR effects.
+
+What I could add
+
+Natural beauty controls
+
+Skin smoothing
+Blemish reduction
+Face brightness
+Under-eye softening
+Teeth whitening
+Eye enhancement
+Subtle face slimming
+Jawline adjustment
+Nose refinement
+Lip enhancement
+The controls would use low, medium, and high intensity instead of making everyone look artificial.
+
+Professional presets
+
+Examples:
+
+Natural
+Soft Light
+Clean Studio
+Warm Glow
+Golden Hour
+Night Portrait
+Dewy
+Editorial
+Old Time
+Each preset could control multiple effects together:
+
+Skin smoothing: 22%
+Brightness: 8%
+Warmth: 5%
+Eye enhancement: 4%
+Face reshape: 2%
+Makeup-style filters
+
+Blush
+Lip tint
+Lip gloss
+Eyeliner
+Eyeshadow
+Mascara
+Subtle contour
+Highlight
+AR effects
+
+Animated glasses
+Hats
+Crowns
+Earrings
+Face masks
+Floating hearts
+Seasonal effects
+Animated Story effects
+The effects would follow the user’s face while they move.
+
+Lighting effects
+
+Softbox
+Window light
+Warm sunset
+Cool blue light
+Studio portrait
+Cinematic shadow
+These can make the camera feel more professional without heavily changing someone’s face.
+
+How it would work technically
+
+A professional filter needs three layers:
+
+Camera preview
+      ↓
+Face detection and landmarks
+      ↓
+GPU filter rendering
+The face detector tracks things like:
+
+Eyes
+Eyebrows
+Nose
+Lips
+Cheeks
+Jawline
+Face outline
+The GPU then applies the effects in real time while the user moves.
+
+For example:
+
+Cheek landmarks → skin smoothing mask
+Eye landmarks → eye enhancement
+Lip landmarks → lip color
+Face outline → face reshape
+Head position → glasses or hat placement
+The important limitation
+
+A basic Expo camera alone is not enough for this level of feature.
+
+For professional live filters, we would need either:
+
+Option 1: Native effects engine
+
+Use a native camera/effects SDK designed for:
+
+Live face tracking
+Beauty filters
+Makeup
+AR masks
+Video effects
+High frame rates
+This is the fastest path to a polished result.
+
+Option 2: Build the effects ourselves
+
+Use a native camera pipeline with:
+
+Face tracking
+ARKit on iOS
+ARCore/ML Kit on Android
+GPU shaders
+Skia or a similar rendering layer
+This gives Old Time a completely custom look and avoids making the app feel like a generic camera clone, but it requires more device testing.
+
+What would change in Old Time
+
+The current camera screen could become:
+
+Camera preview
+ ├── Beauty button
+ ├── Filters button
+ ├── Effects button
+ ├── Lighting button
+ ├── Intensity slider
+ ├── Flip camera
+ ├── Flash
+ ├── Zoom
+ └── Capture
+A user could tap:
+
+Beauty → Natural → adjust intensity
+Filters → Warm Glow
+Effects → Glasses
+Lighting → Softbox
+Then the same effect would remain active for:
+
+Photos
+Videos
+Stories
+Updates
+Community posts
+Chat camera attachments
+Quality goals
+
+To make it feel better than a basic clone, I would design it around:
+
+Subtle default effects
+No plastic-looking skin
+Smooth face tracking
+No visible filter jitter
+Fast filter switching
+High-quality exports
+Consistent effects on photos and video
+One-tap reset
+Custom Old Time presets
+Reduced battery drain
+On-device processing where possible
+No face images uploaded just for filtering
+One important build detail
+
+This would work best in a native iPhone/Android build. It would not be fully available in the browser preview, and adding a real-time face-effects engine would require a new native development build rather than relying only on Expo Go.
+
+So the short answer is:
+
+Yes, I can build this into Old Time. The best version would be a custom beauty and AR camera layer built on top of the current camera, with natural retouching, professional presets, makeup, lighting, and face-tracked effects.
+i want to see that loll show me in canvas 3 features before and after

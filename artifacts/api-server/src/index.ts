@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { Server } from "socket.io";
 import app from "./app";
 import { logger } from "./lib/logger";
@@ -74,6 +75,7 @@ io.on("connection", (socket) => {
   const rawToken = socket.handshake.auth.token as string;
   let reactionWindowStartedAt = Date.now();
   let reactionsInWindow = 0;
+  const recentReactionIds = new Map<string, number>();
 
   socket.join(`user_${userId}`);
   void db
@@ -149,8 +151,18 @@ io.on("connection", (socket) => {
     if (typeof roomId !== "number" || !Number.isInteger(roomId) || roomId <= 0) return;
     const roomName = `current_event_${roomId}`;
     if (!socket.rooms.has(roomName)) return;
-
+    const suppliedReactionId = payload && typeof payload === "object"
+      && typeof (payload as { reactionId?: unknown }).reactionId === "string"
+      ? (payload as { reactionId: string }).reactionId.slice(0, 120)
+      : null;
+    const reactionId = suppliedReactionId ?? `${userId}-${randomUUID()}`;
     const now = Date.now();
+    for (const [id, createdAt] of recentReactionIds) {
+      if (now - createdAt > 120_000) recentReactionIds.delete(id);
+    }
+    if (recentReactionIds.has(reactionId)) return;
+    recentReactionIds.set(reactionId, now);
+
     if (now - reactionWindowStartedAt >= 1_000) {
       reactionWindowStartedAt = now;
       reactionsInWindow = 0;
@@ -160,6 +172,7 @@ io.on("connection", (socket) => {
 
     socket.to(roomName).emit("current-event-reaction", {
       roomId,
+      reactionId,
       userId,
       sentAt: now,
     });

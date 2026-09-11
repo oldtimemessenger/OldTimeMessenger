@@ -10,14 +10,24 @@ import {
   currentEventParticipantsTable,
   currentEventRoomsTable,
   currentEventWalletsTable,
+  virtualCurrencyLedgerTable,
   db,
   usersTable,
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
 import { getVerifiedCoinPurchases } from "../lib/revenuecat";
 import { createLiveKitToken, liveKitConfigured, liveKitPublicUrl } from "../lib/livekit";
+import { canManageStageTarget, type StageRole } from "../lib/current-event-permissions";
 import { emitToCurrentEventRoom, evictCurrentEventRoom, evictUserFromCurrentEventRoom } from "../lib/realtime";
 import { getUncachableStripeClient } from "../lib/stripe-client";
+import {
+  GOLD_PER_USD,
+  MINIMUM_WITHDRAWAL_GOLD,
+  giftPrices,
+  requestIdempotencyKey,
+  centsForGold,
+} from "../lib/money";
+import { ensureWalletWithLedger } from "../lib/wallet-ledger";
 
 const router: IRouter = Router();
 
@@ -46,19 +56,18 @@ const giftInput = z.object({
   gift: z.enum(["coffee", "idea", "heart", "gem", "studio", "time_is_up"]),
   recipientId: z.coerce.number().int().positive(),
 });
+const giftLiveMinutes: Record<string, number> = {
+  coffee: 1,
+  idea: 5,
+  heart: 15,
+  gem: 30,
+  time_is_up: 60,
+};
+type GiftBenefit =
+  | { type: "live_time"; minutes: number; liveUntil: number }
+  | { type: "camera_access"; days: 30; grantedUntil: number };
 const withdrawalInput = z.object({ gold: z.coerce.number().int().min(900).max(9_000_000) });
-const GOLD_PER_USD = 90;
-const MINIMUM_WITHDRAWAL_GOLD = 900;
 const terminalPayoutStatuses = new Set(["paid", "failed", "canceled"]);
-
-const giftPrices = {
-  coffee: 25,
-  idea: 100,
-  heart: 200,
-  gem: 500,
-  studio: 1000,
-  time_is_up: 10000,
-} as const;
 
 type Room = typeof currentEventRoomsTable.$inferSelect;
 function parseId(value: unknown) {
@@ -86,12 +95,28 @@ function audioStatus() {
 }
 
 async function ensureWallet(userId: number) {
-  await db.insert(currentEventWalletsTable).values({ userId, updatedAt: Date.now() }).onConflictDoNothing();
+  await db.transaction(async (tx) => {
+    await ensureWalletWithLedger(tx, userId);
+  });
 }
 
-function accountStatus(account: { details_submitted: boolean; payouts_enabled: boolean; requirements?: { disabled_reason?: string | null } | null }) {
+function accountStatus(account: {
+  details_submitted: boolean;
+  payouts_enabled: boolean;
+  requirements?: {
+    disabled_reason?: string | null;
+    currently_due?: string[] | null;
+    past_due?: string[] | null;
+    pending_verification?: string[] | null;
+  } | null;
+}) {
   if (account.payouts_enabled && account.details_submitted) return "enabled";
   if (account.requirements?.disabled_reason) return "restricted";
+  if (
+    (account.requirements?.currently_due?.length ?? 0) > 0
+    || (account.requirements?.past_due?.length ?? 0) > 0
+    || (account.requirements?.pending_verification?.length ?? 0) > 0
+  ) return "action_required";
   return "pending";
 }
 
@@ -143,8 +168,31 @@ async function refundFailedWithdrawal(withdrawalId: number, reason: string) {
       .where(and(eq(creatorWithdrawalsTable.id, withdrawalId), eq(creatorWithdrawalsTable.status, "processing")))
       .returning({ gold: creatorWithdrawalsTable.gold, userId: creatorWithdrawalsTable.userId });
     if (claimed) {
-      await tx.update(currentEventWalletsTable).set({ gold: sql`${currentEventWalletsTable.gold} + ${claimed.gold}`, updatedAt: Date.now() })
-        .where(eq(currentEventWalletsTable.userId, claimed.userId));
+      const [wallet] = await tx.update(currentEventWalletsTable)
+        .set({ gold: sql`${currentEventWalletsTable.gold} + ${claimed.gold}`, updatedAt: Date.now() })
+        .where(eq(currentEventWalletsTable.userId, claimed.userId))
+        .returning({ gold: currentEventWalletsTable.gold });
+      if (!wallet) throw new Error("Wallet is unavailable while restoring Gold.");
+      await tx.insert(virtualCurrencyLedgerTable).values({
+        idempotencyKey: `withdrawal:${withdrawalId}:refund`,
+        userId: claimed.userId,
+        account: "gold",
+        delta: claimed.gold,
+        balanceAfter: wallet.gold,
+        entryType: "withdrawal_refund",
+        referenceId: String(withdrawalId),
+        createdAt: Date.now(),
+      });
+      await tx.insert(virtualCurrencyLedgerTable).values({
+        idempotencyKey: `payout:${withdrawalId}:failed`,
+        userId: claimed.userId,
+        account: "gold",
+        delta: 0,
+        balanceAfter: wallet.gold,
+        entryType: "payout_failed",
+        referenceId: String(withdrawalId),
+        createdAt: Date.now(),
+      });
     }
   });
 }
@@ -191,8 +239,25 @@ async function refreshWithdrawal(withdrawal: typeof creatorWithdrawalsTable.$inf
   const payout = await stripe.payouts.retrieve(withdrawal.stripePayoutId, {}, { stripeAccount: payoutAccount.stripeAccountId });
   if (!terminalPayoutStatuses.has(payout.status)) return withdrawal;
   if (payout.status === "paid") {
-    const [updated] = await db.update(creatorWithdrawalsTable).set({ status: "paid", updatedAt: Date.now() })
-      .where(and(eq(creatorWithdrawalsTable.id, withdrawal.id), eq(creatorWithdrawalsTable.status, "processing"))).returning();
+    const updated = await db.transaction(async (tx) => {
+      const [claimed] = await tx.update(creatorWithdrawalsTable).set({ status: "paid", updatedAt: Date.now() })
+        .where(and(eq(creatorWithdrawalsTable.id, withdrawal.id), eq(creatorWithdrawalsTable.status, "processing"))).returning();
+      if (!claimed) return null;
+      const [wallet] = await tx.select({ gold: currentEventWalletsTable.gold })
+        .from(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, claimed.userId)).limit(1);
+      if (!wallet) throw new Error("Wallet is unavailable while recording payout completion.");
+      await tx.insert(virtualCurrencyLedgerTable).values({
+        idempotencyKey: `payout:${claimed.id}:paid`,
+        userId: claimed.userId,
+        account: "gold",
+        delta: 0,
+        balanceAfter: wallet.gold,
+        entryType: "payout_paid",
+        referenceId: String(claimed.id),
+        createdAt: Date.now(),
+      }).onConflictDoNothing();
+      return claimed;
+    });
     return updated ?? withdrawal;
   }
   // A failed connected-account payout leaves its transfer available to reverse.
@@ -200,8 +265,26 @@ async function refreshWithdrawal(withdrawal: typeof creatorWithdrawalsTable.$inf
     if (withdrawal.stripeTransferId) await stripe.transfers.createReversal(withdrawal.stripeTransferId, {}, { idempotencyKey: `oldtime-withdrawal-reversal-${withdrawal.id}` });
     await refundFailedWithdrawal(withdrawal.id, payout.failure_message ?? "The payout was not completed.");
   } catch {
-    await db.update(creatorWithdrawalsTable).set({ status: "reversal_pending", failureReason: "The payout needs review.", updatedAt: Date.now() })
-      .where(and(eq(creatorWithdrawalsTable.id, withdrawal.id), eq(creatorWithdrawalsTable.status, "processing")));
+    await db.transaction(async (tx) => {
+      const [claimed] = await tx.update(creatorWithdrawalsTable)
+        .set({ status: "reversal_pending", failureReason: "The payout needs review.", updatedAt: Date.now() })
+        .where(and(eq(creatorWithdrawalsTable.id, withdrawal.id), eq(creatorWithdrawalsTable.status, "processing")))
+        .returning({ id: creatorWithdrawalsTable.id, userId: creatorWithdrawalsTable.userId });
+      if (!claimed) return;
+      const [wallet] = await tx.select({ gold: currentEventWalletsTable.gold })
+        .from(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, claimed.userId)).limit(1);
+      if (!wallet) throw new Error("Wallet is unavailable while recording payout review state.");
+      await tx.insert(virtualCurrencyLedgerTable).values({
+        idempotencyKey: `payout:${claimed.id}:reversal-pending`,
+        userId: claimed.userId,
+        account: "gold",
+        delta: 0,
+        balanceAfter: wallet.gold,
+        entryType: "payout_reversal_pending",
+        referenceId: String(claimed.id),
+        createdAt: Date.now(),
+      }).onConflictDoNothing();
+    });
   }
   return (await db.select().from(creatorWithdrawalsTable).where(eq(creatorWithdrawalsTable.id, withdrawal.id)).limit(1))[0] ?? withdrawal;
 }
@@ -256,6 +339,7 @@ async function serializeRoom(room: Room, viewerId: number) {
     latitude: room.latitude,
     longitude: room.longitude,
     createdAt: room.createdAt,
+    liveUntil: room.liveUntil,
     participants: participants.map((participant) => ({
       id: participant.id,
       user: { id: participant.userId, name: participant.name, username: usernameFor({ id: participant.userId, name: participant.name, username: participant.username }) },
@@ -387,18 +471,18 @@ router.post("/current-events/rooms/:roomId/join", async (req, res): Promise<void
   }
   const existing = await participantFor(roomId, viewerId);
   if (!existing) {
-    await db.insert(currentEventParticipantsTable).values({
+    const [inserted] = await db.insert(currentEventParticipantsTable).values({
       roomId,
       userId: viewerId,
       role: "listener",
       muted: true,
       handRaised: false,
       joinedAt: Date.now(),
-    });
+    }).onConflictDoNothing().returning({ id: currentEventParticipantsTable.id });
+    if (inserted) emitToCurrentEventRoom(roomId, "current-event-room-updated", { roomId });
   }
   await ensureWallet(viewerId);
   const serialized = await serializeRoom(room, viewerId);
-  if (!existing) emitToCurrentEventRoom(roomId, "current-event-room-updated", { roomId });
   res.json(serialized);
 });
 
@@ -502,7 +586,7 @@ router.patch("/current-events/rooms/:roomId/participants/:participantId", async 
     res.status(404).json({ error: "Room participant not found." });
     return;
   }
-  if (actor.role !== "host" && actor.role !== "moderator") {
+  if (!canManageStageTarget(actor.role as StageRole, target[0].role as StageRole)) {
     res.status(403).json({ error: "Only hosts and moderators can manage the stage." });
     return;
   }
@@ -586,28 +670,118 @@ router.post("/current-events/rooms/:roomId/gifts", async (req, res): Promise<voi
     res.status(400).json({ error: "A valid room and gift are required." });
     return;
   }
+  const idempotencyKey = requestIdempotencyKey(req, viewerId, "current-event-gift");
+  if (!idempotencyKey) {
+    res.status(400).json({ error: "A unique gift request key is required. Please try again." });
+    return;
+  }
   const membership = await requireRoomParticipant(roomId, viewerId);
   const recipientParticipant = await participantFor(roomId, parsed.data.recipientId);
-  if (!membership.room || !membership.participant || !recipientParticipant || !["host", "moderator", "speaker"].includes(recipientParticipant.role)) {
-    res.status(400).json({ error: "Gifts can only be sent to a room speaker." });
+  if (!membership.room || !membership.participant || !recipientParticipant || parsed.data.recipientId === viewerId) {
+    res.status(400).json({ error: "Gifts can only be sent to another real participant in this LIVE room." });
+    return;
+  }
+  const [existingGift] = await db.select().from(currentEventGiftsTable)
+    .where(eq(currentEventGiftsTable.idempotencyKey, idempotencyKey)).limit(1);
+  if (existingGift) {
+    if (existingGift.roomId !== roomId || existingGift.recipientId !== parsed.data.recipientId || existingGift.gift !== parsed.data.gift) {
+      res.status(409).json({ error: "That gift request key was already used for another gift." });
+      return;
+    }
+    const [wallet] = await db.select({ coins: currentEventWalletsTable.coins })
+      .from(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, viewerId)).limit(1);
+    res.json({ success: true, gift: existingGift.gift, coinsSpent: existingGift.coins, goldEarned: existingGift.gold, coinsRemaining: wallet?.coins ?? 0 });
     return;
   }
   const coins = giftPrices[parsed.data.gift];
   const gold = Math.floor(coins * 0.8);
-  const result = await db.transaction(async (tx) => {
-    await tx.insert(currentEventWalletsTable).values({ userId: viewerId, updatedAt: Date.now() }).onConflictDoNothing();
-    await tx.insert(currentEventWalletsTable).values({ userId: parsed.data.recipientId, updatedAt: Date.now() }).onConflictDoNothing();
-    const [debited] = await tx.update(currentEventWalletsTable)
-      .set({ coins: sql`${currentEventWalletsTable.coins} - ${coins}`, updatedAt: Date.now() })
-      .where(and(eq(currentEventWalletsTable.userId, viewerId), gte(currentEventWalletsTable.coins, coins)))
-      .returning({ coins: currentEventWalletsTable.coins });
-    if (!debited) return null;
-    await tx.update(currentEventWalletsTable)
-      .set({ gold: sql`${currentEventWalletsTable.gold} + ${gold}`, updatedAt: Date.now() })
-      .where(eq(currentEventWalletsTable.userId, parsed.data.recipientId));
-    const [giftRecord] = await tx.insert(currentEventGiftsTable).values({ roomId, senderId: viewerId, recipientId: parsed.data.recipientId, gift: parsed.data.gift, coins, gold, createdAt: Date.now() }).returning();
-    return { coinsRemaining: debited.coins, giftRecord };
-  });
+  let result: { coinsRemaining: number; giftRecord: typeof currentEventGiftsTable.$inferSelect; benefit: GiftBenefit } | null;
+  try {
+    result = await db.transaction(async (tx) => {
+      await ensureWalletWithLedger(tx, viewerId);
+      await ensureWalletWithLedger(tx, parsed.data.recipientId);
+      const [debited] = await tx.update(currentEventWalletsTable)
+        .set({ coins: sql`${currentEventWalletsTable.coins} - ${coins}`, updatedAt: Date.now() })
+        .where(and(eq(currentEventWalletsTable.userId, viewerId), gte(currentEventWalletsTable.coins, coins)))
+        .returning({ coins: currentEventWalletsTable.coins });
+      if (!debited) return null;
+      const [credited] = await tx.update(currentEventWalletsTable)
+        .set({ gold: sql`${currentEventWalletsTable.gold} + ${gold}`, updatedAt: Date.now() })
+        .where(eq(currentEventWalletsTable.userId, parsed.data.recipientId))
+        .returning({ gold: currentEventWalletsTable.gold });
+      if (!credited) throw new Error("Recipient wallet is unavailable.");
+      const now = Date.now();
+      const [giftRecord] = await tx.insert(currentEventGiftsTable).values({
+        roomId,
+        senderId: viewerId,
+        recipientId: parsed.data.recipientId,
+        gift: parsed.data.gift,
+        idempotencyKey,
+        coins,
+        gold,
+        createdAt: now,
+      }).returning();
+      let benefit: GiftBenefit;
+      if (parsed.data.gift === "studio") {
+        const accessDuration = 30 * 24 * 60 * 60 * 1000;
+        const [recipient] = await tx.update(usersTable)
+          .set({ cameraAccessUntil: sql`GREATEST(COALESCE(${usersTable.cameraAccessUntil}, ${now}), ${now}) + ${accessDuration}` })
+          .where(eq(usersTable.id, parsed.data.recipientId))
+          .returning({ cameraAccessUntil: usersTable.cameraAccessUntil });
+        if (!recipient?.cameraAccessUntil) throw new Error("Recipient camera entitlement is unavailable.");
+        benefit = { type: "camera_access", days: 30, grantedUntil: recipient.cameraAccessUntil };
+      } else {
+        const minutes = giftLiveMinutes[parsed.data.gift];
+        const [room] = await tx.update(currentEventRoomsTable)
+          .set({ liveUntil: sql`GREATEST(COALESCE(${currentEventRoomsTable.liveUntil}, ${now}), ${now}) + ${minutes * 60_000}` })
+          .where(eq(currentEventRoomsTable.id, roomId))
+          .returning({ liveUntil: currentEventRoomsTable.liveUntil });
+        if (!room?.liveUntil) throw new Error("Room live state is unavailable.");
+        benefit = { type: "live_time", minutes, liveUntil: room.liveUntil };
+      }
+      await tx.insert(virtualCurrencyLedgerTable).values([
+      {
+        idempotencyKey: `${idempotencyKey}:sender`,
+        userId: viewerId,
+        account: "coins",
+        delta: -coins,
+        balanceAfter: debited.coins,
+        entryType: "gift_spend",
+        referenceId: String(giftRecord.id),
+        relatedUserId: parsed.data.recipientId,
+        roomId,
+        createdAt: Date.now(),
+      },
+      {
+        idempotencyKey: `${idempotencyKey}:recipient`,
+        userId: parsed.data.recipientId,
+        account: "gold",
+        delta: gold,
+        balanceAfter: credited.gold,
+        entryType: "gift_earn",
+        referenceId: String(giftRecord.id),
+        relatedUserId: viewerId,
+        roomId,
+        createdAt: Date.now(),
+      },
+      ]);
+      return { coinsRemaining: debited.coins, giftRecord, benefit };
+    });
+  } catch (error) {
+    // A concurrent request may have won the unique idempotency key race.
+    if (!(error instanceof Error) || !("code" in error) || (error as { code?: string }).code !== "23505") throw error;
+    const [racedGift] = await db.select().from(currentEventGiftsTable)
+      .where(eq(currentEventGiftsTable.idempotencyKey, idempotencyKey)).limit(1);
+    if (!racedGift) throw error;
+    if (racedGift.roomId !== roomId || racedGift.recipientId !== parsed.data.recipientId || racedGift.gift !== parsed.data.gift) {
+      res.status(409).json({ error: "That gift request key was already used for another gift." });
+      return;
+    }
+    const [wallet] = await db.select({ coins: currentEventWalletsTable.coins }).from(currentEventWalletsTable)
+      .where(eq(currentEventWalletsTable.userId, viewerId)).limit(1);
+    res.json({ success: true, gift: racedGift.gift, coinsSpent: racedGift.coins, goldEarned: racedGift.gold, coinsRemaining: wallet?.coins ?? 0 });
+    return;
+  }
   if (result === null) {
     res.status(402).json({ error: "You need more coins to send this gift." });
     return;
@@ -619,14 +793,13 @@ router.post("/current-events/rooms/:roomId/gifts", async (req, res): Promise<voi
   emitToCurrentEventRoom(roomId, "current-event-gift", {
     id: result.giftRecord.id,
     roomId,
-    senderId: viewerId,
-    senderName: sender[0]?.name ?? "Old Time member",
-    recipientId: parsed.data.recipientId,
-    recipientName: recipientUser[0]?.name ?? "speaker",
+    sender: { id: viewerId, name: sender[0]?.name ?? "Old Time member" },
+    recipient: { id: parsed.data.recipientId, name: recipientUser[0]?.name ?? "speaker" },
     gift: parsed.data.gift,
     coins,
     gold,
     createdAt: result.giftRecord.createdAt,
+    benefit: result.benefit,
   });
   res.json({ success: true, gift: parsed.data.gift, coinsSpent: coins, goldEarned: gold, coinsRemaining: result.coinsRemaining });
 });
@@ -645,19 +818,30 @@ router.post("/current-events/wallet/sync-purchases", async (req, res): Promise<v
   try {
     const purchases = await getVerifiedCoinPurchases(viewerId);
     const creditedCoins = await db.transaction(async (tx) => {
-      await tx.insert(currentEventWalletsTable).values({ userId: viewerId, updatedAt: Date.now() }).onConflictDoNothing();
+      await ensureWalletWithLedger(tx, viewerId);
       let total = 0;
       for (const purchase of purchases) {
         const inserted = await tx.insert(currentEventCoinPurchasesTable)
           .values({ ...purchase, userId: viewerId, creditedAt: Date.now() })
           .onConflictDoNothing()
           .returning({ purchaseId: currentEventCoinPurchasesTable.purchaseId });
-        if (inserted.length) total += purchase.coins;
-      }
-      if (total > 0) {
-        await tx.update(currentEventWalletsTable)
-          .set({ coins: sql`${currentEventWalletsTable.coins} + ${total}`, updatedAt: Date.now() })
-          .where(eq(currentEventWalletsTable.userId, viewerId));
+        if (!inserted.length) continue;
+        const [credited] = await tx.update(currentEventWalletsTable)
+          .set({ coins: sql`${currentEventWalletsTable.coins} + ${purchase.coins}`, updatedAt: Date.now() })
+          .where(eq(currentEventWalletsTable.userId, viewerId))
+          .returning({ coins: currentEventWalletsTable.coins });
+        if (!credited) throw new Error("Wallet is unavailable.");
+        await tx.insert(virtualCurrencyLedgerTable).values({
+          idempotencyKey: `purchase:${purchase.purchaseId}`,
+          userId: viewerId,
+          account: "coins",
+          delta: purchase.coins,
+          balanceAfter: credited.coins,
+          entryType: "coin_purchase",
+          referenceId: purchase.purchaseId,
+          createdAt: Date.now(),
+        });
+        total += purchase.coins;
       }
       return total;
     });
@@ -769,15 +953,83 @@ router.get("/current-events/payouts/withdrawals", async (req, res): Promise<void
   }
 });
 
+router.post("/current-events/payouts/stripe/webhook", async (req, res): Promise<void> => {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  const signature = req.get("stripe-signature");
+  if (!secret) {
+    res.status(503).json({ error: "Stripe webhook reconciliation is not configured." });
+    return;
+  }
+  if (!signature || !Buffer.isBuffer(req.body)) {
+    res.status(400).json({ error: "A verified Stripe webhook payload is required." });
+    return;
+  }
+  try {
+    const stripe = await getUncachableStripeClient();
+    const event = stripe.webhooks.constructEvent(req.body, signature, secret);
+    if (event.type === "account.updated") {
+      const account = event.data.object as {
+        id: string;
+        details_submitted: boolean;
+        payouts_enabled: boolean;
+        requirements?: {
+          disabled_reason?: string | null;
+          currently_due?: string[] | null;
+          past_due?: string[] | null;
+          pending_verification?: string[] | null;
+        } | null;
+      };
+      await db.update(creatorPayoutAccountsTable).set({
+        detailsSubmitted: account.details_submitted,
+        payoutsEnabled: account.payouts_enabled,
+        status: accountStatus(account),
+        updatedAt: Date.now(),
+      }).where(eq(creatorPayoutAccountsTable.stripeAccountId, account.id));
+    } else if (event.type === "payout.paid" || event.type === "payout.failed" || event.type === "payout.canceled") {
+      const payout = event.data.object as { id: string; metadata?: { withdrawalId?: string } };
+      let [withdrawal] = await db.select().from(creatorWithdrawalsTable)
+        .where(eq(creatorWithdrawalsTable.stripePayoutId, payout.id)).limit(1);
+      if (!withdrawal && payout.metadata?.withdrawalId) {
+        const withdrawalId = Number(payout.metadata.withdrawalId);
+        if (Number.isInteger(withdrawalId) && withdrawalId > 0) {
+          withdrawal = (await db.select().from(creatorWithdrawalsTable)
+            .where(eq(creatorWithdrawalsTable.id, withdrawalId)).limit(1))[0];
+        }
+      }
+      if (withdrawal) await refreshWithdrawal(withdrawal);
+    }
+    res.json({ received: true });
+  } catch (error) {
+    req.log?.error?.({ err: error }, "Stripe webhook verification or reconciliation failed");
+    res.status(400).json({ error: "Stripe webhook verification failed." });
+  }
+});
+
 router.post("/current-events/payouts/withdrawals", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
   const parsed = withdrawalInput.safeParse(req.body);
   if (viewerId === null) return;
+  const idempotencyKey = requestIdempotencyKey(req, viewerId, "creator-withdrawal");
+  if (!idempotencyKey) {
+    res.status(400).json({ error: "A unique withdrawal request key is required. Please try again." });
+    return;
+  }
   if (!parsed.success || parsed.data.gold % GOLD_PER_USD !== 0) {
     res.status(400).json({ error: "Withdrawals must be whole US dollars and at least $10." });
     return;
   }
   try {
+    const [existingWithdrawal] = await db.select().from(creatorWithdrawalsTable)
+      .where(eq(creatorWithdrawalsTable.idempotencyKey, idempotencyKey)).limit(1);
+    if (existingWithdrawal) {
+      if (existingWithdrawal.userId !== viewerId || existingWithdrawal.gold !== parsed.data.gold) {
+        res.status(409).json({ error: "That withdrawal request key was already used for another withdrawal." });
+        return;
+      }
+      const refreshed = await refreshWithdrawal(existingWithdrawal);
+      res.status(200).json(serializeWithdrawal(refreshed));
+      return;
+    }
     const account = await refreshPayoutAccount(viewerId);
     if (!account?.detailsSubmitted || !account.payoutsEnabled) {
       res.status(400).json({ error: "Finish payout setup before requesting a withdrawal." });
@@ -785,16 +1037,29 @@ router.post("/current-events/payouts/withdrawals", async (req, res): Promise<voi
     }
     const now = Date.now();
     const withdrawal = await db.transaction(async (tx) => {
-      await tx.insert(currentEventWalletsTable).values({ userId: viewerId, updatedAt: now }).onConflictDoNothing();
+      await ensureWalletWithLedger(tx, viewerId, now);
       const [wallet] = await tx.update(currentEventWalletsTable)
         .set({ gold: sql`${currentEventWalletsTable.gold} - ${parsed.data.gold}`, updatedAt: now })
         .where(and(eq(currentEventWalletsTable.userId, viewerId), gte(currentEventWalletsTable.gold, parsed.data.gold)))
         .returning({ gold: currentEventWalletsTable.gold });
       if (!wallet) return null;
       const [created] = await tx.insert(creatorWithdrawalsTable).values({
-        userId: viewerId, gold: parsed.data.gold, amountCents: (parsed.data.gold / GOLD_PER_USD) * 100,
+        userId: viewerId,
+        idempotencyKey,
+        gold: parsed.data.gold,
+        amountCents: centsForGold(parsed.data.gold),
         currency: "usd", status: "processing", createdAt: now, updatedAt: now,
       }).returning();
+      await tx.insert(virtualCurrencyLedgerTable).values({
+        idempotencyKey: `withdrawal:${created.id}:hold`,
+        userId: viewerId,
+        account: "gold",
+        delta: -parsed.data.gold,
+        balanceAfter: wallet.gold,
+        entryType: "withdrawal_hold",
+        referenceId: String(created.id),
+        createdAt: now,
+      });
       return created;
     });
     if (!withdrawal) {
@@ -816,6 +1081,21 @@ router.post("/current-events/payouts/withdrawals", async (req, res): Promise<voi
         { stripeAccount: account.stripeAccountId, idempotencyKey: `oldtime-withdrawal-payout-${withdrawal.id}` });
       const [updated] = await db.update(creatorWithdrawalsTable).set({ stripePayoutId: payout.id, status: payout.status === "paid" ? "paid" : "processing", updatedAt: Date.now() })
         .where(eq(creatorWithdrawalsTable.id, withdrawal.id)).returning();
+      if (updated) {
+        const [wallet] = await db.select({ gold: currentEventWalletsTable.gold })
+          .from(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, updated.userId)).limit(1);
+        if (!wallet) throw new Error("Wallet is unavailable while recording payout submission.");
+        await db.insert(virtualCurrencyLedgerTable).values({
+          idempotencyKey: `payout:${updated.id}:${payout.status === "paid" ? "paid" : "submitted"}`,
+          userId: updated.userId,
+          account: "gold",
+          delta: 0,
+          balanceAfter: wallet.gold,
+          entryType: payout.status === "paid" ? "payout_paid" : "payout_submitted",
+          referenceId: String(updated.id),
+          createdAt: Date.now(),
+        }).onConflictDoNothing();
+      }
       res.status(201).json(serializeWithdrawal(updated));
     } catch (error) {
       try {

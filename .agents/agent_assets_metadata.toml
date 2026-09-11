@@ -1,0 +1,156 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "owLVpU4o989xy2_OCqFg3"
+uri = "file://artifacts/old-time-map-source-current.tar.gz"
+type = "unspecified"
+title = "Old Time Map source bundle"
+description = "Exact current Map implementation: mobile Map screen, native and browser renderers, Map API client, Story/discovery API dependencies, backend routes, database schema, and mobile dependency versions."
+logical_id = "72b13ae7-8299-44bd-a509-9becc501f063"
+content_hash = "sha256:cbad288ac6c2b06b8c6f4bbe73e5e1895a7033e2b2c2eba191c37e4cfca44a99"
+size = 31328
+mtime_ms = 1788720118176
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/72b13ae7-8299-44bd-a509-9becc501f063/86b581b5-3024-4211-bcf1-6ff424dc827a"
+storage_version_token = "1788720123102541"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "AFtIx1mB40A1cu6nWjYQv"
+uri = "file://artifacts/old-time-pace-source-current.tar.gz"
+type = "unspecified"
+title = "Old Time Pace source bundle"
+description = "Exact current Pace implementation: activity-specific recording, GPS/background tracking, Strength logging, feed and audience behavior, gifts, comments, API routes, schema, migrations, native permissions, and dependency/build configuration."
+logical_id = "f89f41ef-0d57-4344-98dd-3e183791e46c"
+content_hash = "sha256:95ffd7cf8085e8e44ec20c8d24f6284014eff00d39b0d44b2a0755d26835baac"
+size = 32905
+mtime_ms = 1788722495857
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/f89f41ef-0d57-4344-98dd-3e183791e46c/838c7a8a-9b5a-412d-9952-914f67cad3bf"
+storage_version_token = "1788722500810416"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "H3cbeJRtDmv0sX3Ln-Qkg"
+uri = "file://artifacts/old-time-access-source-current.tar.gz"
+type = "unspecified"
+title = "Old Time Access source snapshot"
+description = "Complete current Access live-audio-room implementation: mobile screens, Map entry point, LiveKit audio, realtime events, gifts, wallet, payouts, database schema, migrations, generated API contracts, gift media, and a plain-language rules README."
+logical_id = "40826acd-60eb-46d4-be71-cce66c81fcc4"
+content_hash = "sha256:3a81063ee7f0c5f028ef476fef33be8f0ae79602f320df5563de3b97299a1ceb"
+size = 3247022
+mtime_ms = 1788752972224
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/40826acd-60eb-46d4-be71-cce66c81fcc4/6fd7abf4-85d1-4cb6-86b4-6ff41414b605"
+storage_version_token = "1788752977921478"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "Q6hxIf3wQ_-O5ZwIWgbmB"
+uri = "file://artifacts/old-time-gifting-finance-source-current.tar.gz"
+type = "unspecified"
+title = "Old Time gifting and finance source snapshot"
+description = "Complete current gifting and financial system: Access and Pace gifts, Coins, Gold, RevenueCat verification, wallet ledger, Stripe payout onboarding, withdrawals, database schema and migrations, generated API contracts, mobile screens, server routes, rules README, and coin/gift media."
+logical_id = "0ad34ee3-75db-4644-afda-370bff1e3799"
+content_hash = "sha256:1900d2f06182680c1a6fbed8d6330f1ee4b29039eeb9dccd8ed55f72dd162564"
+size = 5984921
+mtime_ms = 1788754132464
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/0ad34ee3-75db-4644-afda-370bff1e3799/4e5df151-8d79-40ef-89f2-daaf084ece37"
+storage_version_token = "1788754141271601"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "SlV8BRrumLRe70t4Bt1b7"
+uri = "file://artifacts/old-time-settings-source-current.tar.gz"
+type = "unspecified"
+title = "Old Time complete Settings source snapshot"
+description = "Complete Settings page and wiring: mobile Settings UI, local AppState persistence, profile and phone APIs, privacy controls, push registration, account deletion, cache/data clearing, appearance/language/chat preferences, Wallet, Payment Settings, generated API contracts, server routes, and database schemas."
+logical_id = "64a54115-bc4a-43a6-8655-5f109c0037c9"
+content_hash = "sha256:631cab8cca7c5e847fae2f169e113c6e4f8efd027ce2cd45f9fc0bcbcbcb4fbe"
+size = 113535
+mtime_ms = 1788763895224
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/64a54115-bc4a-43a6-8655-5f109c0037c9/2db58a05-0393-43e4-8cd4-8ff9948d80e7"
+storage_version_token = "1788763901945499"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "qHiGsIUQzck_Ta489FVBt"
+uri = "file://artifacts/old-time-mobile/assets/gifts/coffee.png"
+type = "image"
+title = "Coffee"
+description = "Coffee gift — adds 1 minute to the LIVE room."
+logical_id = "08e3cb5a-6f74-405e-bdd2-ff869a8d0670"
+content_hash = "sha256:696a06873d393b7556596800560cce485f6b099a0acf89fd160305d3a408e4e4"
+size = 284310
+mtime_ms = 1789069214415
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/08e3cb5a-6f74-405e-bdd2-ff869a8d0670/5547c7c6-a9c7-4cb9-b962-48efbf98fcfb"
+storage_version_token = "1789091450392262"
+content_type = "image/png"
+
+[[outputs]]
+id = "zGJq6WEoSFNlK4m5mKJcs"
+uri = "file://artifacts/old-time-mobile/assets/gifts/idea.png"
+type = "image"
+title = "Idea"
+description = "Idea gift — adds 5 minutes to the LIVE room."
+logical_id = "1e2e4a5e-2978-4fb8-9d5d-73d90028d337"
+content_hash = "sha256:7f21157505644d63ec2c9115005fed4dc033d8f96482b82fedb958127d0e9eab"
+size = 308033
+mtime_ms = 1789069214623
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/1e2e4a5e-2978-4fb8-9d5d-73d90028d337/8a171550-015c-4582-a127-7832fe18bc4a"
+storage_version_token = "1789091451076314"
+content_type = "image/png"
+
+[[outputs]]
+id = "wpr3u4pp0jfoWgx2R9wSv"
+uri = "file://artifacts/old-time-mobile/assets/gifts/heart.png"
+type = "image"
+title = "Heart"
+description = "Heart gift — adds 15 minutes to the LIVE room."
+logical_id = "d13a86a1-ade3-4b6e-ac1e-2552366ee99e"
+content_hash = "sha256:01d45e57e0f63f12cd2f11fc4a726b353777707a5c98d926f94d7182738ca107"
+size = 266860
+mtime_ms = 1789069214770
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/d13a86a1-ade3-4b6e-ac1e-2552366ee99e/9ab97570-3181-449b-9066-e5139215b3db"
+storage_version_token = "1789091451658850"
+content_type = "image/png"
+
+[[outputs]]
+id = "pEBCpphaePElp3XQazIgl"
+uri = "file://artifacts/old-time-mobile/assets/gifts/gem.png"
+type = "image"
+title = "Gem"
+description = "Gem gift — adds 30 minutes to the LIVE room."
+logical_id = "f01c57f0-93d4-46f3-8453-681adba15b59"
+content_hash = "sha256:b03c5bb1bddac407d464888602d2e0dd3e075da15942628429b755d13c1bc86f"
+size = 462901
+mtime_ms = 1789069214871
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/f01c57f0-93d4-46f3-8453-681adba15b59/5771abc4-bba3-4a8d-9779-1b259489c64a"
+storage_version_token = "1789091452427063"
+content_type = "image/png"
+
+[[outputs]]
+id = "vUwhZyAZImEASAgPimZEg"
+uri = "file://artifacts/old-time-mobile/assets/gifts/studio.png"
+type = "image"
+title = "Studio"
+description = "The microphone gift — grants 30 days of camera access."
+logical_id = "c19275bd-a52a-4162-ae4d-4e1be5347815"
+content_hash = "sha256:cc149ad46cff61d945ca66add7f688a3c6fded63a9565681bc9c4c2344a1462a"
+size = 308878
+mtime_ms = 1789069214998
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/c19275bd-a52a-4162-ae4d-4e1be5347815/3e7c4728-2874-49cc-8a73-24b3cbe0a957"
+storage_version_token = "1789091453092631"
+content_type = "image/png"
+
+[[outputs]]
+id = "2v4Amgk8ci0Pw0HVRLqG8"
+uri = "file://artifacts/old-time-mobile/assets/gifts/time-is-up.mp4"
+type = "video"
+title = "Time is up"
+description = "The complete original gift animation with sound — adds 60 minutes to the LIVE room."
+logical_id = "7a05467a-a221-41b7-bfc0-0e9076c2de2b"
+content_hash = "sha256:c22d7af540e9cdff2effef2ce07c2e8dff2621e1e1b5b593dc8a0641b2b462c9"
+size = 999782
+mtime_ms = 1788598341792
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:2a69bdf7-0ed2-4faf-9dc9-7a79eea744c7/7a05467a-a221-41b7-bfc0-0e9076c2de2b/1af30554-fca9-4a5e-810e-f1c8d64e621a"
+storage_version_token = "1789091453801260"
+content_type = "video/mp4"

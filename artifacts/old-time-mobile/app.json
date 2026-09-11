@@ -3,21 +3,21 @@
     "name": "Old Time",
     "slug": "oldtimeuniversal",
     "owner": "oldtimes-team",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Old Time is a private messenger for chats, updates, calls, and shared moments.",
     "orientation": "portrait",
-    "icon": "./assets/images/old-time-icon.png",
+    "icon": "./assets/images/old-time-feather-logo.png",
     "scheme": "old-time-mobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/old-time-native-splash.png",
       "resizeMode": "cover",
-      "backgroundColor": "#6F20B4"
+      "backgroundColor": "#D71920"
     },
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "77",
+      "buildNumber": "79",
       "bundleIdentifier": "com.oldtime.messenger",
       "appleTeamId": "FC6ZRKNS2N",
       "usesAppleSignIn": true,
@@ -56,12 +56,12 @@
         "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/old-time-icon.png",
-        "backgroundColor": "#F2F2F7"
+        "foregroundImage": "./assets/images/old-time-feather-logo.png",
+        "backgroundColor": "#D71920"
       }
     },
     "web": {
-      "favicon": "./assets/images/old-time-icon.png"
+      "favicon": "./assets/images/old-time-feather-logo.png"
     },
     "plugins": [
       "expo-router",
@@ -94,19 +94,25 @@
           "locationAlwaysAndWhenInUsePermission": "Allow Old Time to record your Pace route when the screen is locked, only while you are actively tracking."
         }
       ],
-       "expo-notifications",
-        [
-          "@livekit/react-native-expo-plugin",
-          {
-            "android": {
-              "audioType": "communication",
-              "enableScreenShareService": true
-            }
+      "expo-notifications",
+      [
+        "@livekit/react-native-expo-plugin",
+        {
+          "android": {
+            "audioType": "communication",
+            "enableScreenShareService": true
           }
-        ],
-       "@config-plugins/react-native-webrtc",
-       "@bacons/apple-targets",
+        }
+      ],
+      "@config-plugins/react-native-webrtc",
+      "@bacons/apple-targets",
       "expo-video",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.oldtime.messenger"
+        }
+      ],
       [
         "react-native-google-mobile-ads",
         {

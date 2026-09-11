@@ -6,6 +6,7 @@ import { and, eq, gt, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   chatParticipantsTable,
+  businessVerificationsTable,
   db,
   messagesTable,
   socialBlocksTable,
@@ -259,7 +260,19 @@ router.get("/storage/objects/*objectPath", async (req, res): Promise<void> => {
       break;
     }
   }
-  if (!chatAuthorized && !storyAuthorized && !postAuthorized) {
+  const verificationRecords = await db.select({
+    userId: businessVerificationsTable.userId,
+    documentObjectPaths: businessVerificationsTable.documentObjectPaths,
+  }).from(businessVerificationsTable);
+  const verificationAuthorized = verificationRecords.some((record) =>
+    record.documentObjectPaths.includes(objectPath)
+    && (record.userId === userId
+      || (process.env.OLD_TIME_SYSTEM_ADMIN_IDS ?? "")
+        .split(",")
+        .map((value) => Number(value.trim()))
+        .includes(userId)),
+  );
+  if (!chatAuthorized && !storyAuthorized && !postAuthorized && !verificationAuthorized) {
     res.status(403).json({ error: "You cannot access this attachment." });
     return;
   }

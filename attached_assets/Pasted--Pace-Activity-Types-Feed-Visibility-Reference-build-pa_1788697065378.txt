@@ -1,0 +1,40 @@
+# Pace — Activity Types & Feed Visibility
+
+Reference build: `pace-prototype.jsx`. This is UI + fake local state only — no backend calls. Hand this to your dev as the target behavior, not literal code to paste in (unless your stack is already React + Tailwind + lucide-react, in which case most of it drops in directly).
+
+## 1. The bug and the fix
+
+The old app was likely using one shared "stats card" component for every activity type, so it always rendered `distance / time / pace` regardless of what the activity was. That's why Swim showed km and Dance showed a distance at all.
+
+Fix: **stats are derived per activity type, not shared.** See `ACTIVITY_TYPES` and `getStats()` in the prototype. Each type declares:
+
+```js
+run:  { group: "distance" }   // km, time, pace /km
+ride: { group: "speed" }      // km, time, speed km/h
+swim: { group: "swim" }       // meters, time, pace /100m
+dance:{ group: "studio" }     // time, calories — no distance/pace fields exist
+```
+
+`getStats(typeId, session)` returns only the fields valid for that group. Nothing downstream (post cards, feed, recap screen) needs to know activity-specific logic — they just render whatever `getStats` gives them.
+
+**For your dev:** if the real app pulls activity type from a database, make sure `group` (or equivalent) is a column/enum on the activity type table, not inferred in the UI layer. The UI should never decide which stats to show — the activity type record should.
+
+## 2. Gym / Strength logging
+
+Strength gets an exercise list instead of GPS distance: name, sets, reps, weight. Stored as `session.exerciseLog`. This should be its own table server-side (`exercise_id`, `activity_id`, `name`, `sets`, `reps`, `weight`) rather than jammed into the same schema as GPS-based activities.
+
+## 3. Feed visibility model
+
+Every post gets an `audience` field: `"community"` (default) or `"public"`.
+
+- **Community feed**: query = all posts, regardless of audience. This is the "public but not pushed" layer.
+- **For You feed**: query = posts where `audience = "public"` only, then apply whatever ranking/following logic already exists.
+- Users can also set an account-level default (`defaultPublic` in the prototype) that pre-selects the toggle on new posts — but it's still overridable per post.
+
+**Backend implication:** this is a straightforward filter, not a new feed architecture. If For You is already backed by a ranking/follow-graph service, just add `WHERE audience = 'public'` (or equivalent) before that logic runs. Community is the unfiltered table scan / chronological feed.
+
+## 4. What's faked for the demo
+
+- Recording runs on a 200ms interval instead of real GPS/HealthKit — swap for your real sensor pipeline.
+- Posts array is in-memory React state — needs real persistence (Postgres/Supabase table: `posts(id, user_id, activity_type, stats_json, caption, audience, created_at)`).
+- No auth/user context — `"You"` is hardcoded.
