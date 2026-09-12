@@ -23,7 +23,6 @@ export type {
   Attachment,
   AttachmentType,
   AuthenticatedUser,
-  BirthdayRequiredResponse,
   MessageActionInput,
   UploadUrlRequest,
   UploadUrlResponse,

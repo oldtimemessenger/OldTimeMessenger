@@ -23,14 +23,12 @@ import type {
   ActionResult,
   ActiveActionResult,
   AuthenticatedUser,
-  BirthdayRequiredResponse,
   BlockActionResult,
   Call,
   CallList,
   Chat,
   ChatInput,
   CleanupResult,
-  CompleteBirthdayBody,
   ContactDiscoveryResponse,
   CreatorPayoutSettings,
   CreatorPayoutSettingsLink,
@@ -230,6 +228,8 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
 export const getReadinessCheckUrl = () => {
 
 
@@ -392,7 +392,7 @@ export const getFirebaseSignInUrl = () => {
 /**
  * @summary Exchange a verified Firebase identity for an Old Time session
  */
-export const firebaseSignIn = async (firebaseSignInBody: FirebaseSignInBody, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser | BirthdayRequiredResponse> => {
+export const firebaseSignIn = async (firebaseSignInBody: FirebaseSignInBody, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -400,7 +400,7 @@ export const firebaseSignIn = async (firebaseSignInBody: FirebaseSignInBody, opt
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-return customFetch<AuthenticatedUser | BirthdayRequiredResponse>(getFirebaseSignInUrl(),
+return customFetch<AuthenticatedUser>(getFirebaseSignInUrl(),
   {
     ...options,
     method: 'POST',
@@ -472,7 +472,7 @@ export const getVerifyOtpUrl = () => {
 /**
  * @summary Verify a phone code and create a session
  */
-export const verifyOtp = async (otpVerification: OtpVerification, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser | BirthdayRequiredResponse> => {
+export const verifyOtp = async (otpVerification: OtpVerification, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -480,7 +480,7 @@ export const verifyOtp = async (otpVerification: OtpVerification, options?: Para
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-return customFetch<AuthenticatedUser | BirthdayRequiredResponse>(getVerifyOtpUrl(),
+return customFetch<AuthenticatedUser>(getVerifyOtpUrl(),
   {
     ...options,
     method: 'POST',
@@ -539,86 +539,6 @@ export const useVerifyOtp = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getVerifyOtpMutationOptions(options));
-    }
-
-export const getCompleteBirthdayUrl = () => {
-
-
-
-
-  return `/api/auth/complete-birthday`
-}
-
-/**
- * @summary Complete age verification after phone verification
- */
-export const completeBirthday = async (completeBirthdayBody: CompleteBirthdayBody, options?: Parameters<typeof customFetch>[1]): Promise<AuthenticatedUser> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-return customFetch<AuthenticatedUser>(getCompleteBirthdayUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(completeBirthdayBody)
-  }
-);}
-
-
-
-
-
-export const getCompleteBirthdayMutationKey = () => ['completeBirthday'] as const;
-
-export const getCompleteBirthdayMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeBirthday>>, TError,CompleteBirthdayMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof completeBirthday>>, TError,CompleteBirthdayMutationVariables, TContext> => {
-
-const mutationKey = getCompleteBirthdayMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeBirthday>>, CompleteBirthdayMutationVariables> = (props) => {
-          const {data} = props ?? {};
-
-          return  completeBirthday(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CompleteBirthdayMutationResult = NonNullable<Awaited<ReturnType<typeof completeBirthday>>>
-    export type CompleteBirthdayMutationBody = BodyType<CompleteBirthdayBody>
-    export type CompleteBirthdayMutationError = ErrorType<ErrorResponse>
-    export type CompleteBirthdayMutationVariables = {data: BodyType<CompleteBirthdayBody>}
-
-    /**
- * @summary Complete age verification after phone verification
- */
-export const useCompleteBirthday = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeBirthday>>, TError,CompleteBirthdayMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof completeBirthday>>,
-        TError,
-        CompleteBirthdayMutationVariables,
-        TContext
-      > => {
-      return useMutation(getCompleteBirthdayMutationOptions(options));
     }
 
 export const getLogoutUrl = () => {
@@ -1012,6 +932,12 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
 
 export const getDiscoverContactsUrl = () => {
 
@@ -1407,6 +1333,12 @@ export function useGetInbox<TData = Awaited<ReturnType<typeof getInbox>>, TError
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+
+
+
+
+
+
 export const getUpdateAdminUserVerificationUrl = (userId: number,) => {
 
 
@@ -1563,6 +1495,13 @@ export function useGetDirectChat<TData = Awaited<ReturnType<typeof getDirectChat
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getCreateChatUrl = () => {
 
 
@@ -9361,13 +9300,13 @@ export type GetStorageObjectQueryError = ErrorType<ErrorResponse>
  */
 
 export function useGetStorageObject<TData = Awaited<ReturnType<typeof getStorageObject>>, TError = ErrorType<ErrorResponse>>(
-  objectPath: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStorageObject>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ objectPath: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStorageObject>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
-  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-   const queryOptions = getGetStorageObjectQueryOptions(objectPath,options)
+  const queryOptions = getGetStorageObjectQueryOptions(objectPath,options)
 
-   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
-   return withQueryKey(query, queryOptions.queryKey);
+  return withQueryKey(query, queryOptions.queryKey);
 }

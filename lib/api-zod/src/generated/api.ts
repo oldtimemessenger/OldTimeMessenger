@@ -56,7 +56,7 @@ export const FirebaseSignInBody = zod.object({
   "idToken": zod.string().min(firebaseSignInBodyIdTokenMin)
 })
 
-export const FirebaseSignInResponse = zod.union([zod.object({
+export const FirebaseSignInResponse = zod.object({
   "id": zod.number(),
   "phone": zod.string(),
   "hasRegisteredPhone": zod.boolean(),
@@ -74,10 +74,7 @@ export const FirebaseSignInResponse = zod.union([zod.object({
   "lastSeenVisible": zod.boolean()
 }).and(zod.object({
   "authToken": zod.string()
-})),zod.object({
-  "requiresBirthday": zod.boolean(),
-  "challengeId": zod.string()
-})])
+}))
 
 
 /**
@@ -98,42 +95,7 @@ export const VerifyOtpBody = zod.object({
   "challengeId": zod.string().min(1)
 })
 
-export const VerifyOtpResponse = zod.union([zod.object({
-  "id": zod.number(),
-  "phone": zod.string(),
-  "hasRegisteredPhone": zod.boolean(),
-  "phoneVerified": zod.boolean(),
-  "phoneDiscoveryPermission": zod.enum(['contacts', 'everyone', 'nobody']),
-  "name": zod.string(),
-  "username": zod.string(),
-  "bio": zod.string(),
-  "verificationBadge": zod.boolean().describe('True only after a server-confirmed verification payment or explicit system-admin approval.'),
-  "avatarObjectPath": zod.string().nullable(),
-  "birthday": zod.coerce.date().nullable().describe('Private date of birth; null for other users'),
-  "contactPermission": zod.enum(['everyone', 'followers', 'nobody']),
-  "online": zod.boolean(),
-  "lastSeen": zod.number(),
-  "lastSeenVisible": zod.boolean()
-}).and(zod.object({
-  "authToken": zod.string()
-})),zod.object({
-  "requiresBirthday": zod.boolean(),
-  "challengeId": zod.string()
-})])
-
-
-/**
- * @summary Complete age verification after phone verification
- */
-
-
-
-export const CompleteBirthdayBody = zod.object({
-  "challengeId": zod.string().min(1),
-  "birthday": zod.coerce.date()
-})
-
-export const CompleteBirthdayResponse = zod.object({
+export const VerifyOtpResponse = zod.object({
   "id": zod.number(),
   "phone": zod.string(),
   "hasRegisteredPhone": zod.boolean(),
@@ -3229,7 +3191,8 @@ export const GetCurrentEventLiveKitTokenResponse = zod.object({
   "token": zod.string(),
   "url": zod.string(),
   "roomName": zod.string(),
-  "canPublish": zod.boolean()
+  "canPublish": zod.boolean(),
+  "canPublishCamera": zod.boolean()
 })
 
 

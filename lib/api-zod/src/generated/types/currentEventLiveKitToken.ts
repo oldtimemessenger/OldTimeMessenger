@@ -11,4 +11,5 @@ export interface CurrentEventLiveKitToken {
   url: string;
   roomName: string;
   canPublish: boolean;
+  canPublishCamera: boolean;
 }

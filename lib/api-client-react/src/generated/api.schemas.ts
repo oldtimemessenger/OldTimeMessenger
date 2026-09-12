@@ -42,17 +42,6 @@ export interface OtpResponse {
   expiresAt: number;
 }
 
-export interface BirthdayRequiredResponse {
-  requiresBirthday: boolean;
-  challengeId: string;
-}
-
-export interface CompleteBirthdayBody {
-  /** @minLength 1 */
-  challengeId: string;
-  birthday: string;
-}
-
 export interface LogoutResponse {
   success: boolean;
 }
@@ -1027,6 +1016,7 @@ export interface CurrentEventLiveKitToken {
   url: string;
   roomName: string;
   canPublish: boolean;
+  canPublishCamera: boolean;
 }
 
 export interface CurrentEventRoomInput {

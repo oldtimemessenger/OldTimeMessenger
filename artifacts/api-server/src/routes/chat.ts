@@ -8,8 +8,6 @@ import {
   CreateMessageBody,
   CreateMessageParams,
   CreateMessageResponse,
-  CompleteBirthdayBody,
-  CompleteBirthdayResponse,
   FirebaseSignInBody,
   FirebaseSignInResponse,
   GetDirectChatParams,
@@ -80,7 +78,7 @@ import {
   fileForObjectPath,
   MAX_UPLOAD_BYTES,
 } from "../lib/chat-storage";
-import { isValidBirthday, meetsMinimumAge } from "../lib/age-gate";
+import { isValidBirthday } from "../lib/age-gate";
 import { verifyFirebaseIdToken } from "../lib/firebase-auth";
 import { syncFirebaseProfile } from "../lib/supabase-profiles";
 
@@ -572,25 +570,6 @@ router.post("/auth/firebase", async (req, res): Promise<void> => {
       user = updated;
     }
 
-    if (!user.birthday) {
-      const challengeId = randomUUID();
-      await db.insert(authChallengesTable).values({
-        id: challengeId,
-        phone: `firebase:${identity.uid}`,
-        codeHash: null,
-        requestIpHash: privacyHash(req.ip || req.socket.remoteAddress || "unknown"),
-        status: "birthday_pending",
-        createdAt: timestamp,
-        expiresAt: timestamp + 30 * 60 * 1000,
-      });
-      res.json(FirebaseSignInResponse.parse({ requiresBirthday: true, challengeId }));
-      return;
-    }
-    if (!meetsMinimumAge(user.birthday)) {
-      res.status(403).json({ error: "Old Time is for people age 13 and older." });
-      return;
-    }
-
     const [activeUser] = await db
       .update(usersTable)
       .set({ online: true, lastSeen: timestamp })
@@ -688,32 +667,6 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
   }
   const timestamp = verificationTime;
   let [user] = await db.select().from(usersTable).where(eq(usersTable.phone, phone));
-  if (user?.birthday && !meetsMinimumAge(user.birthday)) {
-    await db
-      .update(authChallengesTable)
-      .set({ status: "age_rejected" })
-      .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "verifying")));
-    res.status(403).json({ error: "Old Time is for people age 13 and older." });
-    return;
-  }
-  if (!user?.birthday) {
-    const [pending] = await db
-      .update(authChallengesTable)
-      .set({ status: "birthday_pending" })
-      .where(
-        and(
-          eq(authChallengesTable.id, challenge.id),
-          eq(authChallengesTable.status, "verifying"),
-        ),
-      )
-      .returning({ id: authChallengesTable.id });
-    if (!pending) {
-      res.status(409).json({ error: "This verification code was already used." });
-      return;
-    }
-    res.json({ requiresBirthday: true, challengeId: challenge.id });
-    return;
-  }
   const [consumed] = await db
     .update(authChallengesTable)
     .set({ status: "consumed" })
@@ -748,114 +701,6 @@ router.post("/auth/verify-otp", async (req, res): Promise<void> => {
 
   const authToken = await createAuthToken(user.id);
   res.json(VerifyOtpResponse.parse({ ...parseUser(user), authToken }));
-});
-
-router.post("/auth/complete-birthday", async (req, res): Promise<void> => {
-  const parsed = CompleteBirthdayBody.safeParse(req.body);
-  const birthday = parsed.success ? parsed.data.birthday.toISOString().slice(0, 10) : "";
-  if (!parsed.success || !isValidBirthday(birthday)) {
-    res.status(400).json({ error: "Enter a real birthday in YYYY-MM-DD format." });
-    return;
-  }
-  const [challenge] = await db
-    .select()
-    .from(authChallengesTable)
-    .where(
-      and(
-        eq(authChallengesTable.id, parsed.data.challengeId),
-        eq(authChallengesTable.status, "birthday_pending"),
-        gt(authChallengesTable.expiresAt, now()),
-      ),
-    )
-    .limit(1);
-  if (!challenge) {
-    res.status(400).json({ error: "This age-verification step has expired. Start sign-in again." });
-    return;
-  }
-  if (!meetsMinimumAge(birthday)) {
-    await db
-      .update(authChallengesTable)
-      .set({ status: "age_rejected" })
-      .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "birthday_pending")));
-    res.status(403).json({ error: "Old Time is for people age 13 and older." });
-    return;
-  }
-  const [claimed] = await db
-    .update(authChallengesTable)
-    .set({ status: "verifying" })
-    .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "birthday_pending")))
-    .returning({ id: authChallengesTable.id });
-  if (!claimed) {
-    res.status(409).json({ error: "Age verification is already in progress. Try again." });
-    return;
-  }
-
-  const timestamp = now();
-  const firebaseUid = challenge.phone.startsWith("firebase:")
-    ? challenge.phone.slice("firebase:".length)
-    : null;
-  let [user] = await db
-    .select()
-    .from(usersTable)
-    .where(
-      firebaseUid
-        ? eq(usersTable.firebaseUid, firebaseUid)
-        : eq(usersTable.phone, challenge.phone),
-    );
-  if (!user && firebaseUid) {
-    await db
-      .update(authChallengesTable)
-      .set({ status: "consumed" })
-      .where(
-        and(
-          eq(authChallengesTable.id, challenge.id),
-          eq(authChallengesTable.status, "verifying"),
-        ),
-      );
-    res.status(400).json({
-      error: "This age-verification step is no longer valid. Start sign-in again.",
-    });
-    return;
-  }
-  if (!user) {
-    const [created] = await db
-      .insert(usersTable)
-      .values({
-        phone: challenge.phone,
-          phoneDiscoveryHash: contactDiscoveryHash(challenge.phone),
-          phoneVerified: true,
-        birthday,
-        name: `User ${challenge.phone.slice(-4)}`,
-        username: defaultUsernameForPhone(challenge.phone),
-        online: true,
-        lastSeen: timestamp,
-      })
-      .returning();
-    user = created;
-  } else {
-    const [updated] = await db
-      .update(usersTable)
-      .set({
-        birthday,
-        online: true,
-        lastSeen: timestamp,
-        ...(firebaseUid
-          ? {}
-          : {
-              phoneVerified: true,
-              phoneDiscoveryHash: contactDiscoveryHash(challenge.phone),
-            }),
-      })
-      .where(eq(usersTable.id, user.id))
-      .returning();
-    user = updated;
-  }
-  await db
-    .update(authChallengesTable)
-    .set({ status: "consumed" })
-    .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "verifying")));
-  const authToken = await createAuthToken(user.id);
-  res.json(CompleteBirthdayResponse.parse({ ...parseUser(user), authToken }));
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {
@@ -948,7 +793,15 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : undefined;
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
   const bio = typeof body.bio === "string" ? body.bio.trim() : undefined;
-  const birthday = typeof body.birthday === "string" ? body.birthday : undefined;
+  const birthdayInput = typeof body.birthday === "string" ? body.birthday : undefined;
+  const birthday = birthdayInput
+    ? /^\d{4}-\d{2}-\d{2}$/.test(birthdayInput)
+      ? birthdayInput
+      : (() => {
+          const parsed = new Date(birthdayInput);
+          return Number.isNaN(parsed.getTime()) ? birthdayInput : parsed.toISOString().slice(0, 10);
+        })()
+    : undefined;
   const contactPermission = body.contactPermission;
   const phoneNumber = body.phoneNumber;
   const phoneDiscoveryPermission = body.phoneDiscoveryPermission;
