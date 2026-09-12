@@ -1,4 +1,4 @@
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
 
 const TOKEN_TTL_SECONDS = 10 * 60;
 
@@ -32,6 +32,7 @@ export async function createLiveKitToken(input: {
   room: string;
   userId: number;
   canPublish: boolean;
+  canPublishCamera?: boolean;
 }): Promise<string> {
   const error = liveKitConfigError();
   if (error) throw new Error(error);
@@ -41,10 +42,16 @@ export async function createLiveKitToken(input: {
     identity: `user_${input.userId}`,
     ttl: TOKEN_TTL_SECONDS,
   });
+  const canPublishSources = input.canPublish && input.canPublishCamera !== undefined
+    ? input.canPublishCamera
+      ? [TrackSource.MICROPHONE, TrackSource.CAMERA]
+      : [TrackSource.MICROPHONE]
+    : undefined;
   token.addGrant({
     roomJoin: true,
     room: input.room,
     canPublish: input.canPublish,
+    canPublishSources,
     canSubscribe: true,
   });
   return token.toJwt();

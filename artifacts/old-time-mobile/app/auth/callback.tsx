@@ -34,7 +34,9 @@ export default function AuthCallbackScreen() {
     let active = true;
       void completeAuthCallback(url)
       .then((flow) => {
-        if (active) router.replace(flow === 'recovery' ? '/(auth)/reset-password' as never : '/' as never);
+        if (active) {
+          router.replace(flow === 'recovery' ? '/(auth)/sign-in' as never : '/' as never);
+        }
       })
       .catch((reason) => {
         if (active) setError(getSafeAuthError(reason, 'Could not finish signing in. Please try again.'));

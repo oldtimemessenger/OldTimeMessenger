@@ -14,7 +14,7 @@ import {
   db,
   usersTable,
 } from "@workspace/db";
-import { requireChatAuth } from "../lib/chat-auth";
+import { requireChatAuth, requireVerifiedEmail } from "../lib/chat-auth";
 import { getVerifiedCoinPurchases } from "../lib/revenuecat";
 import { createLiveKitToken, liveKitConfigured, liveKitPublicUrl } from "../lib/livekit";
 import { canManageStageTarget, type StageRole } from "../lib/current-event-permissions";
@@ -505,12 +505,19 @@ router.post("/current-events/rooms/:roomId/token", async (req, res): Promise<voi
   }
   const canPublish = ["host", "moderator", "speaker"].includes(membership.participant.role)
     && !membership.participant.muted;
+  const [viewer] = await db
+    .select({ cameraAccessUntil: usersTable.cameraAccessUntil })
+    .from(usersTable)
+    .where(eq(usersTable.id, viewerId))
+    .limit(1);
+  const canPublishCamera = canPublish && (viewer?.cameraAccessUntil ?? 0) > Date.now();
   const roomName = `current_event_${roomId}`;
   res.json({
-    token: await createLiveKitToken({ room: roomName, userId: viewerId, canPublish }),
+    token: await createLiveKitToken({ room: roomName, userId: viewerId, canPublish, canPublishCamera }),
     url: liveKitPublicUrl(),
     roomName,
     canPublish,
+    canPublishCamera,
   });
 });
 
@@ -1007,8 +1014,9 @@ router.post("/current-events/payouts/stripe/webhook", async (req, res): Promise<
 
 router.post("/current-events/payouts/withdrawals", async (req, res): Promise<void> => {
   const viewerId = await requireChatAuth(req, res);
-  const parsed = withdrawalInput.safeParse(req.body);
   if (viewerId === null) return;
+  if (!(await requireVerifiedEmail(req, res))) return;
+  const parsed = withdrawalInput.safeParse(req.body);
   const idempotencyKey = requestIdempotencyKey(req, viewerId, "creator-withdrawal");
   if (!idempotencyKey) {
     res.status(400).json({ error: "A unique withdrawal request key is required. Please try again." });

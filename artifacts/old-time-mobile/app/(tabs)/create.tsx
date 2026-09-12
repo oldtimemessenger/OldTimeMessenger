@@ -46,9 +46,10 @@ export default function CreateScreen() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-  const [shareMode, setShareMode] = useState<'story' | 'post'>('post');
+  const [shareMode, setShareMode] = useState<'story' | 'close_friends' | 'post'>('post');
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'back' | 'front'>('back');
+  const [flashMode, setFlashMode] = useState<'off' | 'on'>('off');
   const [captureMode, setCaptureMode] = useState<'picture' | 'video'>('picture');
   const [isRecording, setIsRecording] = useState(false);
   const isTextMode = postKind === 'quote';
@@ -149,7 +150,7 @@ export default function CreateScreen() {
     }
     setIsPublishing(true);
     try {
-      if (shareMode === 'story') {
+      if (shareMode !== 'post') {
         await createStory({
           imageUri: media?.uri,
           mediaType: postKind === 'quote' || (media?.type !== 'image' && media?.type !== 'video') ? undefined : media.type,
@@ -160,6 +161,7 @@ export default function CreateScreen() {
           height: media?.height,
           duration: media?.duration,
           caption: caption.trim(),
+          visibility: shareMode === 'close_friends' ? 'close_friends' : 'friends',
         });
       } else {
         const postIdStr = await createPost({
@@ -189,7 +191,10 @@ export default function CreateScreen() {
       setLocation('');
       setSelectedProductId(null);
       setDetailsOpen(false);
-      Alert.alert(shareMode === 'story' ? 'Story posted' : 'Post published', shareMode === 'story' ? 'Your story is live for 24 hours.' : 'Your post is now on Old Time.');
+      Alert.alert(
+        shareMode === 'post' ? 'Post published' : shareMode === 'close_friends' ? 'Close Friends story posted' : 'Story posted',
+        shareMode === 'post' ? 'Your post is now on Old Time.' : shareMode === 'close_friends' ? 'Only people on your Close Friends list can see it for 24 hours.' : 'Your story is live for friends for 24 hours.',
+      );
     } catch (error) {
       Alert.alert('Could not post', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -201,12 +206,18 @@ export default function CreateScreen() {
     <KeyboardAvoidingView style={[styles.screen, { backgroundColor: '#090909' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.cameraStage, { paddingTop: insets.top + (Platform.OS === 'web' ? 67 : 8), paddingBottom: Platform.OS === 'web' ? 34 : 0 }]}>
           <View style={styles.cameraHeader}>
-            <IconButton icon="close" onPress={() => router.back()} accessibilityLabel="Close Create" color={cameraForeground} size={29} />
-            <IconButton icon="camera-reverse-outline" onPress={() => setCameraFacing((current) => current === 'back' ? 'front' : 'back')} accessibilityLabel={`Switch to ${cameraFacing === 'back' ? 'front' : 'back'} camera`} color={cameraForeground} size={24} />
+             <IconButton icon="close" onPress={() => router.back()} accessibilityLabel="Close Create" color={cameraForeground} size={29} />
+             <View style={styles.cameraHeaderTools}>
+               <IconButton icon="camera-reverse-outline" onPress={() => {
+                 setCameraFacing((current) => current === 'back' ? 'front' : 'back');
+                 if (cameraFacing === 'back') setFlashMode('off');
+               }} accessibilityLabel={`Switch to ${cameraFacing === 'back' ? 'front' : 'back'} camera`} color={cameraForeground} size={27} />
+               <IconButton icon={flashMode === 'on' ? 'flash' : 'flash-off'} onPress={() => setFlashMode((current) => current === 'on' ? 'off' : 'on')} accessibilityLabel={flashMode === 'on' ? 'Turn flash off' : 'Turn flash on'} color={cameraForeground} size={27} />
+             </View>
           </View>
           <View style={styles.cameraBody}>
-            <Pressable onPress={() => postKind === 'media' && !cameraOpen ? void openCamera('photo') : postKind === 'quote' ? setDetailsOpen(true) : undefined} style={styles.previewFrame} accessibilityRole="button" accessibilityLabel={media ? 'Change selected media' : 'Open full screen camera'}>
-               {postKind === 'quote' ? <View style={[styles.textCanvas, { backgroundColor: colors.secondary }]}><Text style={[styles.textCanvasMark, { color: colors.foreground }]}>“</Text><Text style={[styles.textCanvasHint, { color: colors.foreground }]}>{caption.trim() || 'Write something worth keeping.'}</Text><Text style={[styles.textCanvasAuthor, { color: colors.foreground }]}>@{profile?.handle ?? 'you'}</Text></View> : media ? <View style={styles.cameraMediaPreview}>{media.type === 'video' ? <SelectedVideoPreview uri={media.uri} contentFit="cover" /> : <Image source={{ uri: media.uri }} style={styles.preview} resizeMode="cover" />}</View> : cameraOpen ? <View style={styles.cameraMediaPreview}><CameraView ref={cameraRef} style={styles.preview} facing={cameraFacing} flash="off" mode={captureMode} mute={false} /></View> : <View style={styles.emptyCamera} />}
+             <Pressable onPress={() => postKind === 'media' && !cameraOpen ? void openCamera('photo') : undefined} style={styles.previewFrame} accessibilityRole={postKind === 'media' ? 'button' : undefined} accessibilityLabel={postKind === 'media' ? (media ? 'Change selected media' : 'Open full screen camera') : undefined}>
+                {postKind === 'quote' ? <View style={[styles.textCanvas, { backgroundColor: colors.secondary }]}><Text style={[styles.textCanvasMark, { color: colors.foreground }]}>“</Text><TextInput autoFocus value={caption} onChangeText={setCaption} multiline maxLength={180} placeholder="Write something worth keeping." placeholderTextColor={colors.mutedForeground} style={[styles.textCanvasInput, { color: colors.foreground }]} accessibilityLabel="Quote text" /><Text style={[styles.textCanvasAuthor, { color: colors.foreground }]}>@{profile?.handle ?? 'you'}</Text></View> : media ? <View style={styles.cameraMediaPreview}>{media.type === 'video' ? <SelectedVideoPreview uri={media.uri} contentFit="cover" /> : <Image source={{ uri: media.uri }} style={styles.preview} resizeMode="cover" />}</View> : cameraOpen ? <View style={styles.cameraMediaPreview}><CameraView ref={cameraRef} style={styles.preview} facing={cameraFacing} flash={cameraFacing === 'front' ? 'off' : flashMode} mode={captureMode} mute={false} /></View> : <View style={styles.emptyCamera} />}
               {isRecording ? <View style={styles.recordingBadge}><View style={styles.recordingDot} /><Text style={styles.recordingText}>Recording</Text></View> : null}
             </Pressable>
           </View>
@@ -221,7 +232,7 @@ export default function CreateScreen() {
             <Pressable onPress={() => void chooseMedia()} style={styles.albumThumb} accessibilityRole="button" accessibilityLabel="Choose from album">
               {media?.type === 'image' ? <Image source={{ uri: media.uri }} style={styles.albumThumbImage} /> : <Ionicons name="albums-outline" size={25} color="#fff" />}
             </Pressable>
-             <Pressable onPress={() => postKind === 'quote' ? setDetailsOpen(true) : void openCamera('photo')} style={[styles.shutter, { borderColor: cameraForeground }]} accessibilityRole="button" accessibilityLabel={postKind === 'quote' ? 'Write text post' : 'Open camera'}><View style={[styles.shutterInner, { backgroundColor: cameraForeground }]} /></Pressable>
+              <Pressable onPress={() => postKind === 'quote' ? undefined : void openCamera('photo')} style={[styles.shutter, { borderColor: cameraForeground }]} accessibilityRole="button" accessibilityLabel={postKind === 'quote' ? 'Quote editor active' : 'Open camera'}><View style={[styles.shutterInner, { backgroundColor: cameraForeground }]} /></Pressable>
              <Pressable onPress={() => void publish()} disabled={isPublishing} style={[styles.cameraPostButton, { opacity: isPublishing ? 0.45 : 1 }]} accessibilityRole="button" accessibilityLabel="Post moment"><Text style={[styles.cameraPostText, { color: cameraForeground }]}>{isPublishing ? '...' : 'Post'}</Text></Pressable>
           </View>
            <Pressable onPress={() => setDetailsOpen((current) => !current)} style={styles.drawerHandle} accessibilityRole="button" accessibilityLabel={detailsOpen ? 'Close create options' : 'Open create options'}><Ionicons name={detailsOpen ? 'chevron-down' : 'chevron-up'} size={20} color="#fff" /></Pressable>
@@ -233,9 +244,10 @@ export default function CreateScreen() {
               <View style={[styles.kindSwitch, { backgroundColor: colors.muted, borderColor: colors.border }]}><Pressable onPress={() => setPostKind('media')} style={[styles.kindOption, { borderColor: colors.border }, postKind === 'media' && { backgroundColor: colors.card }]}><Ionicons name="images-outline" size={17} color={colors.foreground} /><Text style={[styles.kindText, { color: colors.foreground }]}>Photo / Video</Text></Pressable><Pressable onPress={() => setPostKind('quote')} style={[styles.kindOption, { borderColor: colors.border }, postKind === 'quote' && { backgroundColor: colors.card }]}><Ionicons name="chatbox-ellipses-outline" size={17} color={colors.foreground} /><Text style={[styles.kindText, { color: colors.foreground }]}>Quote</Text></Pressable></View>
              <View style={styles.shareModeSwitch}>
                 <Pressable onPress={() => setShareMode('story')} style={[styles.shareModeOption, { borderColor: colors.border }, shareMode === 'story' ? { backgroundColor: colors.primary } : { backgroundColor: colors.card }]}><Text style={[styles.shareModeText, { color: shareMode === 'story' ? colors.primaryForeground : colors.foreground }]}>Story</Text></Pressable>
+                 <Pressable onPress={() => setShareMode('close_friends')} style={[styles.shareModeOption, { borderColor: colors.border }, shareMode === 'close_friends' ? { backgroundColor: colors.routeTeal } : { backgroundColor: colors.card }]}><Text style={[styles.shareModeText, { color: shareMode === 'close_friends' ? colors.primaryForeground : colors.foreground }]}>Close Friends</Text></Pressable>
                 <Pressable onPress={() => setShareMode('post')} style={[styles.shareModeOption, { borderColor: colors.border }, shareMode === 'post' ? { backgroundColor: colors.primary } : { backgroundColor: colors.card }]}><Text style={[styles.shareModeText, { color: shareMode === 'post' ? colors.primaryForeground : colors.foreground }]}>Post</Text></Pressable>
              </View>
-             <View style={styles.fieldGroup}><Text style={[styles.fieldLabel, { color: colors.foreground }]}>{postKind === 'quote' ? 'Quote' : 'Caption'}{postKind === 'media' ? <Text style={{ color: colors.foreground, fontWeight: '500' }}> optional</Text> : null}</Text><TextInput value={caption} onChangeText={setCaption} multiline placeholder={postKind === 'quote' ? 'Write the words you want to share…' : 'Tell the story behind it…'} placeholderTextColor={colors.mutedForeground} style={[styles.captionInput, postKind === 'quote' && styles.quoteInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]} maxLength={180} /><Text style={[styles.counter, { color: colors.foreground }]}>{caption.length}/180</Text></View>
+              {postKind === 'media' ? <View style={styles.fieldGroup}><Text style={[styles.fieldLabel, { color: colors.foreground }]}>Caption <Text style={{ color: colors.foreground, fontWeight: '500' }}>optional</Text></Text><TextInput value={caption} onChangeText={setCaption} multiline placeholder="Tell the story behind it…" placeholderTextColor={colors.mutedForeground} style={[styles.captionInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]} maxLength={180} /><Text style={[styles.counter, { color: colors.foreground }]}>{caption.length}/180</Text></View> : <Text style={[styles.canvasEditingNote, { color: colors.mutedForeground }]}>Your words are edited directly on the canvas.</Text>}
               {shareMode === 'post' ? <View style={styles.fieldGroup}><View style={styles.locationLabelRow}><Text style={[styles.fieldLabel, { color: colors.foreground, marginBottom: 0 }]}>Location <Text style={{ color: colors.foreground, fontWeight: '500' }}>optional</Text></Text><Pressable onPress={useCurrentLocation} disabled={isLocating} style={styles.useLocationButton}><Ionicons name="navigate-outline" size={14} color={colors.foreground} /><Text style={[styles.useLocationText, { color: colors.foreground }]}>{isLocating ? 'Finding…' : 'Use current'}</Text></Pressable></View><View style={[styles.locationInput, { backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name="location-outline" size={18} color={colors.foreground} /><TextInput value={location} onChangeText={setLocation} placeholder="Leave blank or add a place" placeholderTextColor={colors.mutedForeground} style={[styles.locationTextInput, { color: colors.foreground }]} /></View></View> : null}
 
              {isCreator && postKind === 'media' && shareMode === 'post' && approvals && approvals.length > 0 && (
@@ -255,7 +267,7 @@ export default function CreateScreen() {
                </View>
               )}
 
-             <Pressable onPress={() => void publish()} disabled={isPublishing} style={[styles.shareButton, { backgroundColor: colors.primary, opacity: isPublishing ? 0.5 : 1 }]}><Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>{isPublishing ? 'Posting…' : shareMode === 'story' ? 'Post Story' : 'Post'}</Text></Pressable>
+              <Pressable onPress={() => void publish()} disabled={isPublishing} style={[styles.shareButton, { backgroundColor: shareMode === 'close_friends' ? colors.routeTeal : colors.primary, opacity: isPublishing ? 0.5 : 1 }]}><Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>{isPublishing ? 'Posting…' : shareMode === 'post' ? 'Post' : shareMode === 'close_friends' ? 'Share with Close Friends' : 'Share to Story'}</Text></Pressable>
            </View>
           </View> : null}
     </KeyboardAvoidingView>
@@ -266,6 +278,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   cameraStage: { backgroundColor: '#090909', flex: 1, position: 'relative' },
   cameraHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, zIndex: 2 },
+  cameraHeaderTools: { alignItems: 'center', gap: 14 },
   cameraBody: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'center', zIndex: 0 },
   previewFrame: { flex: 1, minHeight: 0, marginHorizontal: 0, borderRadius: 0, overflow: 'hidden', backgroundColor: '#111', justifyContent: 'center' },
   preview: { width: '100%', height: '100%' },
@@ -278,6 +291,7 @@ const styles = StyleSheet.create({
   textCanvas: { flex: 1, justifyContent: 'center', padding: 32, backgroundColor: '#241b18' },
   textCanvasMark: { color: '#D71920', fontFamily: 'Fraunces_900Black', fontSize: 64, lineHeight: 56 },
   textCanvasHint: { color: '#fff', fontFamily: 'Fraunces_700Bold', fontSize: 26, lineHeight: 36 },
+  textCanvasInput: { minHeight: 150, fontFamily: 'Fraunces_700Bold', fontSize: 28, lineHeight: 38, textAlignVertical: 'center', padding: 0 },
   textCanvasAuthor: { fontFamily: 'Outfit_700Bold', fontSize: 14, marginTop: 24 },
   cameraFormats: { position: 'absolute', left: 0, right: 0, bottom: 142, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 20, zIndex: 2 },
   formatText: { fontFamily: 'Outfit_600SemiBold', fontSize: 14 },
@@ -310,6 +324,7 @@ const styles = StyleSheet.create({
   captionInput: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 13, paddingTop: 10, minHeight: 64, fontFamily: 'Outfit_400Regular', fontSize: 14, textAlignVertical: 'top' },
   quoteInput: { minHeight: 86, fontFamily: 'Fraunces_700Bold', fontSize: 20, lineHeight: 28 },
   counter: { fontFamily: 'Outfit_500Medium', fontSize: 11, textAlign: 'right', marginTop: 2 },
+  canvasEditingNote: { fontFamily: 'Outfit_500Medium', fontSize: 13, lineHeight: 18, textAlign: 'center', marginTop: 12 },
   locationInput: { height: 44, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13 },
   locationLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 },
   useLocationButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 5 },

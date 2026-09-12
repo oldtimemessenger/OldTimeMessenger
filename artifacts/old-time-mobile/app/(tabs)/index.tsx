@@ -27,24 +27,43 @@ function StoryRail({ stories, profile, onCreate, onOpen }: { stories: Story[]; p
   const colors = useColors();
   return (
     <View style={styles.storyRail}>
-      <View style={styles.storyRailHeader}>
-        <Text style={[styles.storyRailTitle, { color: colors.homeForeground }]}>Stories</Text>
-      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyList}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Create a story" onPress={onCreate} style={({ pressed }) => [styles.storyCard, styles.yourStoryCard, { backgroundColor: colors.card, borderColor: colors.homeBorder, opacity: pressed ? 0.78 : 1 }]}>
-          {profile?.avatar ? <Avatar source={profile.avatar} size={48} accent={profile.accent} /> : <View style={[styles.yourStoryAvatar, { backgroundColor: colors.homeForeground }]}><Ionicons name="person" size={18} color={colors.homeBackground} /></View>}
-          <View style={[styles.storyPlus, { backgroundColor: colors.homeForeground }]}><Ionicons name="add" size={12} color={colors.homeBackground} /></View>
-          <View style={styles.yourStoryCopy}><Text style={[styles.storyName, { color: colors.homeForeground }]}>Your story</Text></View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Create a story" onPress={onCreate} style={({ pressed }) => [styles.storyCard, styles.yourStoryCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.78 : 1 }]}>
+          {profile?.avatar ? (
+            <Image source={profile.avatar} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+          ) : (
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center' }]}>
+              <Ionicons name="person" size={32} color={colors.mutedForeground} />
+            </View>
+          )}
+          <View style={styles.storyShadeDark} />
+          <View style={[styles.storyPlus, { backgroundColor: colors.action }]}><Ionicons name="add" size={16} color="#ffffff" /></View>
+          <View style={styles.yourStoryCopy}><Text style={styles.storyName}>Your story</Text></View>
         </Pressable>
         {stories.map((story, index) => {
           const avatar = story.author.avatarObjectPath ? { uri: resolveRemoteMediaUrl(story.author.avatarObjectPath) } : undefined;
           const mediaUri = story.media?.objectPath ? resolveRemoteMediaUrl(story.media.objectPath) : undefined;
           return (
-            <Pressable key={story.id} accessibilityRole="button" accessibilityLabel={`Watch ${story.author.name}'s story`} onPress={() => onOpen(index)} style={({ pressed }) => [styles.storyCard, { backgroundColor: colors.card, borderColor: colors.homeBorder, opacity: pressed ? 0.82 : 1 }]}>
-              {mediaUri && story.media?.type === 'video' ? <StoryVideo uri={mediaUri} /> : mediaUri ? <Image source={{ uri: mediaUri }} style={styles.storyMedia} resizeMode="cover" /> : <View style={[styles.storyTextMedia, { backgroundColor: colors.card }]}><Text style={[styles.storyTextMark, { color: colors.homeForeground }]}>“</Text><Text numberOfLines={4} style={[styles.storyTextContent, { color: colors.homeForeground }]}>{story.content || 'A moment from Old Time'}</Text></View>}
+            <Pressable key={story.id} accessibilityRole="button" accessibilityLabel={`Watch ${story.author.name}'s story`} onPress={() => onOpen(index)} style={({ pressed }) => [styles.storyCard, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.82 : 1 }]}>
+              {mediaUri && story.media?.type === 'video' ? (
+                <StoryVideo uri={mediaUri} />
+              ) : mediaUri ? (
+                <Image source={{ uri: mediaUri }} style={styles.storyMedia} resizeMode="cover" />
+              ) : (
+                <View style={[styles.storyTextMedia, { backgroundColor: colors.secondary }]}>
+                  <Text style={[styles.storyTextMark, { color: colors.mutedForeground }]}>“</Text>
+                  <Text numberOfLines={4} style={[styles.storyTextContent, { color: colors.foreground }]}>{story.content || 'A moment from Old Time'}</Text>
+                </View>
+              )}
               <LinearGradient colors={['transparent', 'rgba(0,0,0,0.72)']} style={styles.storyShade} />
-              <View style={styles.storyTopRow}><View style={styles.storyAvatarRing}>{avatar ? <Avatar source={avatar} size={34} /> : <View style={[styles.storyFallbackAvatar, { backgroundColor: colors.homeForeground }]}><Ionicons name="person" size={16} color={colors.homeBackground} /></View>}</View><View style={styles.storyLiveDot} /></View>
-              <View style={styles.storyBottomCopy}><Text numberOfLines={1} style={styles.storyName}>{story.author.name}</Text>{story.content && story.media ? <Text numberOfLines={2} style={styles.storyCaption}>{story.content}</Text> : null}</View>
+              <View style={styles.storyTopRow}>
+                <View style={[styles.storyAvatarRing, { borderColor: colors.action }]}>
+                  {avatar ? <Avatar source={avatar} size={30} /> : <View style={[styles.storyFallbackAvatar, { backgroundColor: colors.secondary }]}><Ionicons name="person" size={14} color={colors.mutedForeground} /></View>}
+                </View>
+              </View>
+              <View style={styles.storyBottomCopy}>
+                <Text numberOfLines={1} style={styles.storyName}>{story.author.name}</Text>
+              </View>
             </Pressable>
           );
         })}
@@ -61,19 +80,68 @@ function StoryViewer({ stories, initialIndex, onClose }: { stories: Story[]; ini
   if (!story) return null;
   const mediaUri = story.media?.objectPath ? resolveRemoteMediaUrl(story.media.objectPath) : undefined;
   const avatar = story.author.avatarObjectPath ? { uri: resolveRemoteMediaUrl(story.author.avatarObjectPath) } : undefined;
+  
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={[styles.viewer, { backgroundColor: colors.homeForeground }]}>
-        {mediaUri && story.media?.type === 'video' ? <StoryVideo uri={mediaUri} style={styles.viewerMedia} /> : mediaUri ? <Image source={{ uri: mediaUri }} style={styles.viewerMedia} resizeMode="contain" /> : <View style={[styles.viewerText, { backgroundColor: colors.card }]}><Text style={[styles.viewerQuote, { color: colors.homeForeground }]}>{story.content || 'A moment from Old Time'}</Text></View>}
-        <LinearGradient colors={['rgba(0,0,0,0.58)', 'transparent', 'rgba(0,0,0,0.68)']} locations={[0, 0.3, 1]} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      <View style={[styles.viewer, { backgroundColor: colors.foreground }]}>
+        {mediaUri && story.media?.type === 'video' ? (
+          <StoryVideo uri={mediaUri} style={styles.viewerMedia} />
+        ) : mediaUri ? (
+          <Image source={{ uri: mediaUri }} style={styles.viewerMedia} resizeMode="contain" />
+        ) : (
+          <View style={[styles.viewerText, { backgroundColor: colors.card }]}>
+            <Text style={[styles.viewerQuote, { color: colors.foreground }]}>{story.content || 'A moment from Old Time'}</Text>
+          </View>
+        )}
+        <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.8)']} locations={[0, 0.4, 1]} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+        
         <View style={[styles.viewerHeader, { paddingTop: insets.top + 12 }]}>
-          <View style={styles.viewerProgress}>{stories.map((item) => <View key={item.id} style={[styles.viewerProgressTrack, { backgroundColor: item.id === story.id ? colors.homeBackground : 'rgba(255,255,255,0.38)' }]} />)}</View>
-          <View style={styles.viewerIdentity}>{avatar ? <Avatar source={avatar} size={36} /> : <View style={[styles.storyFallbackAvatar, { backgroundColor: colors.homeBackground }]}><Ionicons name="person" size={16} color={colors.homeForeground} /></View>}<Text style={styles.viewerName}>{story.author.name}</Text><Pressable accessibilityRole="button" accessibilityLabel="Close story" onPress={onClose} style={styles.viewerClose}><Ionicons name="close" size={25} color={colors.homeBackground} /></Pressable></View>
+          <View style={styles.viewerProgress}>
+            {stories.map((item) => <View key={item.id} style={[styles.viewerProgressTrack, { backgroundColor: item.id === story.id ? '#fff' : 'rgba(255,255,255,0.3)' }]} />)}
+          </View>
+          <View style={styles.viewerIdentity}>
+            {avatar ? <Avatar source={avatar} size={36} /> : <View style={[styles.storyFallbackAvatar, { backgroundColor: colors.background }]}><Ionicons name="person" size={16} color={colors.foreground} /></View>}
+            <Text style={styles.viewerName}>{story.author.name}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close story" onPress={onClose} style={styles.viewerClose}>
+              <Ionicons name="close" size={28} color="#fff" />
+            </Pressable>
+          </View>
         </View>
-        <View style={styles.viewerTapZones}><Pressable accessibilityRole="button" accessibilityLabel="Previous story" onPress={() => setIndex((current) => Math.max(0, current - 1))} style={styles.viewerTapZone} /><Pressable accessibilityRole="button" accessibilityLabel="Next story" onPress={() => index >= stories.length - 1 ? onClose() : setIndex((current) => current + 1)} style={styles.viewerTapZone} /></View>
-        {story.content ? <View style={[styles.viewerCaption, { bottom: insets.bottom + 24 }]}><Text style={styles.viewerCaptionText}>{story.content}</Text></View> : null}
+        
+        <View style={styles.viewerTapZones}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Previous story" onPress={() => setIndex((current) => Math.max(0, current - 1))} style={styles.viewerTapZone} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Next story" onPress={() => index >= stories.length - 1 ? onClose() : setIndex((current) => current + 1)} style={styles.viewerTapZone} />
+        </View>
+        
+        {story.content ? (
+          <View style={[styles.viewerCaption, { bottom: insets.bottom + 24 }]}>
+            <Text style={styles.viewerCaptionText}>{story.content}</Text>
+          </View>
+        ) : null}
       </View>
     </Modal>
+  );
+}
+
+const QUICK_ACTIONS = [
+  { id: 'create', icon: 'add-circle-outline', label: 'Create', route: '/(tabs)/create' },
+  { id: 'search', icon: 'search-outline', label: 'Search', route: '/(tabs)/discover' },
+  { id: 'shop', icon: 'bag-handle-outline', label: 'Shop', route: '/shop' },
+  { id: 'routes', icon: 'map-outline', label: 'Routes', route: '/routes' },
+];
+
+function QuickActionsRail() {
+  const router = useRouter();
+  const colors = useColors();
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickActionRail}>
+      {QUICK_ACTIONS.map((a) => (
+        <Pressable key={a.id} style={[styles.quickActionChip, { backgroundColor: colors.secondary }]} onPress={() => router.push(a.route as never)}>
+          <Ionicons name={a.icon as any} size={18} color={colors.foreground} />
+          <Text style={[styles.quickActionText, { color: colors.foreground }]}>{a.label}</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -87,18 +155,23 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [stories, setStories] = useState<Story[]>([]);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
+  
   const followingIds = useMemo(() => users.filter((user) => user.isFollowing).map((user) => user.id), [users]);
   const visiblePosts = feed === 'forYou' ? posts : feed === 'following' ? posts.filter((post) => followingIds.includes(post.authorId)) : [];
+  
   const feedOptions = [
-    { key: 'forYou', label: 'For you' },
+    { key: 'forYou', label: 'For You' },
     { key: 'following', label: 'Following' },
     { key: 'map', label: 'Map' },
   ] as const;
+  
   const selectedPost = posts.find((post) => post.id === selectedPostId);
+  
   useEffect(() => {
     if (!profile?.id) return;
     void getStories().then((result) => setStories(result.items)).catch(() => setStories([]));
   }, [profile?.id]);
+  
   const refresh = async () => {
     setRefreshing(true);
     try {
@@ -111,6 +184,7 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   };
+  
   const sharePost = async (post: Post) => {
     const message = post.mediaType === 'quote'
       ? `“${post.caption}”\n— @${post.handle} on Old Time`
@@ -121,6 +195,7 @@ export default function HomeScreen() {
       Alert.alert('Could not share', 'Please try again.');
     }
   };
+  
   const reportPostFromFeed = (post: Post) => {
     Alert.alert('Report this post?', 'Choose a reason to send this to the Old Time moderation queue.', [
       { text: 'Cancel', style: 'cancel' },
@@ -131,26 +206,15 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.homeBackground }]}>
-      <View style={[styles.topBar, { paddingTop: insets.top + 6, backgroundColor: colors.homeBackground }]}>
-        <View style={styles.topLeading}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Open Shop" onPress={() => router.push('/shop' as never)} style={[styles.shopButton, { borderColor: colors.homeBorder }]}>
-            <Ionicons name="bag-handle-outline" size={15} color={colors.homeForeground} />
-            <Text style={[styles.shopButtonText, { color: colors.homeForeground }]}>Shop</Text>
-          </Pressable>
-          <IconButton icon="map-outline" onPress={() => router.push('/routes' as never)} accessibilityLabel="Open Routes" color={colors.homeForeground} size={21} />
-          <IconButton icon="albums-outline" onPress={() => router.push('/(tabs)/create')} accessibilityLabel="Open album" color={colors.homeForeground} size={23} />
-        </View>
-        <View style={styles.topActions}>
-          <IconButton icon="search-outline" onPress={() => router.push('/(tabs)/discover')} accessibilityLabel="Search" color={colors.homeForeground} />
-          <IconButton icon="mail-outline" onPress={() => router.push('/(tabs)/inbox')} accessibilityLabel="Messages" color={colors.homeForeground} />
-           <IconButton icon="notifications-outline" onPress={() => router.push('/notifications')} accessibilityLabel="Notifications" color={colors.homeForeground} />
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 6, backgroundColor: colors.background }]}>
+        <View style={styles.topLeft}>
           <Pressable accessibilityRole="button" accessibilityLabel="Open profile" onPress={() => router.push('/(tabs)/profile')} style={styles.profileButton}>
-            {profile?.avatar ? <Avatar source={profile.avatar} size={36} /> : <View style={[styles.profileFallback, { backgroundColor: colors.homeForeground }]}><Ionicons name="person" size={18} color={colors.homeBackground} /></View>}
+            {profile?.avatar ? <Avatar source={profile.avatar} size={36} /> : <View style={[styles.profileFallback, { backgroundColor: colors.secondary }]}><Ionicons name="person" size={18} color={colors.mutedForeground} /></View>}
           </Pressable>
         </View>
-      </View>
-        <View style={[styles.feedSwitch, { borderBottomColor: colors.homeBorder }]}>
+
+        <View style={styles.feedSwitch}>
           {feedOptions.map((option) => {
             const selected = feed === option.key;
             return (
@@ -161,24 +225,49 @@ export default function HomeScreen() {
                 onPress={() => setFeed(option.key)}
                 style={styles.feedTab}
               >
-                 <Text style={[styles.feedSwitchText, { color: selected ? colors.homeForeground : colors.homeMutedForeground }]}>{option.label}</Text>
-                 <View style={[styles.switchLine, { backgroundColor: selected ? colors.homeForeground : 'transparent', width: selected ? 28 : 0 }]} />
+                 <Text style={[styles.feedSwitchText, { 
+                   color: selected ? colors.foreground : colors.mutedForeground,
+                   opacity: selected ? 1 : 0.6
+                 }]}>{option.label}</Text>
+                 {selected && <View style={[styles.switchLine, { backgroundColor: colors.action }]} />}
               </Pressable>
             );
           })}
         </View>
-      <View style={styles.contentArea}>
-        {feed === 'map' ? <MapExperience /> : <FlatList
-          data={visiblePosts}
-          keyExtractor={(item) => item.id}
-           renderItem={({ item }) => <PostCard post={item} onComments={() => setSelectedPostId(item.id)} onShare={() => void sharePost(item)} onReport={() => reportPostFromFeed(item)} />}
-           contentContainerStyle={[styles.feedContent, { paddingBottom: TAB_BAR_CONTENT_CLEARANCE }]}
-           ListHeaderComponent={feed === 'forYou' ? <StoryRail stories={stories} profile={profile} onCreate={() => router.push('/(tabs)/create')} onOpen={setSelectedStoryIndex} /> : null}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
-           ListEmptyComponent={<View style={styles.emptyFeed}><Ionicons name="videocam-outline" size={38} color={colors.homeMutedForeground} /><Text style={[styles.emptyFeedTitle, { color: colors.homeMutedForeground }]}>No updates right now</Text></View>}
-        />}
+
+        <View style={styles.topRight}>
+          <IconButton icon="notifications-outline" onPress={() => router.push('/notifications')} accessibilityLabel="Notifications" color={colors.foreground} size={24} />
+          <IconButton icon="mail-outline" onPress={() => router.push('/(tabs)/inbox')} accessibilityLabel="Messages" color={colors.foreground} size={24} />
+        </View>
       </View>
+      
+      <View style={styles.contentArea}>
+        {feed === 'map' ? <MapExperience /> : (
+          <FlatList
+            data={visiblePosts}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => <PostCard post={item} onComments={() => setSelectedPostId(item.id)} onShare={() => void sharePost(item)} onReport={() => reportPostFromFeed(item)} />}
+            contentContainerStyle={[styles.feedContent, { paddingBottom: TAB_BAR_CONTENT_CLEARANCE }]}
+            ListHeaderComponent={
+              feed === 'forYou' ? (
+                <>
+                  <QuickActionsRail />
+                  <StoryRail stories={stories} profile={profile} onCreate={() => router.push('/(tabs)/create')} onOpen={setSelectedStoryIndex} />
+                </>
+              ) : null
+            }
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
+            ListEmptyComponent={
+              <View style={styles.emptyFeed}>
+                <Ionicons name="videocam-outline" size={48} color={colors.mutedForeground} />
+                <Text style={[styles.emptyFeedTitle, { color: colors.mutedForeground }]}>No updates right now</Text>
+              </View>
+            }
+          />
+        )}
+      </View>
+      
       {selectedPost ? <CommentsModal post={selectedPost} onClose={() => setSelectedPostId(null)} /> : null}
       {selectedStoryIndex !== null ? <StoryViewer stories={stories} initialIndex={selectedStoryIndex} onClose={() => setSelectedStoryIndex(null)} /> : null}
     </View>
@@ -188,53 +277,56 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   contentArea: { flex: 1 },
-  topBar: { paddingHorizontal: 18, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  topLeading: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  shopButton: { height: 30, borderRadius: 15, borderWidth: 1, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  shopButtonText: { fontFamily: 'Outfit_700Bold', fontSize: 12 },
-  topActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  profileButton: { minWidth: 42, minHeight: 42, alignItems: 'center', justifyContent: 'center' },
+  topBar: { paddingHorizontal: 16, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topLeft: { flex: 1, alignItems: 'flex-start' },
+  topRight: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  profileButton: { minWidth: 40, minHeight: 40, alignItems: 'center', justifyContent: 'center' },
   profileFallback: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  feedSwitch: { flexDirection: 'row', paddingHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth },
-  feedTab: { flex: 1, alignItems: 'center' },
-  feedSwitchText: { fontFamily: 'Outfit_700Bold', fontSize: 16, paddingVertical: 14 },
-  switchLine: { height: 3, borderRadius: 3 },
-  feedContent: { paddingHorizontal: 16, paddingTop: 18 },
-  storyRail: { marginBottom: 18 },
-  storyRailHeader: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 10 },
-  storyRailTitle: { fontFamily: 'Fraunces_700Bold', fontSize: 20 },
-  storyList: { gap: 10, paddingRight: 4 },
-  storyCard: { width: 94, height: 158, borderRadius: 14, borderWidth: 1, overflow: 'hidden', position: 'relative' },
-  yourStoryCard: { alignItems: 'center', justifyContent: 'center', paddingTop: 10 },
-  yourStoryAvatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  storyPlus: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', position: 'absolute', top: 55, right: 18, borderWidth: 2, borderColor: '#ffffff' },
-  yourStoryCopy: { alignItems: 'center', marginTop: 14 },
+  
+  feedSwitch: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 2 },
+  feedTab: { paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center', position: 'relative' },
+  feedSwitchText: { fontFamily: 'NunitoSans_700Bold', fontSize: 16 },
+  switchLine: { position: 'absolute', bottom: -2, width: 20, height: 3, borderRadius: 2 },
+  
+  feedContent: { paddingHorizontal: 0, paddingTop: 12 }, // Edge to edge posts
+  
+  quickActionRail: { paddingHorizontal: 16, gap: 10, paddingBottom: 20 },
+  quickActionChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 24, gap: 6 },
+  quickActionText: { fontFamily: 'NunitoSans_700Bold', fontSize: 14 },
+  
+  storyRail: { marginBottom: 24 },
+  storyList: { gap: 12, paddingHorizontal: 16 },
+  storyCard: { width: 104, height: 160, borderRadius: 18, borderWidth: 1, overflow: 'hidden', position: 'relative' },
+  yourStoryCard: { alignItems: 'center', justifyContent: 'center' },
+  storyShadeDark: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
+  storyPlus: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', position: 'absolute', top: '50%', marginTop: -14, borderWidth: 2, borderColor: '#ffffff' },
+  yourStoryCopy: { position: 'absolute', bottom: 12, alignItems: 'center', width: '100%' },
   storyMedia: { width: '100%', height: '100%' },
-  storyTextMedia: { flex: 1, padding: 16, justifyContent: 'center' },
-  storyTextMark: { fontFamily: 'Fraunces_900Black', fontSize: 54, lineHeight: 48 },
-  storyTextContent: { fontFamily: 'Fraunces_700Bold', fontSize: 17, lineHeight: 23 },
+  storyTextMedia: { flex: 1, padding: 12, justifyContent: 'center' },
+  storyTextMark: { fontFamily: 'NunitoSans_900Black', fontSize: 42, position: 'absolute', top: 8, left: 8, opacity: 0.2 },
+  storyTextContent: { fontFamily: 'NunitoSans_700Bold', fontSize: 15, lineHeight: 20 },
   storyShade: { ...StyleSheet.absoluteFillObject },
-  storyTopRow: { position: 'absolute', left: 8, right: 8, top: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  storyAvatarRing: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: '#ffffff', alignItems: 'center', justifyContent: 'center' },
-  storyFallbackAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  storyLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ffffff' },
-  storyBottomCopy: { position: 'absolute', left: 9, right: 9, bottom: 9 },
-  storyName: { fontFamily: 'Outfit_700Bold', fontSize: 12, color: '#ffffff' },
-  storyCaption: { fontFamily: 'Outfit_500Medium', fontSize: 10, lineHeight: 13, color: '#ffffff', marginTop: 2 },
+  storyTopRow: { position: 'absolute', left: 8, top: 8 },
+  storyAvatarRing: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  storyFallbackAvatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  storyBottomCopy: { position: 'absolute', left: 10, right: 10, bottom: 10 },
+  storyName: { fontFamily: 'NunitoSans_700Bold', fontSize: 13, color: '#ffffff' },
+  
   viewer: { flex: 1, position: 'relative', justifyContent: 'center' },
   viewerMedia: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
   viewerText: { margin: 24, minHeight: 360, borderRadius: 26, padding: 28, justifyContent: 'center' },
-  viewerQuote: { fontFamily: 'Fraunces_700Bold', fontSize: 30, lineHeight: 39 },
+  viewerQuote: { fontFamily: 'NunitoSans_900Black', fontSize: 32, lineHeight: 40 },
   viewerHeader: { position: 'absolute', left: 14, right: 14, top: 0 },
-  viewerProgress: { flexDirection: 'row', gap: 4, marginBottom: 12 },
+  viewerProgress: { flexDirection: 'row', gap: 4, marginBottom: 16 },
   viewerProgressTrack: { flex: 1, height: 3, borderRadius: 2 },
   viewerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  viewerName: { color: '#ffffff', fontFamily: 'Outfit_700Bold', fontSize: 15, flex: 1 },
-  viewerClose: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  viewerName: { color: '#ffffff', fontFamily: 'NunitoSans_700Bold', fontSize: 16, flex: 1 },
+  viewerClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   viewerTapZones: { ...StyleSheet.absoluteFillObject, flexDirection: 'row' },
   viewerTapZone: { flex: 1 },
-  viewerCaption: { position: 'absolute', left: 22, right: 22 },
-  viewerCaptionText: { color: '#ffffff', fontFamily: 'Outfit_600SemiBold', fontSize: 16, lineHeight: 23, textAlign: 'center' },
+  viewerCaption: { position: 'absolute', left: 24, right: 24 },
+  viewerCaptionText: { color: '#ffffff', fontFamily: 'NunitoSans_600SemiBold', fontSize: 16, lineHeight: 24, textAlign: 'center' },
+  
   emptyFeed: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 24 },
-  emptyFeedTitle: { fontFamily: 'Fraunces_700Bold', fontSize: 18, marginTop: 16 },
+  emptyFeedTitle: { fontFamily: 'NunitoSans_700Bold', fontSize: 18, marginTop: 16 },
 });

@@ -1,19 +1,16 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
-import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import React, { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
-import { createClient, type Session } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 import * as ApiClient from '@/lib/api-client-react';
 import { configureApi } from './api';
+import supabase, { SUPABASE_AUTH_CONFIGURED } from './supabase';
+
+export { SUPABASE_AUTH_CONFIGURED, supabase };
 
 WebBrowser.maybeCompleteAuthSession();
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-export const SUPABASE_AUTH_CONFIGURED = Boolean(supabaseUrl && supabaseAnonKey);
 export const AUTH_BYPASS_ENABLED =
   process.env.EXPO_PUBLIC_SKIP_AUTH === 'true' &&
   process.env.NODE_ENV !== 'production';
@@ -27,171 +24,25 @@ export const OAUTH_PROVIDERS = {
   apple: configuredOAuthProviders.has('apple'),
   google: configuredOAuthProviders.has('google'),
 };
-const clientUrl = supabaseUrl ?? 'https://old-time.invalid';
-const clientAnonKey = supabaseAnonKey ?? 'old-time-missing-supabase-anon-key';
-
 export function assertSupabaseConfigured() {
   if (!SUPABASE_AUTH_CONFIGURED) {
-    throw new Error('Supabase Auth is not configured for this build. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
+    throw new Error('Supabase Auth is not configured for this build. Set EXPO_PUBLIC_SUPABASE_URL and a public Supabase key.');
   }
 }
 
-// Keep this namespace separate from entries written by older builds. A stale
-// Keychain item can fail inside the native module before JS can catch it.
-const SECURE_STORAGE_PREFIX = 'old-time.supabase.v2.';
-const SECURE_STORAGE_CHUNK_SIZE = 900;
-
-type SecureStorageMetadata = {
-  version: 1;
-  chunks: number;
-};
-
-function secureStorageKey(key: string) {
-  return `${SECURE_STORAGE_PREFIX}${key}`;
-}
-
-function secureStorageMetadataKey(key: string) {
-  return `${secureStorageKey(key)}.meta`;
-}
-
-function secureStorageChunkKey(key: string, index: number) {
-  return `${secureStorageKey(key)}.chunk.${index}`;
-}
-
-function secureStorageError(operation: string) {
-  return new Error(`Secure authentication storage ${operation} failed.`);
-}
-
-async function secureStoreGetItem(key: string) {
-  try {
-    return await SecureStore.getItemAsync(key);
-  } catch {
-    throw secureStorageError('read');
-  }
-}
-
-async function secureStoreSetItem(key: string, value: string) {
-  try {
-    await SecureStore.setItemAsync(key, value, {
-      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
-    });
-  } catch {
-    throw secureStorageError('write');
-  }
-}
-
-async function secureStoreDeleteItem(key: string) {
-  try {
-    await SecureStore.deleteItemAsync(key);
-  } catch {
-    throw secureStorageError('delete');
-  }
-}
-
-async function readSecureStorageMetadata(key: string): Promise<SecureStorageMetadata | null> {
-  const raw = await secureStoreGetItem(secureStorageMetadataKey(key));
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<SecureStorageMetadata>;
-    const chunks = parsed.chunks;
-    if (parsed.version !== 1 || typeof chunks !== 'number' || !Number.isSafeInteger(chunks) || chunks < 1) return null;
-    return { version: 1, chunks };
-  } catch {
-    return null;
-  }
-}
-
-const secureAuthStorage = {
-  async getItem(key: string) {
-    const metadata = await readSecureStorageMetadata(key);
-    if (metadata) {
-      const chunks = await Promise.all(
-        Array.from({ length: metadata.chunks }, (_, index) =>
-          secureStoreGetItem(secureStorageChunkKey(key, index)),
-        ),
-      );
-      if (chunks.some((chunk) => chunk === null)) {
-        throw new Error('Secure authentication storage is incomplete.');
-      }
-      return chunks.join('');
-    }
-
-    // Migrate an existing Supabase session once. No new auth data is written
-    // to AsyncStorage after this migration succeeds.
-    const legacyValue = await AsyncStorage.getItem(key);
-    if (legacyValue === null) return null;
-    await this.setItem(key, legacyValue);
-    await AsyncStorage.removeItem(key);
-    return legacyValue;
-  },
-
-  async setItem(key: string, value: string) {
-    const previous = await readSecureStorageMetadata(key);
-    const chunks: string[] = [];
-    for (let start = 0; start < value.length; start += SECURE_STORAGE_CHUNK_SIZE) {
-      chunks.push(value.slice(start, start + SECURE_STORAGE_CHUNK_SIZE));
-    }
-    if (chunks.length === 0) chunks.push('');
-
-    // Write the new chunks before committing metadata, so an interrupted
-    // write leaves the previous complete value discoverable.
-    await Promise.all(
-      chunks.map((chunk, index) =>
-        secureStoreSetItem(secureStorageChunkKey(key, index), chunk),
-      ),
-    );
-    await secureStoreSetItem(
-      secureStorageMetadataKey(key),
-      JSON.stringify({ version: 1, chunks: chunks.length } satisfies SecureStorageMetadata),
-    );
-
-    if (previous && previous.chunks > chunks.length) {
-      await Promise.all(
-        Array.from({ length: previous.chunks - chunks.length }, (_, offset) =>
-          secureStoreDeleteItem(secureStorageChunkKey(key, chunks.length + offset)),
-        ),
-      );
-    }
-  },
-
-  async removeItem(key: string) {
-    const metadata = await readSecureStorageMetadata(key);
-    if (metadata) {
-      await Promise.all(
-        Array.from({ length: metadata.chunks }, (_, index) =>
-          secureStoreDeleteItem(secureStorageChunkKey(key, index)),
-        ),
-      );
-    }
-    await secureStoreDeleteItem(secureStorageMetadataKey(key));
-    // Clean up any legacy session that may not have been migrated yet.
-    await AsyncStorage.removeItem(key);
-  },
-};
-
-const authStorage = Platform.OS === 'web' ? AsyncStorage : secureAuthStorage;
 const registerAuthUnauthorizedHandler = (
   ApiClient as unknown as {
     setAuthUnauthorizedHandler: (handler: (() => void | Promise<void>) | null) => void;
   }
 ).setAuthUnauthorizedHandler;
 
-export const supabase = createClient(clientUrl, clientAnonKey, {
-  auth: {
-    storage: authStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    // The Expo Router callback screen explicitly exchanges the OAuth code.
-    // Automatic web URL detection would consume the same one-time code first.
-    detectSessionInUrl: false,
-    flowType: 'pkce',
-  },
-});
-
 export type OAuthProvider = 'google' | 'apple';
 
 export function getAuthRedirectUri(flow?: 'recovery') {
+  if (Platform.OS !== 'web') {
+    const query = flow ? `?type=${encodeURIComponent(flow)}` : '';
+    return `old-time-mobile://auth/callback${query}`;
+  }
   return Linking.createURL('auth/callback', {
     scheme: 'old-time-mobile',
     queryParams: flow ? { type: flow } : undefined,
@@ -273,6 +124,23 @@ export async function signInWithOAuth(provider: OAuthProvider): Promise<'redirec
   return 'completed';
 }
 
+export async function sendEmailCode(email: string, shouldCreateUser: boolean) {
+  assertSupabaseConfigured();
+  return supabase.auth.signInWithOtp({
+    email: email.trim(),
+    options: { shouldCreateUser },
+  });
+}
+
+export async function verifyEmailCode(email: string, token: string) {
+  assertSupabaseConfigured();
+  return supabase.auth.verifyOtp({
+    email: email.trim(),
+    token: token.trim(),
+    type: 'email',
+  });
+}
+
 export function getSafeAuthError(error: unknown, fallback = 'Please try again.') {
   const rawMessage = error instanceof Error ? error.message : '';
   const message = rawMessage.toLowerCase();
@@ -284,7 +152,7 @@ export function getSafeAuthError(error: unknown, fallback = 'Please try again.')
     const detail = safeAuthDetail(rawMessage.split(':').slice(1).join(':'));
     return detail ? `The sign-in callback could not be verified: ${detail}` : fallback;
   }
-  if (message.includes('invalid login credentials')) return 'Your email or password is incorrect.';
+  if (message.includes('invalid login credentials')) return 'That sign-in code was not accepted.';
   if (message.includes('email not confirmed')) return 'Please confirm your email before signing in.';
   if (message.includes('invalid or expired otp') || message.includes('otp has expired') || message.includes('token has expired')) {
     return 'That verification code is invalid or expired. Request a new code and try again.';
@@ -293,13 +161,19 @@ export function getSafeAuthError(error: unknown, fallback = 'Please try again.')
     return 'Too many emails were requested. Wait a moment, then try again.';
   }
   if (message.includes('user already registered') || message.includes('already registered')) {
-    return 'An account with this email already exists. Sign in instead or reset the password.';
+    return 'An account with this email already exists. Sign in instead.';
   }
   if (message.includes('password should be at least') || message.includes('password must be at least')) {
-    return 'Use a password with at least 8 characters.';
+    return 'Use the six-digit email code to sign in.';
+  }
+  if (message.includes('network request failed') || message.includes('failed to fetch') || message.includes('fetch failed')) {
+    return 'Old Time could not reach the sign-in service. Check your connection and try again.';
+  }
+  if (message.includes('invalid api key') || message.includes('api key is invalid')) {
+    return 'This Old Time build cannot reach its sign-in service. Install the latest build and try again.';
   }
   if (message.includes('unsupported provider') || message.includes('provider is not enabled')) {
-    return 'That sign-in option is not enabled yet. Use email and password instead.';
+    return 'That sign-in option is not enabled yet. Use an email code instead.';
   }
   if (message.includes('cancel')) return 'Sign-in was cancelled.';
   if (message.includes('expired') || message.includes('invalid')) return 'That sign-in link is no longer valid.';

@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { authSessionsTable, db, usersTable } from "@workspace/db";
 import { meetsMinimumAge } from "./age-gate";
+import { verifySupabaseAccessToken } from "./supabase-auth";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -59,7 +60,30 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
     res.status(401).json({ error: "A valid bearer token is required." });
     return null;
   }
-  const userId = await authenticateToken(token);
+  let userId = await authenticateToken(token);
+  if (userId === null && token.split(".").length === 3) {
+    try {
+      const identity = await verifySupabaseAccessToken(token);
+      const email = identity?.email?.trim().toLowerCase();
+      if (email) {
+        const [user] = await db
+          .select({ id: usersTable.id, birthday: usersTable.birthday })
+          .from(usersTable)
+          .where(eq(usersTable.email, email))
+          .limit(1);
+        if (user) {
+          if (!user.birthday || !meetsMinimumAge(user.birthday)) {
+            res.status(401).json({ error: "Age verification is required before using Old Time." });
+            return null;
+          }
+          userId = user.id;
+        }
+      }
+    } catch {
+      // Keep the normal invalid-token response below. Supabase verification is
+      // only a compatibility path for the current Supabase-auth mobile client.
+    }
+  }
   if (userId === null) {
     res.status(401).json({ error: "Invalid, expired, or revoked bearer token." });
     return null;
@@ -88,6 +112,30 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
     return null;
   }
   return userId;
+}
+
+export async function requireVerifiedEmail(req: Request, res: Response): Promise<boolean> {
+  const token = readBearerToken(req);
+  if (!token || token.split(".").length !== 3) {
+    res.status(403).json({ error: "Verify your email before requesting a withdrawal." });
+    return false;
+  }
+
+  try {
+    const identity = await verifySupabaseAccessToken(token);
+    if (!identity) {
+      res.status(401).json({ error: "Your sign-in session is no longer valid. Please sign in again." });
+      return false;
+    }
+    if (!identity.email_confirmed_at) {
+      res.status(403).json({ error: "Verify your email before requesting a withdrawal." });
+      return false;
+    }
+    return true;
+  } catch {
+    res.status(503).json({ error: "We could not confirm your email right now. Please try again." });
+    return false;
+  }
 }
 
 export async function revokeCurrentSession(req: Request): Promise<boolean> {

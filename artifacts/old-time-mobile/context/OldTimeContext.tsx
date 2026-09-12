@@ -7,7 +7,6 @@ import {
   createChat as apiCreateChat,
   createComment as apiCreateComment,
   createMessage as apiCreateMessage,
-  createPost as apiCreatePost,
   createReport as apiCreateReport,
   getNotifications as apiGetNotifications,
   getBootstrap,
@@ -17,7 +16,15 @@ import {
   togglePostLike as apiTogglePostLike,
 } from '@/lib/api-client-react';
 import { updateUserProfile as apiUpdateUserProfile } from '@workspace/api-client-react';
-import { cleanupMediaUpload, createStory as apiCreateStory, resolveRemoteMediaUrl, updateProfileAvatar as apiUpdateProfileAvatar, uploadMedia } from '@/lib/api';
+import {
+  attachPostToHubs,
+  cleanupMediaUpload,
+  createSocialPost,
+  createStory as apiCreateStory,
+  resolveRemoteMediaUrl,
+  updateProfileAvatar as apiUpdateProfileAvatar,
+  uploadMedia,
+} from '@/lib/api';
 
 export type MediaType = 'image' | 'video' | 'quote';
 
@@ -200,7 +207,7 @@ type OldTimeContextValue = Store & {
   toggleFollow: (userId: string) => Promise<void>;
   sendMessage: (chatId: string, text: string) => Promise<void>;
   createPost: (input: { imageUri: string; mediaType: MediaType; caption: string; location: string; hubIds?: string[]; name?: string; contentType?: string; size?: number }) => Promise<string | undefined>;
-  createStory: (input: { imageUri?: string; mediaType?: Exclude<MediaType, 'quote'>; caption: string; name?: string; contentType?: string; size?: number; width?: number; height?: number; duration?: number }) => Promise<void>;
+  createStory: (input: { imageUri?: string; mediaType?: Exclude<MediaType, 'quote'>; caption: string; visibility?: 'public' | 'friends' | 'followers' | 'close_friends' | 'private'; name?: string; contentType?: string; size?: number; width?: number; height?: number; duration?: number }) => Promise<void>;
   updateProfile: (input: { name: string; username: string; bio: string }) => Promise<void>;
   updateProfileAvatar: (input: { uri: string; contentType?: string; size?: number }) => Promise<void>;
 };
@@ -444,9 +451,20 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
     createPost: async ({ imageUri, mediaType, caption, location, hubIds, name, contentType, size }) => {
       if (!isSignedIn) throw new Error('Sign in required');
       if (mediaType === 'quote') {
-        const result = await apiCreatePost({ mediaUrl: '', mediaType, caption, location, hubIds });
+        const result = await createSocialPost({
+          content: caption,
+          kind: 'text',
+          visibility: 'friends',
+          allowReposts: false,
+        }, getToken);
+        const numericHubIds = (hubIds ?? [])
+          .map((hubId) => Number(hubId))
+          .filter((hubId) => Number.isInteger(hubId) && hubId > 0);
+        if (numericHubIds.length) {
+          await attachPostToHubs(result.id, numericHubIds, getToken);
+        }
         await refreshFromServer();
-        return result.id;
+        return String(result.id);
       }
       const extension = mediaType === 'video' ? 'mp4' : 'jpg';
       const resolvedContentType = contentType ?? (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
@@ -460,15 +478,31 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
       });
       let result;
       try {
-        result = await apiCreatePost({ mediaUrl: objectPath, mediaType, caption, location, hubIds });
+        result = await createSocialPost({
+          content: caption,
+          kind: mediaType === 'video' ? 'video' : 'photo',
+          visibility: 'friends',
+          allowReposts: false,
+          media: [{
+            type: mediaType,
+            objectPath,
+            mimeType: resolvedContentType,
+          }],
+        }, getToken);
+        const numericHubIds = (hubIds ?? [])
+          .map((hubId) => Number(hubId))
+          .filter((hubId) => Number.isInteger(hubId) && hubId > 0);
+        if (numericHubIds.length) {
+          await attachPostToHubs(result.id, numericHubIds, getToken);
+        }
       } catch (error) {
         await cleanupMediaUpload(objectPath, getToken);
         throw error;
       }
       await refreshFromServer();
-      return result.id;
+      return String(result.id);
     },
-    createStory: async ({ imageUri, mediaType, caption, name, contentType, size, width, height, duration }) => {
+    createStory: async ({ imageUri, mediaType, caption, visibility = 'friends', name, contentType, size, width, height, duration }) => {
       if (!isSignedIn) throw new Error('Sign in required');
       if (mediaType && imageUri) {
         const extension = mediaType === 'video' ? 'mp4' : 'jpg';
@@ -483,7 +517,7 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
         try {
           await apiCreateStory({
             content: caption,
-            visibility: 'friends',
+            visibility,
             media: {
               type: mediaType,
               objectPath,
@@ -500,7 +534,7 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      await apiCreateStory({ content: caption, visibility: 'friends', media: null }, getToken);
+      await apiCreateStory({ content: caption, visibility, media: null }, getToken);
     },
     updateProfile: async ({ name, username, bio }) => {
       if (!isSignedIn || !userId) throw new Error('Sign in required');

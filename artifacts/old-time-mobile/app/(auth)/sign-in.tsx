@@ -2,51 +2,96 @@ import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { Link, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, Platform, Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { EmailCodeInput } from '@/components/EmailCodeInput';
 import { useColors } from '@/hooks/useColors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { assertSupabaseConfigured, getSafeAuthError, OAUTH_PROVIDERS, signInWithOAuth, supabase, type OAuthProvider } from '@/lib/auth';
+import {
+  getSafeAuthError,
+  OAUTH_PROVIDERS,
+  sendEmailCode,
+  signInWithOAuth,
+  verifyEmailCode,
+  type OAuthProvider,
+} from '@/lib/auth';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const launchLogo = require('../../assets/images/old-time-feather-logo.png');
 const AUTH_VISITED_KEY = 'old-time:has-signed-in';
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
 
 export default function SignInScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [emailAddress, setEmailAddress] = useState('');
-  const [password, setPassword] = useState('');
-  const [hasSignedInBefore, setHasSignedInBefore] = useState(false);
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(0);
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
   const hasOAuthProviders = OAUTH_PROVIDERS.apple || OAUTH_PROVIDERS.google;
 
   useEffect(() => {
-    void AsyncStorage.getItem(AUTH_VISITED_KEY).then((value) => setHasSignedInBefore(value === 'true'));
-    if (Platform.OS === 'android') {
-      void WebBrowser.warmUpAsync();
-      return () => void WebBrowser.coolDownAsync();
-    }
-  }, []);
+    if (secondsRemaining <= 0) return;
+    const timer = setInterval(() => setSecondsRemaining((current) => Math.max(0, current - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [secondsRemaining]);
 
-  const submit = async () => {
+  const sendCode = async () => {
+    const email = emailAddress.trim();
+    if (!isValidEmail(email)) {
+      Alert.alert('Enter your email', 'Use a valid email address to receive your six-digit code.');
+      return;
+    }
     setLoading(true);
     try {
-      assertSupabaseConfigured();
-      const { error } = await supabase.auth.signInWithPassword({
-        email: emailAddress.trim(),
-        password,
-      });
+      const { error } = await sendEmailCode(email, false);
       if (error) throw error;
+      setCode('');
+      setCodeSent(true);
+      setSecondsRemaining(60);
+    } catch (error) {
+      Alert.alert('Could not send your code', getSafeAuthError(error, 'Please check your email and try again.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyCode = async () => {
+    if (code.length !== 6) {
+      Alert.alert('Enter your six-digit code', 'Type all six numbers from the email we sent you.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await verifyEmailCode(emailAddress, code);
+      if (error) throw error;
+      if (!data.session) throw new Error('The sign-in session could not be created.');
       await AsyncStorage.setItem(AUTH_VISITED_KEY, 'true');
       router.replace('/');
     } catch (error) {
-      Alert.alert('Could not sign in', getSafeAuthError(error, 'Please check your connection and try again.'));
+      Alert.alert('That code did not work', getSafeAuthError(error, 'Request a new code and try again.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendCode = async () => {
+    if (secondsRemaining > 0) return;
+    setLoading(true);
+    try {
+      const { error } = await sendEmailCode(emailAddress, false);
+      if (error) throw error;
+      setCode('');
+      setSecondsRemaining(60);
+    } catch (error) {
+      Alert.alert('Could not resend your code', getSafeAuthError(error, 'Please wait a moment and try again.'));
     } finally {
       setLoading(false);
     }
@@ -55,7 +100,6 @@ export default function SignInScreen() {
   const continueWithProvider = useCallback(async (provider: OAuthProvider, providerName: string) => {
     setSsoLoading(true);
     try {
-      assertSupabaseConfigured();
       const outcome = await signInWithOAuth(provider);
       if (outcome === 'redirecting') return;
       await AsyncStorage.setItem(AUTH_VISITED_KEY, 'true');
@@ -70,143 +114,120 @@ export default function SignInScreen() {
   return (
     <KeyboardAwareScrollViewCompat
       style={[styles.screen, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.scrollContent}
+      contentContainerStyle={{ paddingTop: insets.top + 28, paddingBottom: Math.max(insets.bottom, 24) + 24 }}
+      bottomOffset={76}
       keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
     >
       <StatusBar barStyle="dark-content" />
-      <View style={styles.hero}>
-        <LinearGradient
-          colors={[colors.authGradientStart, colors.authGradientMiddle, colors.authGradientEnd]}
-          locations={[0, 0.5, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={[styles.heroOrb, styles.heroOrbOuter, { borderColor: 'rgba(255,255,255,0.15)' }]} />
-        <View style={[styles.heroOrb, styles.heroOrbInner, { borderColor: 'rgba(255,255,255,0.1)' }]} />
-        <View style={[styles.heroContent, { paddingTop: Math.max(insets.top, Platform.OS === 'web' ? 67 : 0) + 67 }]}>
-          <View style={[styles.logoHalo, { backgroundColor: colors.authNavy }]}>
-            <Image source={launchLogo} style={styles.launchLogo} />
-          </View>
-          <Text style={styles.brand}>Old Time<Text style={styles.brandDot}>.</Text></Text>
-          <Text style={styles.tagline}>Private conversations. Real connections.</Text>
-        </View>
-      </View>
-
-      <View style={[styles.form, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'web' ? 34 : 20) + 4 }]}>
-        <Text style={[styles.kicker, { color: colors.mutedForeground }]}>{hasSignedInBefore ? 'Good to see you' : 'Welcome to Old Time'}</Text>
-        <Text style={[styles.title, { color: colors.authInk }]}>{hasSignedInBefore ? 'Sign in and pick up where you left off.' : 'Sign in and start something real.'}</Text>
-
-        <View style={[styles.inputWrap, { borderColor: colors.authBorder }]}>
-          <Ionicons name="mail-outline" size={20} color={colors.authNavy} />
-          <TextInput
-            autoCapitalize="none"
-            autoComplete="email"
-            keyboardType="email-address"
-            value={emailAddress}
-            onChangeText={setEmailAddress}
-            placeholder="Email address"
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.input, { color: colors.authInk }]}
-          />
-        </View>
-        <View style={[styles.inputWrap, { borderColor: colors.authBorder }]}>
-          <Ionicons name="lock-closed-outline" size={20} color={colors.authNavy} />
-          <TextInput
-            secureTextEntry
-            autoComplete="password"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.input, { color: colors.authInk }]}
-          />
-        </View>
-        <Pressable
-          onPress={() => void submit()}
-          disabled={!emailAddress || !password || loading}
-          style={[styles.primaryButton, { backgroundColor: colors.authButton }, (!emailAddress || !password || loading) && styles.disabledButton]}
-        >
-          <Text style={[styles.primaryButtonText, { color: colors.authButtonText }]}>{loading ? 'Signing in…' : 'Sign in'}</Text>
-          <Ionicons name="arrow-forward" size={18} color={colors.authButtonText} />
-        </Pressable>
-
-        <Link href={'/(auth)/forgot-password' as never} asChild>
-          <Pressable style={styles.forgotLink}>
-            <Text style={[styles.forgotLinkText, { color: colors.authNavy }]}>Forgot password?</Text>
+      {codeSent ? (
+        <>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back to email" onPress={() => setCodeSent(false)} style={styles.back}>
+            <Ionicons name="arrow-back" size={22} color={colors.foreground} />
           </Pressable>
-        </Link>
-
-        <Link href={'/(auth)/sign-up' as never} asChild>
-          <Pressable style={styles.createLink}>
-            <Text style={[styles.createLinkText, { color: colors.authNavy }]}>New to Old Time? Create an account</Text>
-          </Pressable>
-        </Link>
-
-        {hasOAuthProviders ? <>
-          <View style={styles.dividerRow}>
-            <View style={[styles.divider, { backgroundColor: colors.authBorder }]} />
-            <Text style={[styles.orText, { color: colors.mutedForeground }]}>OR</Text>
-            <View style={[styles.divider, { backgroundColor: colors.authBorder }]} />
-          </View>
-
-          {OAUTH_PROVIDERS.apple ? <Pressable
-            onPress={() => void continueWithProvider('apple', 'Apple')}
-            disabled={ssoLoading}
-            style={[styles.providerButton, styles.appleButton, ssoLoading && styles.disabledButton]}
-          >
-            <Ionicons name="logo-apple" size={21} color="#ffffff" />
-            <Text style={styles.appleButtonText}>Continue with Apple</Text>
-          </Pressable> : null}
-          {OAUTH_PROVIDERS.google ? <Pressable
-            onPress={() => void continueWithProvider('google', 'Google')}
-            disabled={ssoLoading}
-            style={[styles.providerButton, { borderColor: colors.authBorder }, ssoLoading && styles.disabledButton]}
-          >
-            <Ionicons name="logo-google" size={20} color={colors.authInk} />
-            <Text style={[styles.googleButtonText, { color: colors.authInk }]}>Continue with Google</Text>
-          </Pressable> : null}
-        </> : <View style={[styles.socialUnavailable, { borderColor: colors.authBorder, backgroundColor: colors.secondary }]}>
-          <Text style={[styles.socialUnavailableText, { color: colors.mutedForeground }]}>
-            Email sign-in is available in this preview.
+          <Text style={[styles.eyebrow, { color: colors.action }]}>Secure sign in</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>Enter your code</Text>
+          <Text style={[styles.body, { color: colors.mutedForeground }]}>
+            We sent a six-digit code to{'\n'}<Text style={{ color: colors.foreground, fontFamily: 'NunitoSans_700Bold' }}>{emailAddress.trim()}</Text>
           </Text>
-        </View>}
-      </View>
+          <EmailCodeInput value={code} onChange={setCode} autoFocus />
+          <Pressable
+            onPress={() => void verifyCode()}
+            disabled={loading || code.length !== 6}
+            style={[styles.primaryButton, { backgroundColor: colors.action }, (loading || code.length !== 6) && styles.disabled]}
+          >
+            <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>{loading ? 'Checking…' : 'Continue'}</Text>
+            <Ionicons name="arrow-forward" size={18} color={colors.primaryForeground} />
+          </Pressable>
+          <Pressable onPress={() => void resendCode()} disabled={loading || secondsRemaining > 0} style={styles.resend}>
+            <Text style={[styles.resendText, { color: secondsRemaining > 0 ? colors.mutedForeground : colors.action }]}>
+              {secondsRemaining > 0 ? `Resend code in ${secondsRemaining}s` : 'Resend code'}
+            </Text>
+          </Pressable>
+          <Pressable onPress={() => setCodeSent(false)} style={styles.changeEmail}>
+            <Text style={[styles.changeEmailText, { color: colors.mutedForeground }]}>Use a different email</Text>
+          </Pressable>
+        </>
+      ) : (
+        <>
+          <Text style={[styles.eyebrow, { color: colors.action }]}>Welcome back</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>Sign in to Old Time</Text>
+          <Text style={[styles.body, { color: colors.mutedForeground }]}>Enter your email and we’ll send a one-time code. No password to remember.</Text>
+          <Text style={[styles.label, { color: colors.foreground }]}>Email address</Text>
+          <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Ionicons name="mail-outline" size={20} color={colors.action} />
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              value={emailAddress}
+              onChangeText={setEmailAddress}
+              onSubmitEditing={() => void sendCode()}
+              placeholder="you@example.com"
+              placeholderTextColor={colors.mutedForeground}
+              returnKeyType="go"
+              style={[styles.input, { color: colors.foreground }]}
+            />
+          </View>
+          <Pressable onPress={() => void sendCode()} disabled={loading || !emailAddress.trim()} style={[styles.primaryButton, { backgroundColor: colors.action }, (loading || !emailAddress.trim()) && styles.disabled]}>
+            <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>{loading ? 'Sending code…' : 'Send me a code'}</Text>
+            <Ionicons name="arrow-forward" size={18} color={colors.primaryForeground} />
+          </Pressable>
+          <Link href={'/(auth)/sign-up' as never} asChild>
+            <Pressable style={styles.createLink}>
+              <Text style={[styles.createLinkText, { color: colors.foreground }]}>New to Old Time? <Text style={{ color: colors.action }}>Create an account</Text></Text>
+            </Pressable>
+          </Link>
+          {hasOAuthProviders ? (
+            <>
+              <View style={styles.dividerRow}>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Text style={[styles.orText, { color: colors.mutedForeground }]}>OR</Text>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              </View>
+              {OAUTH_PROVIDERS.apple ? (
+                <Pressable onPress={() => void continueWithProvider('apple', 'Apple')} disabled={ssoLoading} style={[styles.providerButton, { borderColor: colors.border }, ssoLoading && styles.disabled]}>
+                  <Ionicons name="logo-apple" size={20} color={colors.foreground} />
+                  <Text style={[styles.providerText, { color: colors.foreground }]}>Continue with Apple</Text>
+                </Pressable>
+              ) : null}
+              {OAUTH_PROVIDERS.google ? (
+                <Pressable onPress={() => void continueWithProvider('google', 'Google')} disabled={ssoLoading} style={[styles.providerButton, { borderColor: colors.border }, ssoLoading && styles.disabled]}>
+                  <Ionicons name="logo-google" size={20} color={colors.foreground} />
+                  <Text style={[styles.providerText, { color: colors.foreground }]}>Continue with Google</Text>
+                </Pressable>
+              ) : null}
+            </>
+          ) : null}
+          <Text style={[styles.terms, { color: colors.mutedForeground }]}>By continuing, you agree to Old Time’s Terms and Privacy Policy.</Text>
+        </>
+      )}
     </KeyboardAwareScrollViewCompat>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  scrollContent: { flexGrow: 1 },
-  hero: { height: 334, overflow: 'hidden' },
-  heroContent: { flex: 1, alignItems: 'center' },
-  heroOrb: { position: 'absolute', borderRadius: 180 },
-  heroOrbOuter: { width: 300, height: 300, right: -62, top: -54, borderWidth: 24 },
-  heroOrbInner: { width: 212, height: 212, right: -20, top: 14, borderWidth: 1 },
-  logoHalo: { width: 112, height: 112, borderRadius: 56, alignItems: 'center', justifyContent: 'center', shadowColor: '#142d75', shadowOpacity: 0.3, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 10 },
-  launchLogo: { width: 100, height: 100, borderRadius: 50 },
-  brand: { color: '#FFFFFF', fontFamily: 'Fraunces_900Black', fontSize: 36, lineHeight: 42, letterSpacing: -1.2, marginTop: 20 },
-  brandDot: { color: '#D71920' },
-  tagline: { color: 'rgba(255,255,255,0.88)', fontFamily: 'Outfit_500Medium', fontSize: 15, marginTop: 6 },
-  form: { paddingHorizontal: 26, paddingTop: 24, backgroundColor: '#FFFFFF' },
-  kicker: { fontFamily: 'Outfit_700Bold', textTransform: 'uppercase', letterSpacing: 2, fontSize: 11, marginBottom: 8 },
-  title: { fontFamily: 'Fraunces_700Bold', fontSize: 30, lineHeight: 36, letterSpacing: -0.8, maxWidth: 370, marginBottom: 22 },
-  inputWrap: { height: 54, borderWidth: 1, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12 },
-  input: { flex: 1, minHeight: 52, paddingHorizontal: 12, fontFamily: 'Outfit_400Regular', fontSize: 16 },
-  error: { fontSize: 12, marginTop: -3, marginBottom: 7 },
-  primaryButton: { minHeight: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 8 },
-  primaryButtonText: { fontFamily: 'Outfit_700Bold', fontSize: 16 },
-  disabledButton: { opacity: 0.68 },
-  createLink: { alignItems: 'center', paddingVertical: 14 },
-  createLinkText: { fontFamily: 'Outfit_600SemiBold', fontSize: 15 },
-  forgotLink: { alignItems: 'center', paddingVertical: 4 },
-  forgotLinkText: { fontFamily: 'Outfit_600SemiBold', fontSize: 14 },
+  screen: { flex: 1, paddingHorizontal: 26 },
+  back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginBottom: 42 },
+  eyebrow: { fontFamily: 'NunitoSans_800ExtraBold', textTransform: 'uppercase', letterSpacing: 1.5, fontSize: 11, marginBottom: 10 },
+  title: { fontFamily: 'NunitoSans_800ExtraBold', fontSize: 32, lineHeight: 38, letterSpacing: -0.8 },
+  body: { fontFamily: 'NunitoSans_400Regular', fontSize: 16, lineHeight: 23, marginTop: 12, marginBottom: 28, maxWidth: 360 },
+  label: { fontFamily: 'NunitoSans_700Bold', fontSize: 14, marginBottom: 8 },
+  inputWrap: { height: 56, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
+  input: { flex: 1, minHeight: 54, paddingHorizontal: 12, fontFamily: 'NunitoSans_400Regular', fontSize: 16 },
+  primaryButton: { minHeight: 56, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 18 },
+  primaryButtonText: { fontFamily: 'NunitoSans_800ExtraBold', fontSize: 16 },
+  disabled: { opacity: 0.5 },
+  createLink: { alignItems: 'center', paddingVertical: 18 },
+  createLinkText: { fontFamily: 'NunitoSans_600SemiBold', fontSize: 15 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 12 },
   divider: { height: 1, flex: 1 },
-  orText: { fontFamily: 'Outfit_700Bold', fontSize: 12 },
-  providerButton: { minHeight: 54, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginBottom: 12 },
-  appleButton: { backgroundColor: '#1A1614', borderColor: '#1A1614' },
-  appleButtonText: { color: '#FFFFFF', fontFamily: 'Outfit_600SemiBold', fontSize: 16 },
-  googleButtonText: { fontFamily: 'Outfit_600SemiBold', fontSize: 16 },
-  socialUnavailable: { minHeight: 48, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, marginTop: 10 },
-  socialUnavailableText: { fontFamily: 'Outfit_500Medium', fontSize: 13, textAlign: 'center' },
+  orText: { fontFamily: 'NunitoSans_800ExtraBold', fontSize: 11, letterSpacing: 1 },
+  providerButton: { minHeight: 54, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginBottom: 10 },
+  providerText: { fontFamily: 'NunitoSans_700Bold', fontSize: 16 },
+  terms: { fontFamily: 'NunitoSans_400Regular', fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 18 },
+  resend: { alignItems: 'center', paddingVertical: 18 },
+  resendText: { fontFamily: 'NunitoSans_700Bold', fontSize: 15 },
+  changeEmail: { alignItems: 'center', paddingVertical: 4 },
+  changeEmailText: { fontFamily: 'NunitoSans_600SemiBold', fontSize: 14 },
 });

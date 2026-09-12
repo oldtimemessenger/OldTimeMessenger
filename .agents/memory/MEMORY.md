@@ -12,6 +12,7 @@
 - [Story text positioning](story-text-positioning.md) — persist Story text placement as a normalized canvas offset so it scales across devices.
 - [Supabase schema staging](supabase-schema-staging.md) — stage Old Time tables in an isolated schema before any database cutover.
 - [Firebase profile sync boundary](firebase-profile-sync-boundary.md) — verify Firebase tokens and write Supabase profiles only through the API.
+- [Supabase API auth boundary](supabase-api-auth-boundary.md) — mobile Supabase sessions and Old Time API sessions are distinct; protected routes must bridge them server-side.
 - [RevenueCat coin crediting](revenuecat-coin-crediting.md) — reconcile provider purchases server-side and ledger each purchase before changing wallet balances.
 - [Customer-facing product copy](customer-facing-product-copy.md) — Old Time UI must describe outcomes in plain language, never expose implementation terminology.
 - [External discovery embeds](external-discovery-embeds.md) — third-party discovery uses official embeds only; native Old Time content gains priority as supply grows.
@@ -39,3 +40,4 @@
 - [LIVE gift delivery](live-gift-delivery.md) — post-commit room broadcasts are authoritative; deduplicate animations by gift record ID and never replay them on reconnect.
 - [Monorepo package install target](monorepo-package-install-target.md) — target one workspace package explicitly when adding an artifact-specific dependency.
 - [Verification badge enforcement](verification-badge-enforcement.md) — expose a badge only from server-confirmed payment or system-admin approval, never client input.
+- [GitHub monorepo EAS reads](github-monorepo-eas-read.md) — the GitHub build dialog may reject a valid nested eas.json; do not regenerate it before verifying the branch and path.

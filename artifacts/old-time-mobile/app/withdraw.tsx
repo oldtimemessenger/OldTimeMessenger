@@ -14,6 +14,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useAuth } from '@/lib/auth';
 
 const GOLD_PER_USD = 90;
 const MIN_GOLD = 900;
@@ -26,6 +27,7 @@ export default function WithdrawScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { session } = useAuth();
   const queryClient = useQueryClient();
   const [usd, setUsd] = useState('');
   const [result, setResult] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
@@ -37,6 +39,7 @@ export default function WithdrawScreen() {
   const payout = useGetCreatorPayoutSettings({ query: { queryKey: payoutOptions.queryKey } });
   const request = useRequestCreatorWithdrawal();
   const actionColor = colors.authNavy;
+  const emailVerified = Boolean(session?.user.email_confirmed_at);
   const availableGold = wallet.data?.gold ?? 0;
   const gold = useMemo(() => {
     const clean = usd.trim();
@@ -65,6 +68,13 @@ export default function WithdrawScreen() {
   };
 
   const confirm = () => {
+    if (!emailVerified) {
+      Alert.alert(
+        'Verify your email first',
+        'You can keep using Old Time, but email verification is required before you can withdraw creator earnings.',
+      );
+      return;
+    }
     if (!payout.data?.account.payoutsEnabled) {
       Alert.alert('Complete payout setup', 'Set up your Stripe payout details before requesting a withdrawal.', [
         { text: 'Payment Settings', onPress: () => router.push('/payment-settings' as never) },
@@ -97,13 +107,19 @@ export default function WithdrawScreen() {
       <Text style={[styles.label, { color: colors.foreground }]}>Withdrawal amount (USD)</Text>
       <TextInput value={usd} onChangeText={(value) => setUsd(value.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="$10.00" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]} accessibilityLabel="Withdrawal amount in US dollars" />
       <Text style={[styles.muted, { color: colors.mutedForeground }]}>{gold ? `${gold.toLocaleString()} Gold` : '90 Gold = $1.00'} · Minimum $10.00 / 900 Gold</Text>
+       {!emailVerified ? (
+         <View style={[styles.warning, { backgroundColor: colors.muted }]}>
+           <Ionicons name="mail-unread-outline" size={21} color={actionColor} />
+           <Text style={[styles.warningText, { color: colors.foreground }]}>Verify your email before withdrawing. You can continue using the rest of Old Time while your account is unverified.</Text>
+         </View>
+       ) : null}
       {!payout.data?.account.payoutsEnabled ? (
          <Pressable onPress={() => router.push('/payment-settings' as never)} style={[styles.warning, { backgroundColor: colors.muted }]} accessibilityRole="button" accessibilityLabel="Open creator payout settings">
            <Ionicons name="alert-circle-outline" size={21} color={actionColor} />
            <Text style={[styles.warningText, { color: colors.foreground }]}>Payout setup is required. Open Payment Settings to finish securely with Stripe.</Text>
         </Pressable>
       ) : null}
-       <Pressable disabled={request.isPending} onPress={confirm} style={[styles.button, { backgroundColor: actionColor, opacity: request.isPending ? 0.6 : 1 }]}>{request.isPending ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.buttonText}>Request withdrawal</Text>}</Pressable>
+        <Pressable disabled={request.isPending || !emailVerified} onPress={confirm} style={[styles.button, { backgroundColor: actionColor, opacity: request.isPending || !emailVerified ? 0.6 : 1 }]}>{request.isPending ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.buttonText}>{emailVerified ? 'Request withdrawal' : 'Verify email to withdraw'}</Text>}</Pressable>
        {result ? <Text style={[styles.result, { color: result.kind === 'error' ? colors.destructive : actionColor }]}>{result.text}</Text> : null}
       <Text style={[styles.section, { color: colors.foreground }]}>Withdrawal history</Text>
        {history.isLoading ? <ActivityIndicator color={actionColor} /> : history.data?.items.length ? history.data.items.map((item) => <View key={item.id} style={[styles.history, { backgroundColor: colors.card, borderColor: colors.border }]}><View><Text style={[styles.historyAmount, { color: colors.foreground }]}>${(item.amountCents / 100).toFixed(2)}</Text><Text style={[styles.muted, { color: colors.mutedForeground }]}>{item.gold.toLocaleString()} Gold · {new Date(item.createdAt).toLocaleDateString()}</Text></View><Text style={[styles.status, { color: item.status === 'failed' ? colors.destructive : colors.mutedForeground }]}>{item.status.replace(/_/g, ' ')}</Text></View>) : <Text style={[styles.muted, { color: colors.mutedForeground }]}>No withdrawal requests yet.</Text>}

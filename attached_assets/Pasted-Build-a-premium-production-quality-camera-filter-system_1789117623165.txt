@@ -1,0 +1,363 @@
+Build a premium, production-quality camera filter system for Old Time Messenger.
+
+IMPORTANT: Do NOT build childish Snapchat-style sticker filters as the main experience. Do NOT use cheap-looking cartoon overlays, emojis, oversized ears, basic color tints, or novelty effects.
+
+The goal is to make Old Time’s camera competitive with the beauty/photo effects users expect from FaceApp, Facetune, Snapchat, and Instagram.
+
+The filters must make users look genuinely better while still looking like themselves.
+
+CORE CAMERA EXPERIENCE
+
+Create a polished full-screen camera with:
+
+* Front and rear camera
+* Live preview
+* Real-time filters
+* Smooth 60 FPS where device hardware allows
+* Face detection / face landmarks
+* Multiple faces supported
+* Filter intensity slider
+* Original / Before comparison
+* Photo capture
+* Video capture
+* Flip camera
+* Flash controls
+* Zoom
+* Save/share/send directly into Old Time
+* No childish UI
+* No excessive animations
+* Premium iOS-style interface
+
+FILTER 1 — OLD TIME FLAWLESS
+
+This is the flagship filter and must be the best filter in the entire system.
+
+The goal is:
+
+“Make me look like the best version of myself.”
+
+It should intelligently detect the face and apply subtle real-time enhancements:
+
+* Natural skin smoothing
+* Reduce temporary blemishes
+* Reduce redness
+* Reduce visible dark spots
+* Soften under-eye darkness
+* Improve skin tone consistency
+* Subtle facial lighting
+* Natural eye enhancement
+* Slight lip color enhancement
+* Subtle teeth whitening when teeth are visible
+* Very subtle facial contour enhancement
+* Improve overall facial symmetry without making the person look fake
+* Preserve facial identity
+* Preserve skin texture
+* Preserve pores
+* Preserve hair
+* Preserve facial hair
+* Preserve wrinkles naturally instead of completely removing them
+
+CRITICAL:
+
+The person must still look like themselves.
+
+Do NOT create a plastic AI face.
+
+Do NOT over-smooth skin.
+
+Do NOT enlarge eyes unnaturally.
+
+Do NOT make every person have the same face.
+
+Do NOT dramatically change nose, jaw, lips, or facial structure.
+
+The result should feel like excellent professional lighting + professional beauty retouching.
+
+Include an intensity slider from 0–100%.
+
+Default intensity should be around 35–45%.
+
+FILTER 2 — GLASS SKIN
+
+Premium beauty effect inspired by high-end beauty cameras.
+
+Features:
+
+* Smooth complexion
+* Healthy skin glow
+* Controlled highlights
+* Reduce redness
+* Reduce small imperfections
+* Maintain natural texture
+* Slightly brighter eyes
+* Soft professional lighting
+
+The result should look like expensive studio photography, not a cartoon filter.
+
+FILTER 3 — GOLDEN HOUR
+
+Create realistic cinematic golden-hour lighting around the face.
+
+Features:
+
+* Warm natural skin lighting
+* Soft highlights
+* Gentle shadows
+* Face-aware lighting
+* Background remains realistic
+* Subtle depth and cinematic contrast
+
+It should look like the person was photographed during perfect sunset lighting.
+
+FILTER 4 — STUDIO PORTRAIT
+
+Simulate professional portrait photography.
+
+Features:
+
+* Face-aware exposure
+* Skin enhancement
+* Background separation when technically possible
+* Soft depth-of-field appearance
+* Professional facial lighting
+* Natural contrast
+* Slightly enhanced eyes
+* High-end portrait color science
+
+The result should resemble a professional photographer’s portrait session.
+
+FILTER 5 — CUTE CAT
+
+This is the first true Snapchat-style AR filter.
+
+Use face tracking to create a high-quality cat transformation:
+
+* Realistic cat ears
+* Cat nose
+* Subtle whiskers
+* Cat-eye effect
+* Face-aware movement
+* Ears follow head movement
+* Mouth/face tracking
+* Smooth real-time tracking
+
+Do NOT make it look like a cheap cartoon.
+
+Make it cute, polished, and shareable.
+
+FILTER 6 — ANGEL
+
+Create a beautiful fantasy AR effect.
+
+Features:
+
+* Elegant glowing halo
+* Soft facial glow
+* Subtle particles
+* Light feather-like visual elements
+* Face tracking
+* Head movement tracking
+* Premium cinematic lighting
+
+It should feel like a luxury social-media effect rather than a children’s filter.
+
+FILTER 7 — BUTTERFLY
+
+Create a premium animated butterfly effect.
+
+Features:
+
+* Butterflies interact with the user’s face/head position
+* Face tracking
+* Butterflies move naturally
+* Some butterflies can fly toward/away from camera
+* Subtle glow
+* Cinematic depth
+* No giant cartoon graphics
+
+The effect should look beautiful enough that users want to record videos with it.
+
+FILTER 8 — DOLL / PORCELAIN
+
+Create a fashion-editorial beauty effect.
+
+Features:
+
+* Smooth but realistic skin
+* Slightly enhanced eyes
+* Soft lips
+* Controlled highlights
+* Subtle facial refinement
+* Soft-focus photography effect
+* Maintain facial identity
+
+Do NOT make the person look completely artificial.
+
+FILTER 9 — CYBER / FUTURE
+
+Create a futuristic premium AR effect.
+
+Features:
+
+* Face tracking
+* Subtle futuristic facial markings
+* Neon-style lighting
+* Eye tracking
+* Animated elements responding to head movement
+* Cinematic contrast
+* Modern futuristic aesthetic
+
+No childish graphics.
+
+It should look like something from a high-budget music video.
+
+FILTER 10 — VINTAGE FILM
+
+Create a premium film-camera effect.
+
+Features:
+
+* Film grain
+* Natural skin tones
+* Cinematic contrast
+* Slight analog color variation
+* Soft highlights
+* Subtle vignette
+* Realistic film texture
+
+It should look like an expensive analog camera rather than an Instagram preset.
+
+IMPORTANT TECHNICAL REQUIREMENT
+
+Do not fake the filters by simply placing PNG images over the camera.
+
+Use actual face tracking / facial landmarks / segmentation where appropriate.
+
+The system must distinguish:
+
+* face
+* eyes
+* eyebrows
+* nose
+* mouth
+* skin region
+* hair
+* background
+
+Beauty filters must affect the appropriate facial regions rather than applying a generic blur to the entire camera image.
+
+AR filters must track the face smoothly as the user moves.
+
+PERFORMANCE
+
+The camera must feel premium.
+
+Avoid:
+
+* noticeable lag
+* filter jumping
+* face tracking instability
+* delayed overlays
+* low-resolution preview
+* excessive battery usage
+* filters disappearing when the user moves
+
+Optimize for modern iPhones first.
+
+ARCHITECTURE
+
+Do not hard-code the filters into one giant camera component.
+
+Create a reusable filter engine/API such as:
+
+CameraEngine
+FaceTracker
+BeautyFilter
+LightingFilter
+ARFilter
+FilterIntensity
+FilterRenderer
+
+Each filter should be independently configurable.
+
+Create a filter registry so additional filters can be added later without rebuilding the camera architecture.
+
+Example conceptual structure:
+
+filters/
+flawless
+glassSkin
+goldenHour
+studioPortrait
+cat
+angel
+butterfly
+doll
+cyber
+vintageFilm
+
+Each filter should define:
+
+* name
+* preview
+* category
+* intensity
+* supported camera
+* required tracking
+* rendering configuration
+
+UI
+
+The camera should look like a premium social camera.
+
+Bottom area:
+
+[ Capture ]
+
+Above capture:
+
+horizontal filter carousel with live previews.
+
+Example:
+
+Original | Flawless | Glass | Golden | Studio | Cat | Angel | Butterfly | Doll | Cyber | Vintage
+
+The selected filter should have a clean visual indicator.
+
+Add:
+
+Intensity
+
+0 ––––●–––– 100
+
+Do not overcrowd the screen.
+
+The camera must feel closer to a premium iOS camera + Snapchat/Instagram camera than a generic React Native demo.
+
+QUALITY BAR
+
+Before considering this feature complete, test every filter on:
+
+* different skin tones
+* different face shapes
+* glasses
+* facial hair
+* long hair
+* short hair
+* multiple people
+* different lighting conditions
+* movement
+* low light
+* bright outdoor light
+
+MOST IMPORTANT:
+
+If a filter looks like a children’s app, a cheap Snapchat clone, or a basic Instagram color preset, REJECT IT and rebuild it.
+
+The flagship “Old Time Flawless” filter should be the centerpiece.
+
+The objective is for someone to open the Old Time camera, try Flawless, see themselves looking significantly better, and think:
+
+“Wait… this actually looks really good.”
+
+That is the quality standard.

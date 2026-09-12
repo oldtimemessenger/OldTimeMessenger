@@ -17,7 +17,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "83",
+      "buildNumber": "87",
       "bundleIdentifier": "com.oldtime.messenger",
       "appleTeamId": "FC6ZRKNS2N",
       "usesAppleSignIn": true,
@@ -33,6 +33,7 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
+              "old-time-mobile",
               "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0"
             ]
           }

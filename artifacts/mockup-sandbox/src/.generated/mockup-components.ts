@@ -4,6 +4,6 @@ export const modules: ModuleMap = {
   "./components/mockups/face-filter-preview/Glow.tsx": () => import("../components/mockups/face-filter-preview/Glow.tsx"),
   "./components/mockups/face-filter-preview/Makeup.tsx": () => import("../components/mockups/face-filter-preview/Makeup.tsx"),
   "./components/mockups/face-filter-preview/Retouch.tsx": () => import("../components/mockups/face-filter-preview/Retouch.tsx"),
-  "./components/mockups/old-time-theme/Interior.tsx": () => import("../components/mockups/old-time-theme/Interior.tsx"),
-  "./components/mockups/old-time-map-preview/MapPreview.tsx": () => import("../components/mockups/old-time-map-preview/MapPreview.tsx")
+  "./components/mockups/old-time-map-preview/MapPreview.tsx": () => import("../components/mockups/old-time-map-preview/MapPreview.tsx"),
+  "./components/mockups/old-time-theme/Interior.tsx": () => import("../components/mockups/old-time-theme/Interior.tsx")
 };

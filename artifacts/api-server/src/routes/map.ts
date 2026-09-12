@@ -112,7 +112,6 @@ router.get("/map/pins/nearby", async (req, res): Promise<void> => {
 });
 
 router.get("/map/places/nearby", async (req, res): Promise<void> => {
-  const viewerId = await requireChatAuth(req, res); if (viewerId === null) return;
   const query = z.object({
     latitude: z.coerce.number().finite().min(-90).max(90),
     longitude: z.coerce.number().finite().min(-180).max(180),

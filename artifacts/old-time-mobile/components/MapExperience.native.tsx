@@ -104,8 +104,8 @@ export default function MapExperience() {
   const requestId = useRef(0);
   const regionChangeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const request = useCallback(async (path: string, init?: RequestInit) => {
-    const token = await getToken();
+  const request = useCallback(async (path: string, init?: RequestInit, tokenOverride?: string | null) => {
+    const token = tokenOverride === undefined ? await getToken() : tokenOverride;
     const response = await fetch(`${API_BASE_URL}/api${path}`, {
       ...init,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
@@ -122,12 +122,20 @@ export default function MapExperience() {
     setLoading(true);
     try {
       const radiusKm = Math.min(25, Math.max(1, next.latitudeDelta * 111 * 0.75));
-      const [pinData, placeData] = await Promise.all([
-        request(`/map/pins/nearby?latitude=${next.latitude}&longitude=${next.longitude}&radiusKm=${radiusKm}`) as Promise<{ items: NearbyPin[] }>,
-        layer === 'all' || layer === 'places'
-          ? request(`/map/places/nearby?latitude=${next.latitude}&longitude=${next.longitude}&category=all&radiusMeters=5000`) as Promise<{ items: Place[] }>
-          : Promise.resolve({ items: [] }),
+      const token = await getToken();
+      const pinRequest = token
+        ? request(`/map/pins/nearby?latitude=${next.latitude}&longitude=${next.longitude}&radiusKm=${radiusKm}`, undefined, token) as Promise<{ items: NearbyPin[] }>
+        : Promise.resolve({ items: [] as NearbyPin[] });
+      const placeRequest = layer === 'all' || layer === 'places'
+        ? request(`/map/places/nearby?latitude=${next.latitude}&longitude=${next.longitude}&category=all&radiusMeters=5000`, undefined, token) as Promise<{ items: Place[] }>
+        : Promise.resolve({ items: [] as Place[] });
+      const [pinResult, placeResult] = await Promise.allSettled([
+        pinRequest,
+        placeRequest,
       ]);
+      if (placeResult.status === 'rejected') throw placeResult.reason;
+      const pinData = pinResult.status === 'fulfilled' ? pinResult.value : { items: [] as NearbyPin[] };
+      const placeData = placeResult.value;
       if (id !== requestId.current) return;
       setActivity(activityFromPins(pinData.items ?? []));
       setWeather(null);
@@ -137,7 +145,7 @@ export default function MapExperience() {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [layer, request]);
+  }, [getToken, layer, request]);
 
   useEffect(() => {
     void load(region);

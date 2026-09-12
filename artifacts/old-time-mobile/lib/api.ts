@@ -38,6 +38,11 @@ type UploadMediaResponse = {
   objectPath: string;
 };
 
+function absoluteApiUrl(value: string): string {
+  if (/^https?:\/\//i.test(value)) return value;
+  return `${API_BASE_URL}${value.startsWith('/') ? value : `/${value}`}`;
+}
+
 async function authenticatedFetch(path: string, getToken: () => Promise<string | null>, init?: RequestInit) {
   if (!API_CONFIGURED) {
     throw new Error('Old Time API is not configured for this build. Set EXPO_PUBLIC_API_URL or EXPO_PUBLIC_DOMAIN.');
@@ -53,8 +58,8 @@ async function authenticatedFetch(path: string, getToken: () => Promise<string |
   if (!response.ok) {
     let message = 'Media request failed.';
     try {
-      const payload = (await response.json()) as { message?: string };
-      if (payload.message) message = payload.message;
+      const payload = (await response.json()) as { message?: string; error?: string };
+      if (payload.message || payload.error) message = payload.message ?? payload.error ?? message;
     } catch {
       // Keep the generic message when the server did not return JSON.
     }
@@ -85,10 +90,14 @@ export async function uploadMedia(input: UploadMediaInput): Promise<string> {
     const prepared = (await response.json()) as UploadMediaResponse;
     objectPath = prepared.objectPath;
 
-    const upload = await FileSystem.uploadAsync(prepared.uploadURL, input.uri, {
+    const token = await input.getToken();
+    const upload = await FileSystem.uploadAsync(absoluteApiUrl(prepared.uploadURL), input.uri, {
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
       httpMethod: 'PUT',
-      headers: { 'Content-Type': input.contentType },
+      headers: {
+        'Content-Type': input.contentType,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     });
     if (upload.status < 200 || upload.status >= 300) {
       throw new Error('The media upload did not complete.');
@@ -98,6 +107,43 @@ export async function uploadMedia(input: UploadMediaInput): Promise<string> {
     if (objectPath) await cleanupMediaUpload(objectPath, input.getToken);
     throw error;
   }
+}
+
+export type SocialPostInput = {
+  content: string;
+  kind: 'text' | 'photo' | 'video';
+  visibility?: 'public' | 'friends' | 'followers' | 'private';
+  allowReposts?: boolean;
+  media?: Array<{
+    type: 'image' | 'video';
+    objectPath: string;
+    mimeType: string;
+    width?: number;
+    height?: number;
+    duration?: number;
+  }>;
+};
+
+export async function createSocialPost(input: SocialPostInput, getToken: () => Promise<string | null>) {
+  const response = await authenticatedFetch('/api/social/posts', getToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return response.json() as Promise<{ id: string | number }>;
+}
+
+export async function attachPostToHubs(
+  postId: string | number,
+  hubIds: number[],
+  getToken: () => Promise<string | null>,
+) {
+  const response = await authenticatedFetch(`/api/social/posts/${encodeURIComponent(String(postId))}/hubs`, getToken, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hubIds }),
+  });
+  return response.json();
 }
 
 export async function updateProfileAvatar(input: { userId: string; objectPath: string; getToken: () => Promise<string | null> }) {

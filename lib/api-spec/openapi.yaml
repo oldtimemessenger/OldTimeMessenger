@@ -2821,7 +2821,8 @@ components:
         url: { type: string }
         roomName: { type: string }
         canPublish: { type: boolean }
-      required: [token, url, roomName, canPublish]
+        canPublishCamera: { type: boolean }
+      required: [token, url, roomName, canPublish, canPublishCamera]
     CurrentEventRoomInput:
       type: object
       properties:

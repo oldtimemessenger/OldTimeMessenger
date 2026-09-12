@@ -39,8 +39,13 @@ type Props = {
   giftEvents: CurrentEventGiftEvent[];
   audioConnected: boolean;
   micEnabled: boolean;
+  cameraEnabled?: boolean;
+  cameraFacing?: 'front' | 'back';
+  videoStage?: React.ReactNode;
   onSendMessage: (body: string) => Promise<void>;
   onToggleMic: () => void;
+  onToggleCamera?: () => void;
+  onSwitchCamera?: () => void;
   onLeave: () => void;
   onParticipantAction: (participantId: number, action: CurrentEventParticipantAction['action']) => Promise<void>;
 };
@@ -142,7 +147,7 @@ function AnimatedGiftMedia({ gift }: { gift: (typeof gifts)[number] }) {
   );
 }
 
-export function AccessRoomUi({ room, messages, giftEvents, audioConnected, micEnabled, onSendMessage, onToggleMic, onLeave, onParticipantAction }: Props) {
+export function AccessRoomUi({ room, messages, giftEvents, audioConnected, micEnabled, cameraEnabled = false, videoStage, onSendMessage, onToggleMic, onToggleCamera, onSwitchCamera, onLeave, onParticipantAction }: Props) {
   const colors = useColors();
   const { currentUserId } = useOldTime();
   const router = useRouter();
@@ -259,7 +264,7 @@ export function AccessRoomUi({ room, messages, giftEvents, audioConnected, micEn
       const requestKey = createGiftRequestKey();
       const send = () => sendCurrentEventGift(
         room.id,
-        { gift: chosenGift.gift, recipientId: chosenRecipient.id },
+        { gift: chosenGift.gift, recipientId: chosenRecipient.user.id },
         { headers: { 'Idempotency-Key': requestKey } },
       );
       let receipt;
@@ -314,6 +319,16 @@ export function AccessRoomUi({ room, messages, giftEvents, audioConnected, micEn
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 112 }]} showsVerticalScrollIndicator={false}>
+        {videoStage ? (
+          <View style={[styles.videoStage, { backgroundColor: colors.foreground }]}>
+            {videoStage}
+            <View style={styles.cameraControls}>
+              {onSwitchCamera ? <Pressable onPress={onSwitchCamera} accessibilityRole="button" accessibilityLabel="Switch camera" style={styles.cameraControl}>
+                <Ionicons name="camera-reverse" size={27} color="#fff" />
+              </Pressable> : null}
+            </View>
+          </View>
+        ) : null}
         <View style={styles.roomIntro}>
           <View style={[styles.livePill, { backgroundColor: colors.homeBorder }]}><View style={[styles.liveDot, { backgroundColor: colors.destructive }]} /><Text style={[styles.liveText, { color: colors.homeForeground }]}>LIVE</Text></View>
           <Text style={[styles.summary, { color: colors.homeMutedForeground }]}>{room.counts.speakers} speaking · {room.counts.listeners} listening</Text>
@@ -383,6 +398,7 @@ export function AccessRoomUi({ room, messages, giftEvents, audioConnected, micEn
       {giftNotice ? <View style={[styles.notice, { backgroundColor: colors.secondary }]}><Ionicons name="checkmark-circle-outline" size={16} color={colors.primary} /><Text style={[styles.noticeText, { color: colors.foreground }]}>{giftNotice}</Text></View> : null}
       <View style={[styles.actionBar, { backgroundColor: colors.homeBackground, borderTopColor: colors.homeBorder, paddingBottom: insets.bottom + 10 }]}>
         {room.viewer.role !== 'listener' ? <Pressable onPress={onToggleMic} accessibilityRole="button" accessibilityLabel={micEnabled ? 'Mute microphone' : 'Unmute microphone'} style={[styles.trayButton, { backgroundColor: micEnabled ? colors.primary : colors.card, borderColor: micEnabled ? colors.primary : colors.border }]}><Ionicons name={micEnabled ? 'mic' : 'mic-off'} size={20} color={micEnabled ? colors.primaryForeground : colors.homeForeground} /><Text style={[styles.trayLabel, { color: micEnabled ? colors.primaryForeground : colors.homeForeground }]}>{micEnabled ? 'Mic on' : 'Muted'}</Text></Pressable> : null}
+        {room.viewer.role !== 'listener' && onToggleCamera ? <Pressable onPress={onToggleCamera} accessibilityRole="button" accessibilityLabel={cameraEnabled ? 'Turn camera off' : 'Turn camera on'} style={[styles.trayButton, { backgroundColor: cameraEnabled ? colors.primary : colors.card, borderColor: cameraEnabled ? colors.primary : colors.border }]}><Ionicons name={cameraEnabled ? 'videocam' : 'videocam-off'} size={20} color={cameraEnabled ? colors.primaryForeground : colors.homeForeground} /><Text style={[styles.trayLabel, { color: cameraEnabled ? colors.primaryForeground : colors.homeForeground }]}>{cameraEnabled ? 'Camera' : 'Video'}</Text></Pressable> : null}
         <Pressable onPress={() => setChatOpen(true)} accessibilityRole="button" accessibilityLabel="Open Access chat" style={[styles.trayButton, { backgroundColor: colors.card, borderColor: colors.border }]}><Ionicons name="chatbubbles-outline" size={20} color={colors.homeForeground} /><Text style={[styles.trayLabel, { color: colors.homeForeground }]}>Chat</Text></Pressable>
         <Pressable onPress={openGiftPicker} accessibilityRole="button" accessibilityLabel="Send a gift" style={[styles.trayButton, { backgroundColor: colors.secondary, borderColor: colors.secondary }]}><Ionicons name="gift-outline" size={20} color={colors.homeForeground} /><Text style={[styles.trayLabel, { color: colors.homeForeground }]}>Gift</Text></Pressable>
         <Pressable onPress={onLeave} accessibilityRole="button" accessibilityLabel={room.viewer.role === 'host' ? 'End Access room' : 'Leave Access room'} style={[styles.leaveButton, { backgroundColor: colors.destructive }]}><Ionicons name="exit-outline" size={20} color={colors.destructiveForeground} /><Text style={[styles.trayLabel, { color: colors.destructiveForeground }]}>{room.viewer.role === 'host' ? 'End' : 'Leave'}</Text></Pressable>
@@ -464,6 +480,9 @@ export function AccessRoomUi({ room, messages, giftEvents, audioConnected, micEn
 }
 
 const styles = StyleSheet.create({
+  videoStage: { height: 420, marginHorizontal: -18, marginTop: -14, marginBottom: 12, position: 'relative', overflow: 'hidden' },
+  cameraControls: { position: 'absolute', top: 18, right: 14, gap: 18 },
+  cameraControl: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
   root: { flex: 1 },
   header: { height: 72, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
