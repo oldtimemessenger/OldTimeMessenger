@@ -2,7 +2,6 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import type { Request, Response } from "express";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { authSessionsTable, db, usersTable } from "@workspace/db";
-import { meetsMinimumAge } from "./age-gate";
 import { verifySupabaseAccessToken } from "./supabase-auth";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -67,15 +66,11 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
       const email = identity?.email?.trim().toLowerCase();
       if (email) {
         const [user] = await db
-          .select({ id: usersTable.id, birthday: usersTable.birthday })
+          .select({ id: usersTable.id })
           .from(usersTable)
           .where(eq(usersTable.email, email))
           .limit(1);
         if (user) {
-          if (!user.birthday || !meetsMinimumAge(user.birthday)) {
-            res.status(401).json({ error: "Age verification is required before using Old Time." });
-            return null;
-          }
           userId = user.id;
         }
       }
@@ -89,7 +84,7 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
     return null;
   }
   const [user] = await db
-    .select({ birthday: usersTable.birthday })
+    .select({ id: usersTable.id })
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
@@ -105,10 +100,6 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
         ),
       );
     res.status(401).json({ error: "Your session is no longer valid. Please sign in again." });
-    return null;
-  }
-  if (!user.birthday || !meetsMinimumAge(user.birthday)) {
-    res.status(401).json({ error: "Age verification is required before using Old Time." });
     return null;
   }
   return userId;
