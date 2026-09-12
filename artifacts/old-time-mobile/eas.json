@@ -39,12 +39,12 @@
       "env": {
         "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
         "EXPO_PUBLIC_RELEASE_COMMIT": "f5ded3c98bf6a2f7df384b454d7c967693da74bf",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kcwawiqtfmravkljfswu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjd2F3aXF0Zm1yYXZrbGpmc3d1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTQxMDEsImV4cCI6MjA5ODI3MDEwMX0.n9B31s-MygTLenbsErEG2JPTKIpDjsAsIa_NEJ1_mDU",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID": "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0",
         "EXPO_PUBLIC_SUPABASE_OAUTH_PROVIDERS": "google,apple",
-        "EXPO_PUBLIC_ADMOB_TEST_MODE": "true",
-        "EXPO_PUBLIC_SUPABASE_URL": "https://kcwawiqtfmravkljfswu.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjd2F3aXF0Zm1yYXZrbGpmc3d1IiwiaWF0IjoxNzgyNjk0MTAxLCJleHAiOjIwOTgyNzAxMDF9.n9B31s-MygTLenbsErEG2JPTKIpDjsAsIa_NEJ1_mDU"
+        "EXPO_PUBLIC_ADMOB_TEST_MODE": "true"
       }
     },
     "production": {
@@ -54,12 +54,12 @@
       "env": {
         "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
         "EXPO_PUBLIC_RELEASE_COMMIT": "f5ded3c98bf6a2f7df384b454d7c967693da74bf",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kcwawiqtfmravkljfswu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjd2F3aXF0Zm1yYXZrbGpmc3d1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTQxMDEsImV4cCI6MjA5ODI3MDEwMX0.n9B31s-MygTLenbsErEG2JPTKIpDjsAsIa_NEJ1_mDU",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID": "com.googleusercontent.apps.226926464189-b0sssaitabuo5ejna8ibd6lghbub6vo0",
         "EXPO_PUBLIC_SUPABASE_OAUTH_PROVIDERS": "google,apple",
-        "EXPO_PUBLIC_ADMOB_TEST_MODE": "false",
-        "EXPO_PUBLIC_SUPABASE_URL": "https://kcwawiqtfmravkljfswu.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjd2F3aXF0Zm1yYXZrbGpmc3d1IiwiaWF0IjoxNzgyNjk0MTAxLCJleHAiOjIwOTgyNzAxMDF9.n9B31s-MygTLenbsErEG2JPTKIpDjsAsIa_NEJ1_mDU"
+        "EXPO_PUBLIC_ADMOB_TEST_MODE": "false"
       },
       "ios": {
         "image": "macos-sequoia-15.6-xcode-26.2"
