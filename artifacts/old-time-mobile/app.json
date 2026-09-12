@@ -17,7 +17,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "87",
+      "buildNumber": "88",
       "bundleIdentifier": "com.oldtime.messenger",
       "appleTeamId": "FC6ZRKNS2N",
       "usesAppleSignIn": true,
