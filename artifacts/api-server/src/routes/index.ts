@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import chatRouter from "./chat";
 import healthRouter from "./health";
 import storageRouter from "./storage";
+import postsCompatRouter from "./posts-compat";
 import socialRouter from "./social";
 import mapRouter from "./map";
 import paceRouter from "./pace";
@@ -22,6 +23,8 @@ router.use(authBirthdayRouter);
 router.use(accountRouter);
 router.use(chatRouter);
 router.use(storageRouter);
+// Rewrite /api/posts* -> /api/social/posts* for the generated mobile client.
+router.use(postsCompatRouter);
 router.use(socialRouter);
 router.use(mapRouter);
 router.use(paceRouter);
