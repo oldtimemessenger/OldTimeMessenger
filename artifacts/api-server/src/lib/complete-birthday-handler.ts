@@ -11,7 +11,7 @@ import {
 } from "@workspace/db";
 import { createAuthToken } from "../lib/chat-auth";
 import { contactDiscoveryHash, privacyHash } from "../lib/phone-auth";
-import { isValidBirthday, meetsMinimumAge } from "../lib/age-gate";
+import { isValidBirthday } from "../lib/age-gate";
 
 function now(): number {
   return Date.now();
@@ -77,14 +77,7 @@ export async function handleCompleteBirthday(req: Request, res: Response): Promi
     res.status(400).json({ error: "This age-verification step has expired. Start sign-in again." });
     return;
   }
-  if (!meetsMinimumAge(birthday)) {
-    await db
-      .update(authChallengesTable)
-      .set({ status: "age_rejected" })
-      .where(and(eq(authChallengesTable.id, challenge.id), eq(authChallengesTable.status, "birthday_pending")));
-    res.status(403).json({ error: "Old Time is for people age 13 and older." });
-    return;
-  }
+  // Age minimum no longer enforced.
   const [claimed] = await db
     .update(authChallengesTable)
     .set({ status: "verifying" })
