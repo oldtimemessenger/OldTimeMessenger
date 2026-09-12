@@ -2,7 +2,6 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import type { Request, Response } from "express";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { authSessionsTable, db, usersTable } from "@workspace/db";
-import { meetsMinimumAge } from "./age-gate";
 import { verifySupabaseAccessToken } from "./supabase-auth";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -54,7 +53,10 @@ export async function authenticateToken(token: string): Promise<number | null> {
   return session.userId;
 }
 
-export async function requireChatAuth(req: Request, res: Response): Promise<number | null> {
+export async function requireChatAuth(
+  req: Request,
+  res: Response,
+): Promise<number | null> {
   const token = readBearerToken(req);
   if (!token) {
     res.status(401).json({ error: "A valid bearer token is required." });
@@ -142,13 +144,6 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
         });
         return null;
       }
-      if (!user.birthday || !meetsMinimumAge(user.birthday)) {
-        res.status(403).json({
-          error: "Age verification is required before using Old Time.",
-          code: "AGE_VERIFICATION_REQUIRED",
-        });
-        return null;
-      }
       userId = user.id;
     } catch (error) {
       req.log.error(
@@ -189,10 +184,6 @@ export async function requireChatAuth(req: Request, res: Response): Promise<numb
         ),
       );
     res.status(401).json({ error: "Your session is no longer valid. Please sign in again." });
-    return null;
-  }
-  if (!user.birthday || !meetsMinimumAge(user.birthday)) {
-    res.status(401).json({ error: "Age verification is required before using Old Time." });
     return null;
   }
   return userId;

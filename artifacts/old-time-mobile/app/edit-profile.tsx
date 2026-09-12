@@ -16,6 +16,7 @@ export default function EditProfileScreen() {
   const [name, setName] = useState(profile?.name ?? '');
   const [username, setUsername] = useState(profile?.handle ?? '');
   const [bio, setBio] = useState(profile?.bio ?? '');
+  const [birthday, setBirthday] = useState(profile?.birthday ?? '');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -23,13 +24,14 @@ export default function EditProfileScreen() {
     setName(profile.name);
     setUsername(profile.handle);
     setBio(profile.bio);
+    setBirthday(profile.birthday ?? '');
   }, [profile]);
 
   const save = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      await updateProfile({ name, username, bio });
+      await updateProfile({ name, username, bio, birthday: birthday.trim() || undefined });
       router.back();
     } catch (error) {
       Alert.alert('Could not save profile', error instanceof Error ? error.message : 'Please try again.');
@@ -62,6 +64,21 @@ export default function EditProfileScreen() {
 
       <Field label="Name" value={name} onChangeText={setName} placeholder="Your name" colors={colors} autoCapitalize="words" maxLength={80} />
       <Field label="Username" value={username} onChangeText={(value) => setUsername(value.replace(/\s/g, ''))} placeholder="your_username" colors={colors} autoCapitalize="none" maxLength={24} prefix="@" />
+      <View style={styles.fieldGroup}>
+        <Text style={[styles.label, { color: colors.foreground }]}>Birthday</Text>
+        <TextInput
+          value={birthday}
+          onChangeText={setBirthday}
+          placeholder="YYYY-MM-DD"
+          placeholderTextColor={colors.mutedForeground}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="numbers-and-punctuation"
+          maxLength={10}
+          style={[styles.inputStandalone, { color: colors.foreground, backgroundColor: colors.card, borderColor: colors.border }]}
+        />
+        <Text style={[styles.helper, { color: colors.mutedForeground }]}>Private profile detail.</Text>
+      </View>
       <View style={styles.fieldGroup}>
         <View style={styles.labelRow}>
           <Text style={[styles.label, { color: colors.foreground }]}>Bio</Text>
@@ -140,6 +157,8 @@ const styles = StyleSheet.create({
   inputWrap: { minHeight: 54, borderWidth: 1, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
   prefix: { fontFamily: 'Outfit_500Medium', fontSize: 16 },
   input: { flex: 1, minHeight: 52, paddingHorizontal: 4, fontFamily: 'Outfit_400Regular', fontSize: 16 },
+  inputStandalone: { minHeight: 54, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, fontFamily: 'Outfit_400Regular', fontSize: 16 },
+  helper: { fontFamily: 'Outfit_400Regular', fontSize: 12, lineHeight: 18, marginTop: 7 },
   bioInput: { minHeight: 118, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, paddingTop: 15, fontFamily: 'Outfit_400Regular', fontSize: 16, lineHeight: 22 },
   saveButton: { minHeight: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   saveText: { fontFamily: 'Outfit_700Bold', fontSize: 16 },

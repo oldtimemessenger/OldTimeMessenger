@@ -98,6 +98,13 @@ export default function SettingsScreen() {
           colors={colors}
         />
         <SettingsRow
+          icon="calendar-outline"
+          title="Birthday"
+          subtitle={profile?.birthday ? 'Private profile detail' : 'Optional profile detail'}
+          onPress={() => router.push('/edit-profile' as never)}
+          colors={colors}
+        />
+        <SettingsRow
           icon="notifications-outline"
           title="Notifications"
           subtitle="See activity and replies"
