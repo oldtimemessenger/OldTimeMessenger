@@ -166,7 +166,7 @@ export default function HomeScreen() {
   ] as const;
   
   const selectedPost = posts.find((post) => post.id === selectedPostId);
-  
+
   useEffect(() => {
     if (!profile?.id) return;
     void getStories().then((result) => setStories(result.items)).catch(() => setStories([]));

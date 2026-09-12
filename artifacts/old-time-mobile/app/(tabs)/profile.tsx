@@ -95,15 +95,7 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.profileHeader}>
-        <Avatar source={profile?.avatar} name={profile?.name} size={104} accent={profile?.accent} onPress={() => void chooseProfilePhoto()} />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Create a post"
-          onPress={() => router.push('/(tabs)/create' as never)}
-          style={[styles.createButton, { backgroundColor: colors.action, borderColor: colors.background }]}
-        >
-          <Ionicons name="add" size={25} color={colors.primaryForeground} />
-        </Pressable>
+        <Avatar source={profile?.avatar} name={profile?.name} size={104} accent={profile?.accent} editable onPress={() => void chooseProfilePhoto()} />
         <View style={styles.profileIdentity}>
           <View style={styles.nameRow}>
             <Text style={[styles.name, { color: colors.foreground }]}>{profile?.name ?? 'Your profile'}</Text>
@@ -159,7 +151,6 @@ const styles = StyleSheet.create({
   topActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerAction: { width: 44, height: 44, borderWidth: 1, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   profileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  createButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', marginLeft: -18, marginRight: 12, borderWidth: 3 },
   profileIdentity: { marginLeft: 16, flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   name: { fontFamily: 'Fraunces_700Bold', fontSize: 24 },

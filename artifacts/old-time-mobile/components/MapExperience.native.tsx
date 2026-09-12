@@ -5,7 +5,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { API_BASE_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { useColors } from '@/hooks/useColors';
 import { TAB_BAR_CONTENT_CLEARANCE } from '@/constants/layout';
 
 type Layer = 'all' | 'moments' | 'weather' | 'places';
@@ -36,6 +35,19 @@ type NearbyPin = {
   createdAt: string | number;
   author?: { name?: string; username?: string };
   counts?: { reactions?: number; comments?: number; saves?: number };
+};
+
+const THEME = {
+  background: '#000000',
+  card: '#121214',
+  border: '#27272a',
+  foreground: '#ffffff',
+  mutedForeground: '#a1a1aa',
+  primary: '#8d5cf6',
+  primaryForeground: '#ffffff',
+  secondary: '#27272a',
+  routeBlue: '#3b82f6',
+  routePink: '#ec4899',
 };
 
 const initialRegion: NativeMapRegion = {
@@ -84,7 +96,6 @@ function activityFromPins(items: NearbyPin[]): Activity {
 }
 
 export default function MapExperience() {
-  const colors = useColors();
   const { getToken } = useAuth();
   const [region, setRegion] = useState(initialRegion);
   const [layer, setLayer] = useState<Layer>('all');
@@ -149,7 +160,7 @@ export default function MapExperience() {
 
   useEffect(() => {
     void load(region);
-  }, [layer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layer]);
 
   useEffect(() => () => {
     if (regionChangeTimer.current) clearTimeout(regionChangeTimer.current);
@@ -239,7 +250,7 @@ export default function MapExperience() {
   ];
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.muted }]}>
+    <View style={[styles.root, { backgroundColor: THEME.background }]}>
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
@@ -251,54 +262,141 @@ export default function MapExperience() {
         showsCompass
         showsScale
         toolbarEnabled={false}
+        userInterfaceStyle="dark"
       >
-        {mapReady && layer !== 'weather' && (layer === 'all' || layer === 'moments') ? visibleMoments.slice(0, 100).map((moment) => (
-          <Marker key={`moment-${moment.id}`} coordinate={{ latitude: moment.latitude, longitude: moment.longitude }} pinColor={colors.primary} onPress={() => setSelected(moment)} title={moment.author.displayName} description={moment.caption ?? `Shared ${ageLabel(moment.createdAt)} ago`} />
-        )) : null}
+        {mapReady && layer !== 'weather' && (layer === 'all' || layer === 'moments') ? visibleMoments.slice(0, 100).map((moment, index) => {
+          const isFloatingCard = index < 4;
+          return (
+            <Marker key={`moment-${moment.id}`} coordinate={{ latitude: moment.latitude, longitude: moment.longitude }} onPress={() => setSelected(moment)} zIndex={isFloatingCard ? 2 : 1}>
+              {isFloatingCard ? (
+                <View style={styles.floatingCard}>
+                  <Text style={styles.floatingCardTitle} numberOfLines={2}>{moment.caption || 'A moment shared here'}</Text>
+                  <Text style={styles.floatingCardMeta}>@{moment.author.displayName}</Text>
+                  <Text style={styles.floatingCardTime}>{ageLabel(moment.createdAt)} ago</Text>
+                </View>
+              ) : (
+                <View style={styles.luminousContainer}>
+                  <View style={[styles.luminousMarker, { backgroundColor: 'rgba(141, 92, 246, 0.25)', borderColor: 'rgba(141, 92, 246, 0.6)' }]}>
+                    <View style={[styles.luminousMarkerDot, { backgroundColor: '#8d5cf6' }]} />
+                  </View>
+                  <View style={styles.luminousLabel}>
+                    <Text style={styles.luminousLabelText}>{moment.author.displayName.slice(0, 10)}</Text>
+                  </View>
+                </View>
+              )}
+            </Marker>
+          );
+        }) : null}
+
         {mapReady && (layer === 'all' || layer === 'places') ? visiblePlaces.slice(0, 50).map((place) => (
-          <Marker key={`place-${place.id}`} coordinate={{ latitude: place.latitude, longitude: place.longitude }} pinColor={colors.secondary} title={place.name} description={place.address} />
+          <Marker key={`place-${place.id}`} coordinate={{ latitude: place.latitude, longitude: place.longitude }} onPress={() => mapRef.current?.animateToRegion({ latitude: place.latitude, longitude: place.longitude, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 350)}>
+            <View style={styles.luminousContainer}>
+              <View style={[styles.luminousMarker, { backgroundColor: 'rgba(236, 72, 153, 0.25)', borderColor: 'rgba(236, 72, 153, 0.6)', width: 36, height: 36, borderRadius: 18 }]}>
+                <View style={[styles.luminousMarkerDot, { backgroundColor: '#ec4899', width: 8, height: 8, borderRadius: 4 }]} />
+              </View>
+              <View style={styles.luminousLabel}>
+                <Text style={styles.luminousLabelText}>{place.name}</Text>
+              </View>
+            </View>
+          </Marker>
         )) : null}
+
         {mapReady && layer === 'weather' && weather ? (
-          <Marker coordinate={{ latitude: weather.latitude, longitude: weather.longitude }} pinColor={colors.secondary} title={weather.title} description={weather.subtitle} />
+          <Marker coordinate={{ latitude: weather.latitude, longitude: weather.longitude }}>
+            <View style={styles.luminousContainer}>
+              <View style={[styles.luminousMarker, { backgroundColor: 'rgba(59, 130, 246, 0.25)', borderColor: 'rgba(59, 130, 246, 0.6)' }]}>
+                 <Ionicons name="cloud" size={16} color="#3b82f6" />
+              </View>
+            </View>
+          </Marker>
         ) : null}
-        {placing ? <Marker coordinate={coordinate} pinColor={colors.primary} title="Shared moment location" /> : null}
+
+        {placing ? (
+          <Marker coordinate={coordinate}>
+            <View style={styles.luminousContainer}>
+              <View style={[styles.luminousMarker, { backgroundColor: 'rgba(234, 179, 8, 0.25)', borderColor: 'rgba(234, 179, 8, 0.6)' }]}>
+                 <View style={[styles.luminousMarkerDot, { backgroundColor: '#eab308' }]} />
+              </View>
+            </View>
+          </Marker>
+        ) : null}
       </MapView>
 
-      <View style={[styles.activityDock, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.activityDock, { backgroundColor: THEME.card, borderColor: THEME.border }]}>
         <View style={styles.dockHeader}>
           <View>
-            <Text style={[styles.dockTitle, { color: colors.foreground }]}>What’s happening nearby</Text>
-            <Text style={[styles.dockMeta, { color: colors.mutedForeground }]}>{locating ? 'Finding your location…' : loading ? 'Updating live signals…' : activity ? `${activity.summary.momentCount + activity.summary.storyCount} shared moments · ${activity.summary.activeZoneCount} active zones` : 'Waiting for map signals'}</Text>
+            <Text style={[styles.dockTitle, { color: THEME.foreground }]}>What’s happening nearby</Text>
+            <Text style={[styles.dockMeta, { color: THEME.mutedForeground }]}>{locating ? 'Finding your location…' : loading ? 'Updating live signals…' : activity ? `${activity.summary.momentCount + activity.summary.storyCount} shared moments · ${activity.summary.activeZoneCount} active zones` : 'Waiting for map signals'}</Text>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={locating ? 'Finding your location' : 'Use my location'} accessibilityState={{ busy: locating, disabled: locating }} disabled={locating} onPress={() => void locate()} style={[styles.iconButton, { backgroundColor: colors.muted, opacity: locating ? 0.55 : 1 }]}><Ionicons name={locating ? 'sync-outline' : 'navigate-outline'} size={18} color={colors.foreground} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={locating ? 'Finding your location' : 'Use my location'} accessibilityState={{ busy: locating, disabled: locating }} disabled={locating} onPress={() => void locate()} style={[styles.iconButton, { backgroundColor: THEME.secondary, opacity: locating ? 0.55 : 1 }]}><Ionicons name={locating ? 'sync-outline' : 'navigate-outline'} size={18} color={THEME.foreground} /></Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.layerRow}>
-          {layerOptions.map((option) => <Pressable key={option.key} accessibilityRole="tab" accessibilityState={{ selected: layer === option.key }} onPress={() => setLayer(option.key)} style={[styles.layerChip, { backgroundColor: layer === option.key ? colors.primary : colors.muted }]}><Ionicons name={option.icon} size={15} color={layer === option.key ? colors.primaryForeground : colors.foreground} /><Text style={{ color: layer === option.key ? colors.primaryForeground : colors.foreground, fontWeight: '800', fontSize: 12 }}>{option.label}</Text></Pressable>)}
+          {layerOptions.map((option) => (
+            <Pressable key={option.key} accessibilityRole="tab" accessibilityState={{ selected: layer === option.key }} onPress={() => setLayer(option.key)} style={[styles.layerChip, { backgroundColor: layer === option.key ? THEME.primary : 'transparent', borderWidth: 1, borderColor: layer === option.key ? THEME.primary : THEME.border }]}>
+              <Ionicons name={option.icon} size={15} color={layer === option.key ? THEME.primaryForeground : THEME.foreground} />
+              <Text style={{ color: layer === option.key ? THEME.primaryForeground : THEME.foreground, fontWeight: '800', fontSize: 12 }}>{option.label}</Text>
+            </Pressable>
+          ))}
         </ScrollView>
         {placing ? (
           <View style={styles.composer}>
-             <Text style={[styles.panelTitle, { color: colors.foreground }]}>Drop a pin here</Text>
-            <TextInput value={query} onChangeText={setQuery} onSubmitEditing={() => void search()} placeholder="Search a place or address" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, backgroundColor: colors.muted }]} />
-             <TextInput value={caption} onChangeText={setCaption} placeholder="Add a note about this place" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, backgroundColor: colors.muted }]} />
-             <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Only this selected location is shared. Your live location is never published automatically.</Text>
-             <View style={styles.actionRow}><Pressable onPress={() => setPlacing(false)}><Text style={{ color: colors.mutedForeground, fontWeight: '800' }}>Cancel</Text></Pressable><Pressable onPress={() => void publish()}><Text style={{ color: colors.primary, fontWeight: '800' }}>Drop pin</Text></Pressable></View>
+             <Text style={[styles.panelTitle, { color: THEME.foreground }]}>Drop a pin here</Text>
+             <TextInput value={query} onChangeText={setQuery} onSubmitEditing={() => void search()} placeholder="Search a place or address" placeholderTextColor={THEME.mutedForeground} style={[styles.input, { color: THEME.foreground, backgroundColor: THEME.secondary }]} />
+             <TextInput value={caption} onChangeText={setCaption} placeholder="Add a note about this place" placeholderTextColor={THEME.mutedForeground} style={[styles.input, { color: THEME.foreground, backgroundColor: THEME.secondary }]} />
+             <Text style={{ color: THEME.mutedForeground, fontSize: 11 }}>Only this selected location is shared. Your live location is never published automatically.</Text>
+             <View style={styles.actionRow}><Pressable onPress={() => setPlacing(false)}><Text style={{ color: THEME.mutedForeground, fontWeight: '800' }}>Cancel</Text></Pressable><Pressable onPress={() => void publish()}><Text style={{ color: THEME.primary, fontWeight: '800' }}>Drop pin</Text></Pressable></View>
           </View>
         ) : selected ? (
           <View style={styles.selectedPanel}>
-            <View style={styles.selectedHeading}><View style={[styles.selectedAvatar, { backgroundColor: colors.secondary }]}><Text style={styles.selectedAvatarText}>{selected.author.displayName.slice(0, 1)}</Text></View><View style={{ flex: 1 }}><Text style={[styles.panelTitle, { color: colors.foreground }]}>{selected.author.displayName}</Text><Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{ageLabel(selected.createdAt)} · {selected.category}</Text></View><Pressable onPress={() => setSelected(null)}><Ionicons name="close" size={20} color={colors.mutedForeground} /></Pressable></View>
-            <Text style={{ color: colors.foreground }}>{selected.caption || 'A shared moment from this place.'}</Text>
-            <View style={styles.actionRow}><Text style={{ color: colors.mutedForeground }}>♥ {selected.counts.reactions}</Text><Text style={{ color: colors.mutedForeground }}>Comments {selected.counts.comments}</Text><Pressable onPress={() => void Linking.openURL(`https://maps.apple.com/?ll=${selected.latitude},${selected.longitude}`)}><Text style={{ color: colors.primary, fontWeight: '800' }}>Open maps</Text></Pressable></View>
+            <View style={styles.selectedHeading}><View style={[styles.selectedAvatar, { backgroundColor: THEME.primary }]}><Text style={styles.selectedAvatarText}>{selected.author.displayName.slice(0, 1)}</Text></View><View style={{ flex: 1 }}><Text style={[styles.panelTitle, { color: THEME.foreground }]}>{selected.author.displayName}</Text><Text style={{ color: THEME.mutedForeground, fontSize: 12 }}>{ageLabel(selected.createdAt)} · {selected.category}</Text></View><Pressable onPress={() => setSelected(null)}><Ionicons name="close" size={20} color={THEME.mutedForeground} /></Pressable></View>
+            <Text style={{ color: THEME.foreground }}>{selected.caption || 'A shared moment from this place.'}</Text>
+            <View style={styles.actionRow}><Text style={{ color: THEME.mutedForeground }}>♥ {selected.counts.reactions}</Text><Text style={{ color: THEME.mutedForeground }}>Comments {selected.counts.comments}</Text><Pressable onPress={() => void Linking.openURL(`https://maps.apple.com/?ll=${selected.latitude},${selected.longitude}`)}><Text style={{ color: THEME.primary, fontWeight: '800' }}>Open maps</Text></Pressable></View>
           </View>
         ) : layer === 'weather' && weather ? (
-          <View style={styles.signalPanel}><Ionicons name="cloud-outline" size={25} color={colors.secondary} /><View style={{ flex: 1 }}><Text style={[styles.panelTitle, { color: colors.foreground }]}>{weather.title}</Text><Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{weather.subtitle}</Text></View></View>
+          <View style={styles.signalPanel}><Ionicons name="cloud-outline" size={25} color={THEME.routeBlue} /><View style={{ flex: 1 }}><Text style={[styles.panelTitle, { color: THEME.foreground }]}>{weather.title}</Text><Text style={{ color: THEME.mutedForeground, fontSize: 12 }}>{weather.subtitle}</Text></View></View>
+        ) : activity?.moments.length && (layer === 'all' || layer === 'moments') ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.zoneRow}>
+            {activity.moments.slice(0, 10).map((moment) => (
+              <Pressable key={moment.id} onPress={() => mapRef.current?.animateToRegion({ latitude: moment.latitude, longitude: moment.longitude, latitudeDelta: 0.08, longitudeDelta: 0.08 }, 350)} style={[styles.activityCard, { backgroundColor: THEME.secondary }]}>
+                <View style={styles.activityCardBadge}>
+                  <View style={styles.recentDot} />
+                  <Text style={styles.recentText}>{ageLabel(moment.createdAt).toUpperCase()} AGO</Text>
+                  <View style={{ flex: 1 }} />
+                  {moment.counts.reactions > 0 && (
+                    <View style={styles.activityCardScore}>
+                      <Text style={styles.activityCardScoreText}>{moment.counts.reactions}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={{ flex: 1, justifyContent: 'flex-end', marginTop: 12 }}>
+                  <Text style={styles.activityCardTitle} numberOfLines={2}>{moment.caption || 'Shared moment'}</Text>
+                  <Text style={styles.activityCardMeta}>@{moment.author.displayName}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
         ) : layer === 'places' && places.length ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placeRow}>{places.slice(0, 5).map((place) => <Pressable key={place.id} onPress={() => mapRef.current?.animateToRegion({ latitude: place.latitude, longitude: place.longitude, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 350)} style={[styles.placeChip, { backgroundColor: colors.muted }]}><Text numberOfLines={1} style={{ color: colors.foreground, fontWeight: '800', maxWidth: 130 }}>{place.name}</Text><Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 10 }}>{place.address || 'Nearby place'}</Text></Pressable>)}</ScrollView>
-        ) : activity?.clusters.length ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.zoneRow}>{activity.clusters.slice(0, 5).map((cluster) => <Pressable key={cluster.id} onPress={() => mapRef.current?.animateToRegion({ latitude: cluster.latitude, longitude: cluster.longitude, latitudeDelta: 0.08, longitudeDelta: 0.08 }, 350)} style={[styles.zoneCard, { backgroundColor: colors.muted }]}><Text style={[styles.zoneCount, { color: colors.foreground }]}>{cluster.count}</Text><Text style={{ color: colors.mutedForeground, fontSize: 11 }}>moment{cluster.count === 1 ? '' : 's'}</Text><Text style={{ color: cluster.score > 70 ? colors.primary : colors.secondary, fontSize: 10, fontWeight: '800' }}>{cluster.score} activity</Text></Pressable>)}</ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.zoneRow}>
+            {places.slice(0, 10).map((place) => (
+              <Pressable key={place.id} onPress={() => mapRef.current?.animateToRegion({ latitude: place.latitude, longitude: place.longitude, latitudeDelta: 0.04, longitudeDelta: 0.04 }, 350)} style={[styles.activityCard, { backgroundColor: THEME.secondary }]}>
+                <View style={styles.activityCardBadge}>
+                  <Ionicons name="location" size={12} color={THEME.routePink} />
+                  <Text style={[styles.recentText, { color: THEME.routePink }]}>PLACE</Text>
+                </View>
+                <View style={{ flex: 1, justifyContent: 'flex-end', marginTop: 12 }}>
+                  <Text style={styles.activityCardTitle} numberOfLines={2}>{place.name}</Text>
+                  <Text style={styles.activityCardMeta} numberOfLines={1}>{place.address || 'Nearby place'}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
         ) : (
-          <View style={styles.emptyPanel}><Text style={[styles.panelTitle, { color: colors.foreground }]}>Nothing public is active here yet.</Text><Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Move the map or share a moment from this spot to add a real signal.</Text></View>
+          <View style={styles.emptyPanel}>
+            <Text style={[styles.panelTitle, { color: THEME.foreground }]}>No activity here yet.</Text>
+            <Text style={{ color: THEME.mutedForeground, fontSize: 13, marginTop: 2 }}>Move the map or share a moment to add a real signal.</Text>
+          </View>
         )}
-       {!placing && !selected ? <Pressable accessibilityRole="button" onPress={() => setPlacing(true)} style={[styles.shareButton, { backgroundColor: colors.primary }]}><Ionicons name="location" size={18} color={colors.primaryForeground} /><Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Drop a pin here</Text></Pressable> : null}
+        {!placing && !selected ? <Pressable accessibilityRole="button" onPress={() => setPlacing(true)} style={[styles.shareButton, { backgroundColor: THEME.primary }]}><Ionicons name="location" size={18} color={THEME.primaryForeground} /><Text style={{ color: THEME.primaryForeground, fontWeight: '800' }}>Drop a pin here</Text></Pressable> : null}
       </View>
       <View style={{ height: TAB_BAR_CONTENT_CLEARANCE }} />
     </View>
@@ -307,27 +405,42 @@ export default function MapExperience() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' },
-  activityDock: { position: 'absolute', left: 10, right: 10, bottom: TAB_BAR_CONTENT_CLEARANCE + 8, zIndex: 20, elevation: 20, borderRadius: 22, borderWidth: 1, padding: 14, gap: 12, shadowColor: '#000', shadowOpacity: .16, shadowRadius: 16, shadowOffset: { width: 0, height: -3 } },
+  activityDock: { position: 'absolute', left: 10, right: 10, bottom: TAB_BAR_CONTENT_CLEARANCE + 8, zIndex: 20, elevation: 20, borderRadius: 22, borderWidth: 1, padding: 14, gap: 14, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 20, shadowOffset: { width: 0, height: -5 } },
   dockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   dockTitle: { fontSize: 17, fontWeight: '800' },
   dockMeta: { fontSize: 11, marginTop: 3 },
   iconButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   layerRow: { gap: 8 },
-  layerChip: { minHeight: 34, borderRadius: 17, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  layerChip: { minHeight: 34, borderRadius: 17, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 5 },
   selectedPanel: { gap: 10 },
   selectedHeading: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   selectedAvatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   selectedAvatarText: { color: '#fff', fontWeight: '800' },
-  panelTitle: { fontSize: 14, fontWeight: '800' },
+  panelTitle: { fontSize: 15, fontWeight: '800' },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 15 },
   signalPanel: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  zoneRow: { gap: 8 },
-  zoneCard: { minWidth: 94, borderRadius: 14, padding: 10, gap: 2 },
-  zoneCount: { fontSize: 22, fontWeight: '900' },
-  placeRow: { gap: 8 },
-  placeChip: { width: 145, borderRadius: 13, padding: 10, gap: 3 },
-  composer: { gap: 8 },
+  zoneRow: { gap: 10 },
+  composer: { gap: 10 },
   input: { minHeight: 40, borderRadius: 11, paddingHorizontal: 11 },
-  emptyPanel: { gap: 4 },
-  shareButton: { minHeight: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+  emptyPanel: { paddingVertical: 10 },
+  shareButton: { minHeight: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+
+  floatingCard: { backgroundColor: 'rgba(18, 18, 20, 0.95)', borderRadius: 12, padding: 10, maxWidth: 140, borderWidth: 1, borderColor: '#333', shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
+  floatingCardTitle: { color: '#fff', fontSize: 12, fontWeight: '800', marginBottom: 4 },
+  floatingCardMeta: { color: '#a1a1aa', fontSize: 10 },
+  floatingCardTime: { color: '#8d5cf6', fontSize: 9, fontWeight: '800', marginTop: 4 },
+  luminousContainer: { alignItems: 'center', justifyContent: 'center' },
+  luminousMarker: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  luminousMarkerDot: { width: 10, height: 10, borderRadius: 5 },
+  luminousLabel: { marginTop: 2, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  luminousLabelText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+
+  activityCard: { width: 140, minHeight: 120, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#333', marginRight: 10 },
+  activityCardBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  recentDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#ef4444' },
+  recentText: { color: '#ef4444', fontSize: 9, fontWeight: '800' },
+  activityCardScore: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
+  activityCardScoreText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  activityCardTitle: { color: '#fff', fontSize: 13, fontWeight: '800', marginBottom: 2 },
+  activityCardMeta: { color: '#a1a1aa', fontSize: 11 },
 });
