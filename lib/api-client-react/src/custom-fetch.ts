@@ -379,7 +379,8 @@ export async function customFetch<T = unknown>(
 
   // Attach bearer token when an auth getter is configured and no
   // Authorization header has been explicitly provided.
-  if (_authTokenGetter && !headers.has("authorization")) {
+  const usesConfiguredAuth = Boolean(_authTokenGetter) && !headers.has("authorization");
+  if (usesConfiguredAuth && _authTokenGetter) {
     const token = await _authTokenGetter();
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
@@ -387,37 +388,50 @@ export async function customFetch<T = unknown>(
   }
 
   const requestInfo = { method, url: resolveUrl(input) };
-  const controller = new AbortController();
-  let timedOut = false;
-  const abortFromCaller = () => controller.abort();
-  if (callerSignal?.aborted) {
-    controller.abort();
-  } else {
-    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
-  }
-  const timeout = timeoutMs > 0
-    ? setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, timeoutMs)
-    : null;
+  const canRetry = init.body == null || typeof init.body === "string" || isRequest(input);
+  const fetchOnce = async (): Promise<Response> => {
+    const controller = new AbortController();
+    let timedOut = false;
+    const abortFromCaller = () => controller.abort();
+    if (callerSignal?.aborted) {
+      controller.abort();
+    } else {
+      callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+    }
+    const timeout = timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : null;
+    try {
+      return await fetch(
+        isRequest(input) ? input.clone() : input,
+        { ...init, method, headers, signal: controller.signal },
+      );
+    } catch (error) {
+      if (isAbortError(error) && !timedOut) throw error;
+      throw normalizeNetworkError();
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      callerSignal?.removeEventListener("abort", abortFromCaller);
+    }
+  };
 
-  let response: Response;
-  try {
-    response = await fetch(input, { ...init, method, headers, signal: controller.signal });
-  } catch (error) {
-    if (isAbortError(error) && !timedOut) throw error;
-    throw normalizeNetworkError();
-  } finally {
-    if (timeout) clearTimeout(timeout);
-    callerSignal?.removeEventListener("abort", abortFromCaller);
+  let response = await fetchOnce();
+
+  if (response.status === 401 && _unauthorizedHandler) {
+    await _unauthorizedHandler();
+    if (usesConfiguredAuth && canRetry && _authTokenGetter) {
+      const token = await _authTokenGetter();
+      if (token) headers.set("authorization", `Bearer ${token}`);
+      else headers.delete("authorization");
+      response = await fetchOnce();
+    }
   }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
-    if (response.status === 401 && _unauthorizedHandler) {
-      await _unauthorizedHandler();
-    }
     throw new ApiError(response, errorData, requestInfo);
   }
 

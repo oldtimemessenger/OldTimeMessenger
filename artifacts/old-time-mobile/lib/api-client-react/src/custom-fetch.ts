@@ -365,7 +365,8 @@ export async function customFetch<T = unknown>(
 
   // Attach bearer token when an auth getter is configured and no
   // Authorization header has been explicitly provided.
-  if (_authTokenGetter && !headers.has("authorization")) {
+  const usesConfiguredAuth = Boolean(_authTokenGetter) && !headers.has("authorization");
+  if (usesConfiguredAuth && _authTokenGetter) {
     const token = await _authTokenGetter();
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
@@ -373,18 +374,30 @@ export async function customFetch<T = unknown>(
   }
 
   const requestInfo = { method, url: resolveUrl(input) };
+  const canRetry = init.body == null || typeof init.body === "string" || isRequest(input);
+  const fetchOnce = () => fetch(
+    isRequest(input) ? input.clone() : input,
+    { ...init, method, headers },
+  );
 
-  const response = await fetch(input, { ...init, method, headers });
+  let response = await fetchOnce();
+
+  if (response.status === 401 && _authUnauthorizedHandler) {
+    try {
+      await _authUnauthorizedHandler(requestInfo);
+      if (usesConfiguredAuth && canRetry && _authTokenGetter) {
+        const token = await _authTokenGetter();
+        if (token) headers.set("authorization", `Bearer ${token}`);
+        else headers.delete("authorization");
+        response = await fetchOnce();
+      }
+    } catch {
+      // The original 401 remains the request's error. Auth recovery is
+      // best-effort and must not mask the server response.
+    }
+  }
 
   if (!response.ok) {
-    if (response.status === 401 && _authUnauthorizedHandler) {
-      try {
-        await _authUnauthorizedHandler(requestInfo);
-      } catch {
-        // The original 401 remains the request's error. Auth recovery is
-        // best-effort and must not mask the server response.
-      }
-    }
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }

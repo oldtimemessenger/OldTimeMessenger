@@ -33,6 +33,7 @@ export type User = {
   name: string;
   handle: string;
   bio: string;
+  birthday?: string | null;
   verificationBadge: boolean;
   accent: string;
   avatar?: ImageSourcePropType;
@@ -110,12 +111,13 @@ const makeId = () => Date.now().toString() + Math.random().toString(36).slice(2,
 const initialStore: Store = { currentUserId: '', profile: null, users: [], posts: [], chats: [], notifications: [] };
 
 function remoteUser(user: Bootstrap['profile'] | Bootstrap['users'][number]): User {
-  const serverUser = user as typeof user & { verificationBadge?: unknown };
+  const serverUser = user as typeof user & { verificationBadge?: unknown; birthday?: string | null };
   return {
     id: user.id,
     name: user.displayName,
     handle: user.handle,
     bio: user.bio,
+    birthday: serverUser.birthday ?? null,
     verificationBadge: serverUser.verificationBadge === true,
     accent: user.accent,
     avatar: user.avatarUrl ? { uri: user.avatarUrl } : undefined,

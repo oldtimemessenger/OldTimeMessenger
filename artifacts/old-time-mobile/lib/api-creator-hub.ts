@@ -1,4 +1,4 @@
-import { API_BASE_URL, API_CONFIGURED } from './api';
+import { API_BASE_URL, API_CONFIGURED, type AuthTokenGetter } from './api';
 
 export type CreatorHubProfile = {
   userId: number;
@@ -147,17 +147,22 @@ export type DashboardStats = {
   commissionCents: number;
 };
 
-async function chFetch<T>(path: string, getToken: () => Promise<string | null>, init?: RequestInit): Promise<T> {
+async function chFetch<T>(path: string, getToken: AuthTokenGetter, init?: RequestInit): Promise<T> {
   if (!API_CONFIGURED) throw new Error('API is not configured.');
-  const token = await getToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  let response: Response | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const token = await getToken(attempt > 0);
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (response.status !== 401 || attempt === 1) break;
+  }
+  if (!response) throw new Error('CreatorHub request failed.');
   if (!response.ok) {
     let message = 'CreatorHub request failed.';
     try {

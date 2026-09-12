@@ -185,11 +185,35 @@ type AuthContextValue = {
   isSignedIn: boolean;
   userId: string | null;
   session: Session | null;
-  getToken: () => Promise<string | null>;
+  getToken: (forceRefresh?: boolean) => Promise<string | null>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+let refreshSessionPromise: Promise<string | null> | null = null;
+
+async function getFreshAccessToken(forceRefresh = false): Promise<string | null> {
+  if (!SUPABASE_AUTH_CONFIGURED) return null;
+
+  const current = await supabase.auth.getSession();
+  const session = current.data.session;
+  const expiresAt = session?.expires_at ?? 0;
+  const stillFresh = Boolean(session?.access_token) && expiresAt > Math.floor(Date.now() / 1000) + 60;
+  if (!forceRefresh && stillFresh) return session!.access_token;
+
+  if (!refreshSessionPromise) {
+    refreshSessionPromise = supabase.auth.refreshSession()
+      .then(({ data, error }) => {
+        if (error || !data.session) return null;
+        return data.session.access_token;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshSessionPromise = null;
+      });
+  }
+  return refreshSessionPromise;
+}
 
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -240,18 +264,16 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    configureApi(() => SUPABASE_AUTH_CONFIGURED
-      ? supabase.auth.getSession().then(({ data }) => data.session?.access_token ?? null)
+    configureApi((forceRefresh) => SUPABASE_AUTH_CONFIGURED
+      ? getFreshAccessToken(forceRefresh)
       : Promise.resolve(null));
     registerAuthUnauthorizedHandler(async () => {
       if (!SUPABASE_AUTH_CONFIGURED) return;
       try {
-        const refreshed = await supabase.auth.refreshSession();
-        if (refreshed.error || !refreshed.data.session) {
-          await supabase.auth.signOut({ scope: 'local' });
-        }
+        await getFreshAccessToken(true);
       } catch {
-        await supabase.auth.signOut({ scope: 'local' });
+        // Keep the local session on transient refresh failures. The retried
+        // request will surface the authentication error without signing out.
       }
     });
     return () => registerAuthUnauthorizedHandler(null);
@@ -262,9 +284,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     isSignedIn: Boolean(session?.user),
     userId: session?.user.id ?? null,
     session,
-    getToken: async () => SUPABASE_AUTH_CONFIGURED
-      ? (await supabase.auth.getSession()).data.session?.access_token ?? null
-      : null,
+    getToken: getFreshAccessToken,
     signOut: async () => {
       if (!SUPABASE_AUTH_CONFIGURED) return;
       const { error } = await supabase.auth.signOut();
