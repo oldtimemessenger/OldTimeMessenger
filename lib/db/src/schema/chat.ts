@@ -22,6 +22,7 @@ export const usersTable = pgTable("chat_users", {
   phoneVerified: boolean("phone_verified").notNull().default(false),
   phoneDiscoveryPermission: text("phone_discovery_permission").notNull().default("contacts"),
   firebaseUid: text("firebase_uid").unique(),
+  supabaseUid: text("supabase_uid"),
   email: text("email"),
   name: text("name").notNull(),
   username: text("username").notNull().unique(),
@@ -42,6 +43,7 @@ export const usersTable = pgTable("chat_users", {
   cameraAccessUntil: pgBigint("camera_access_until", { mode: "number" }),
 }, (table) => ({
   phoneDiscoveryHashIndex: uniqueIndex("chat_users_phone_discovery_hash_idx").on(table.phoneDiscoveryHash),
+  supabaseUidIndex: uniqueIndex("chat_users_supabase_uid_idx").on(table.supabaseUid),
 }));
 
 export const chatsTable = pgTable("chat_chats", {
