@@ -4,8 +4,10 @@
 
 Keep values in hosting / EAS environment secrets; never commit them or print them in logs.
 
-- `DATABASE_URL`
+- `DATABASE_URL` (or `SUPABASE_DATABASE_URL`)
 - `SESSION_SECRET`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
 - `DEFAULT_OBJECT_STORAGE_BUCKET_ID`
 - `PRIVATE_OBJECT_DIR`
 - `PUBLIC_OBJECT_SEARCH_PATHS`
@@ -17,13 +19,13 @@ Keep values in hosting / EAS environment secrets; never commit them or print the
 3. Confirm `/api/healthz` returns `{"status":"ok"}`.
 4. Confirm `/api/readyz` returns `{"status":"ready"}`.
 5. Run dependency, static-analysis, and privacy scans.
-6. Test Firebase authentication, session restore, logout/revocation, chat access, attachment limits, attachment ownership, and message expiry.
+6. Test Supabase authentication (email OTP / OAuth), session restore, logout/revocation, chat access, attachment limits, attachment ownership, and message expiry.
 7. Deploy from GitHub (Expo EAS for the mobile app; your chosen host for the API). Review schema diffs before applying production database changes; do not run unreviewed custom production migrations.
 
 ## Operations
 
-- Local-development OTP challenges are single-use, expire after ten minutes, have attempt limits, and are rate-limited by privacy-preserving phone/IP hashes. Production authentication uses Firebase.
-- Sessions use random opaque bearer tokens. Only token hashes are stored, and logout revokes the current session.
+- Local-development OTP challenges are single-use, expire after ten minutes, have attempt limits, and are rate-limited by privacy-preserving phone/IP hashes. Production authentication uses Supabase Auth (email OTP and optional OAuth providers).
+- Protected API routes accept either a verified Supabase access token (JWT) or a server-issued opaque session token. Only session token hashes are stored; logout revokes the current opaque session.
 - Upload slots are database-backed, owner-bound, single-use, and expire after fifteen minutes.
 - Cleanup is safe to run from multiple autoscaled instances because claims and state live in PostgreSQL. Request paths also remove expired messages before returning data.
 - Logs must include internal IDs or one-way hashes only, never phone numbers, OTPs, bearer tokens, or object contents.
