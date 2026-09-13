@@ -59,11 +59,14 @@ async function authenticatedFetch(path: string, getToken: AuthTokenGetter, init?
   let response: Response | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const token = await getToken(attempt > 0);
+    if (!token) {
+      throw new Error('Sign in required');
+    }
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers: {
         ...(init?.headers ?? {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Authorization: `Bearer ${token}`,
       },
     });
     if (response.status !== 401 || attempt === 1) break;
@@ -107,12 +110,13 @@ export async function uploadMedia(input: UploadMediaInput): Promise<string> {
     let upload: Awaited<ReturnType<typeof FileSystem.uploadAsync>> | null = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const token = await input.getToken(attempt > 0);
+      if (!token) throw new Error('Sign in required');
       upload = await FileSystem.uploadAsync(absoluteApiUrl(prepared.uploadURL), input.uri, {
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         httpMethod: 'PUT',
         headers: {
           'Content-Type': input.contentType,
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Authorization: `Bearer ${token}`,
         },
       });
       if (upload.status !== 401 || attempt === 1) break;
