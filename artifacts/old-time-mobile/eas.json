@@ -1,6 +1,6 @@
 {
   "cli": {
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -34,7 +34,7 @@
       "pnpm": "10.26.1",
       "distribution": "store",
       "node": "20.18.0",
-      "autoIncrement": true,
+      "autoIncrement": false,
       "ios": {
         "image": "macos-sequoia-15.6-xcode-26.2"
       },
@@ -52,7 +52,7 @@
     },
     "production": {
       "pnpm": "10.26.1",
-      "autoIncrement": true,
+      "autoIncrement": false,
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "oltimemessenger-production.up.railway.app",
