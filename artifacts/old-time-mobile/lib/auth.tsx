@@ -84,6 +84,7 @@ export async function completeAuthCallback(callbackUrl: string): Promise<'oauth'
   if (params.code) {
     const exchanged = await supabase.auth.exchangeCodeForSession(params.code);
     if (exchanged.error) throw new Error(`OAuth callback exchange failed: ${exchanged.error.message}`);
+    await waitForPersistedAccessToken();
     return params.type === 'recovery' ? 'recovery' : 'oauth';
   }
   if (params.accessToken && params.refreshToken) {
@@ -92,10 +93,10 @@ export async function completeAuthCallback(callbackUrl: string): Promise<'oauth'
       refresh_token: params.refreshToken,
     });
     if (session.error) throw new Error('The sign-in session could not be restored.');
+    await waitForPersistedAccessToken();
     return params.type === 'recovery' ? 'recovery' : 'oauth';
   }
-  const current = await supabase.auth.getSession();
-  if (!current.data.session) throw new Error('The sign-in response was incomplete. Please try again.');
+  await waitForPersistedAccessToken();
   return params.type === 'recovery' ? 'recovery' : 'oauth';
 }
 
@@ -195,27 +196,53 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 let refreshSessionPromise: Promise<string | null> | null = null;
 
+function sessionAccessToken(session: Session | null | undefined): string | null {
+  const token = session?.access_token;
+  return token && token.length > 0 ? token : null;
+}
+
+async function waitForPersistedAccessToken(attempts = 8): Promise<string> {
+  assertSupabaseConfigured();
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const current = await supabase.auth.getSession();
+      const token = sessionAccessToken(current.data.session);
+      if (token) return token;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('The sign-in session could not be read.');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+  }
+  throw lastError ?? new Error('The sign-in response was incomplete. Please try again.');
+}
+
 async function getFreshAccessToken(forceRefresh = false): Promise<string | null> {
   if (!SUPABASE_AUTH_CONFIGURED) return null;
 
   const current = await supabase.auth.getSession();
   const session = current.data.session;
+  const token = sessionAccessToken(session);
   const expiresAt = session?.expires_at ?? 0;
-  const stillFresh = Boolean(session?.access_token) && expiresAt > Math.floor(Date.now() / 1000) + 60;
-  if (!forceRefresh && stillFresh) return session!.access_token;
+  const stillFresh = Boolean(token) && expiresAt > Math.floor(Date.now() / 1000) + 60;
+  if (!forceRefresh && stillFresh) return token;
 
   if (!refreshSessionPromise) {
     refreshSessionPromise = supabase.auth.refreshSession()
       .then(({ data, error }) => {
-        if (error || !data.session) return null;
-        return data.session.access_token;
+        if (error || !data.session) return sessionAccessToken(session);
+        return sessionAccessToken(data.session);
       })
-      .catch(() => null)
+      .catch(() => sessionAccessToken(session))
       .finally(() => {
         refreshSessionPromise = null;
       });
   }
   return refreshSessionPromise;
+}
+
+if (SUPABASE_AUTH_CONFIGURED) {
+  configureApi((forceRefresh) => getFreshAccessToken(forceRefresh));
 }
 
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
@@ -284,7 +311,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(() => ({
     isLoaded,
-    isSignedIn: Boolean(session?.user),
+    isSignedIn: Boolean(session?.user && sessionAccessToken(session)),
     userId: session?.user.id ?? null,
     session,
     getToken: getFreshAccessToken,
