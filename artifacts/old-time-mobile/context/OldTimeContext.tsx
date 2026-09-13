@@ -198,7 +198,7 @@ type OldTimeContextValue = Store & {
   hydrated: boolean;
   syncing: boolean;
   syncError: string | null;
-  refreshFromServer: () => Promise<void>;
+  refreshFromServer: () => Promise<Store | null>;
   refreshNotifications: () => Promise<void>;
   markNotificationsRead: () => Promise<void>;
   searchUsers: (query: string) => Promise<User[]>;
@@ -280,27 +280,29 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const refreshFromServer = async () => {
-    if (!isSignedIn) return;
-    const requestUserId = userId;
+  const refreshFromServer = async (): Promise<Store | null> => {
+    const token = await getToken() ?? await getToken(true);
+    if (!token) return null;
+    const requestUserId = userId ?? activeUserId.current;
     const requestGeneration = identityGeneration.current;
-    if (!requestUserId) return;
+    if (!requestUserId) return null;
     setSyncing(true);
     setSyncError(null);
     try {
       const [bootstrap, remoteNotifications] = await Promise.all([getBootstrap(), apiGetNotifications()]);
       if (
         requestGeneration !== identityGeneration.current ||
-        activeUserId.current !== requestUserId ||
-        !activeSignedIn.current
+        activeUserId.current !== requestUserId
       ) {
-        return;
+        return null;
       }
       const nextStore = storeFromBootstrap(bootstrap);
       nextStore.notifications = remoteNotifications.map((notification) => remoteNotification(notification, bootstrap.profile.id));
       setStore(nextStore);
+      return nextStore;
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'Could not sync your account.');
+      return null;
     } finally {
       setSyncing(false);
     }
@@ -451,7 +453,8 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
       }
     },
     createPost: async ({ imageUri, mediaType, caption, location, hubIds, name, contentType, size }) => {
-      if (!isSignedIn) throw new Error('Sign in required');
+      const token = await getToken() ?? await getToken(true);
+      if (!token) throw new Error('Sign in required');
       if (mediaType === 'quote') {
         const result = await createSocialPost({
           content: caption,
@@ -505,7 +508,8 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
       return String(result.id);
     },
     createStory: async ({ imageUri, mediaType, caption, visibility = 'friends', name, contentType, size, width, height, duration }) => {
-      if (!isSignedIn) throw new Error('Sign in required');
+      const token = await getToken() ?? await getToken(true);
+      if (!token) throw new Error('Sign in required');
       if (mediaType && imageUri) {
         const extension = mediaType === 'video' ? 'mp4' : 'jpg';
         const objectPath = await uploadMedia({
@@ -539,8 +543,14 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
       await apiCreateStory({ content: caption, visibility, media: null }, getToken);
     },
     updateProfile: async ({ name, username, bio, birthday }) => {
-      const localUserId = store.currentUserId;
-      if (!isSignedIn || !localUserId) throw new Error('Sign in required');
+      const token = await getToken() ?? await getToken(true);
+      if (!token) throw new Error('Sign in required');
+      let localUserId = store.currentUserId;
+      if (!localUserId) {
+        const synced = await refreshFromServer();
+        localUserId = synced?.currentUserId ?? '';
+      }
+      if (!localUserId) throw new Error('Sign in required');
       const normalizedName = name.trim();
       const normalizedUsername = username.trim().replace(/^@+/, '').toLowerCase();
       const normalizedBio = bio.trim();
@@ -558,8 +568,14 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
       await refreshFromServer();
     },
     updateProfileAvatar: async ({ uri, contentType, size }) => {
-      const localUserId = store.currentUserId;
-      if (!isSignedIn || !localUserId) throw new Error('Sign in required');
+      const token = await getToken() ?? await getToken(true);
+      if (!token) throw new Error('Sign in required');
+      let localUserId = store.currentUserId;
+      if (!localUserId) {
+        const synced = await refreshFromServer();
+        localUserId = synced?.currentUserId ?? '';
+      }
+      if (!localUserId) throw new Error('Sign in required');
       const objectPath = await uploadMedia({
         uri,
         mediaType: 'image',
