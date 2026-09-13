@@ -1,3 +1,4 @@
+- [EAS iOS build number](eas-ios-build-number.md) — keep `appVersionSource` local and pin `ios.buildNumber` in app.json; Expo remote versioning produced build 21 after TestFlight was already at 96/97.
 - [Expo monorepo module identity](expo-monorepo-module-identity.md) — Metro must resolve React and context-owning libraries from one workspace instance.
 - [Expo map SDK compatibility](expo-map-sdk-compatibility.md) — keep the mobile map package on the Expo Go-compatible pin even when generic doctor advice differs.
 - [Story viewer content model](story-viewer-content-model.md) — sequence discriminated viewer items so sponsored content can be inserted without changing navigation.
