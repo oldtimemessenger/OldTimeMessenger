@@ -49,7 +49,7 @@
     },
     "production": {
       "pnpm": "10.26.1",
-      "autoIncrement": true,
+      "autoIncrement": false,
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "old-time-messenger--kingvercetti59.replit.app",
