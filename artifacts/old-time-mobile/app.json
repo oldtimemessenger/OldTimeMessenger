@@ -133,7 +133,7 @@
     },
     "extra": {
       "router": {},
-      "apiDomain": "old-time-messenger--kingvercetti59.replit.app",
+      "apiDomain": "oltimemessenger-production.up.railway.app",
       "releaseCommit": "f5ded3c98bf6a2f7df384b454d7c967693da74bf",
       "eas": {
         "projectId": "4cdaddfe-a954-4270-ba26-f6a405e2f9e5"
