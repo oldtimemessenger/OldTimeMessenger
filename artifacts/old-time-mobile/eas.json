@@ -1,6 +1,6 @@
 {
   "cli": {
-    "appVersionSource": "local"
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -52,7 +52,7 @@
     },
     "production": {
       "pnpm": "10.26.1",
-      "autoIncrement": false,
+      "autoIncrement": true,
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "oltimemessenger-production.up.railway.app",
