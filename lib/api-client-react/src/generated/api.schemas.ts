@@ -125,16 +125,6 @@ export type AuthenticatedUser = User & {
   authToken: string;
 };
 
-export interface FirebaseSignInBody {
-  /** @minLength 100 */
-  idToken: string;
-}
-
-export interface DeleteAccountBody {
-  /** @minLength 100 */
-  idToken: string;
-}
-
 export type AttachmentType = typeof AttachmentType[keyof typeof AttachmentType];
 
 

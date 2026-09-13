@@ -34,15 +34,6 @@ function validateEasConfig() {
   const eas = readJson('eas.json');
   const appDomain = normalizeDomain(app.extra?.apiDomain, 'app.json expo.extra.apiDomain');
   const releaseCommit = normalizeReleaseCommit(app.extra?.releaseCommit, 'app.json expo.extra.releaseCommit');
-  const firebaseConfig = fs.readFileSync(path.join(projectRoot, 'firebaseConfig.js'), 'utf8');
-
-  if (!firebaseConfig.includes('projectId: "oldtime-a23af"')) {
-    throw new Error('firebaseConfig.js is not configured for the Old Time Firebase project.');
-  }
-  if (!/apiKey:\s*["'][^"']+["']/.test(firebaseConfig)) {
-    throw new Error('firebaseConfig.js is missing the public Firebase API key.');
-  }
-
   for (const [profileName, profile] of Object.entries(eas.build ?? {})) {
     const profileDomain = normalizeDomain(profile.env?.EXPO_PUBLIC_DOMAIN, `eas.json build.${profileName}.env.EXPO_PUBLIC_DOMAIN`);
     if (profileDomain !== appDomain) {

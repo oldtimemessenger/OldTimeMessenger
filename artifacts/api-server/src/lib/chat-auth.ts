@@ -5,9 +5,23 @@ import { authSessionsTable, db, usersTable } from "@workspace/db";
 import { verifySupabaseAccessToken } from "./supabase-auth";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+type SupabaseIdentity = NonNullable<Awaited<ReturnType<typeof verifySupabaseAccessToken>>>;
 
 function tokenHash(token: string): string {
   return createHash("sha256").update(token).digest("base64url");
+}
+
+function defaultUsernameForSupabase(uid: string): string {
+  return `user${tokenHash(`supabase:${uid}`).slice(0, 12)}`;
+}
+
+function identityName(identity: SupabaseIdentity, email: string | undefined): string {
+  const metadata = identity.user_metadata;
+  const metadataName = [metadata?.full_name, metadata?.name]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (metadataName) return metadataName.trim().slice(0, 80);
+  const emailName = email?.split("@")[0]?.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+  return emailName?.slice(0, 80) || "Old Time User";
 }
 
 function readBearerToken(req: Request): string | null {
@@ -56,6 +70,7 @@ export async function authenticateToken(token: string): Promise<number | null> {
 export async function requireChatAuth(
   req: Request,
   res: Response,
+  options: { allowDeletionPending?: boolean } = {},
 ): Promise<number | null> {
   const token = readBearerToken(req);
   if (!token) {
@@ -83,6 +98,7 @@ export async function requireChatAuth(
       let [user] = await db
         .select({
           id: usersTable.id,
+          birthday: usersTable.birthday,
           supabaseUid: usersTable.supabaseUid,
         })
         .from(usersTable)
@@ -93,6 +109,7 @@ export async function requireChatAuth(
         const candidates = await db
           .select({
             id: usersTable.id,
+            birthday: usersTable.birthday,
             supabaseUid: usersTable.supabaseUid,
           })
           .from(usersTable)
@@ -111,6 +128,7 @@ export async function requireChatAuth(
             .where(and(eq(usersTable.id, candidate.id), isNull(usersTable.supabaseUid)))
             .returning({
               id: usersTable.id,
+              birthday: usersTable.birthday,
               supabaseUid: usersTable.supabaseUid,
             });
           if (linked) {
@@ -119,6 +137,7 @@ export async function requireChatAuth(
             [user] = await db
               .select({
                 id: usersTable.id,
+                birthday: usersTable.birthday,
                 supabaseUid: usersTable.supabaseUid,
               })
               .from(usersTable)
@@ -134,9 +153,49 @@ export async function requireChatAuth(
       }
 
       if (!user) {
-        res.status(403).json({
-          error: "Finish setting up your Old Time profile before continuing.",
-          code: "LOCAL_PROFILE_REQUIRED",
+        const timestamp = Date.now();
+        const internalPhone = `supabase:${identity.id}`;
+        try {
+          const [created] = await db
+            .insert(usersTable)
+            .values({
+              phone: internalPhone,
+              supabaseUid: identity.id,
+              email: email || null,
+              name: identityName(identity, email),
+              username: defaultUsernameForSupabase(identity.id),
+              online: false,
+              lastSeen: timestamp,
+            })
+            .returning({
+              id: usersTable.id,
+              birthday: usersTable.birthday,
+              supabaseUid: usersTable.supabaseUid,
+            });
+          user = created;
+        } catch (error) {
+          // A concurrent request may have created the profile between the
+          // lookup and insert. Resolve it before reporting a real failure.
+          req.log.warn(
+            { err: error, supabaseUserId: identity.id },
+            "Supabase profile creation raced with another request",
+          );
+          [user] = await db
+            .select({
+              id: usersTable.id,
+              birthday: usersTable.birthday,
+              supabaseUid: usersTable.supabaseUid,
+            })
+            .from(usersTable)
+            .where(eq(usersTable.supabaseUid, identity.id))
+            .limit(1);
+        }
+      }
+
+      if (!user) {
+        res.status(500).json({
+          error: "We could not create your Old Time profile right now.",
+          code: "LOCAL_PROFILE_PROVISIONING_FAILED",
         });
         return null;
       }
@@ -164,7 +223,10 @@ export async function requireChatAuth(
     return null;
   }
   const [user] = await db
-    .select({ id: usersTable.id })
+    .select({
+      birthday: usersTable.birthday,
+      deletionPendingAt: usersTable.deletionPendingAt,
+    })
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
@@ -180,6 +242,13 @@ export async function requireChatAuth(
         ),
       );
     res.status(401).json({ error: "Your session is no longer valid. Please sign in again." });
+    return null;
+  }
+  if (user.deletionPendingAt && !options.allowDeletionPending) {
+    res.status(403).json({
+      error: "This account is being permanently deleted.",
+      code: "ACCOUNT_DELETION_PENDING",
+    });
     return null;
   }
   return userId;

@@ -20,7 +20,6 @@ router.get("/readyz", async (req, res) => {
     "SESSION_SECRET",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
-    "FIREBASE_PROJECT_ID",
   ];
   const missing = required.filter((name) => !process.env[name]);
   if (!process.env.SUPABASE_DATABASE_URL && !process.env.DATABASE_URL) {

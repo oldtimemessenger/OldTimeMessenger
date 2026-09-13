@@ -11,7 +11,6 @@
 - [Map location sharing](map-location-sharing.md) — users can browse the Map and place chosen pins without sharing exact current location continuously.
 - [Story text positioning](story-text-positioning.md) — persist Story text placement as a normalized canvas offset so it scales across devices.
 - [Supabase schema staging](supabase-schema-staging.md) — stage Old Time tables in an isolated schema before any database cutover.
-- [Firebase profile sync boundary](firebase-profile-sync-boundary.md) — verify Firebase tokens and write Supabase profiles only through the API.
 - [Supabase API auth boundary](supabase-api-auth-boundary.md) — mobile Supabase sessions and Old Time API sessions are distinct; protected routes must bridge them server-side.
 - [RevenueCat coin crediting](revenuecat-coin-crediting.md) — reconcile provider purchases server-side and ledger each purchase before changing wallet balances.
 - [Customer-facing product copy](customer-facing-product-copy.md) — Old Time UI must describe outcomes in plain language, never expose implementation terminology.
@@ -35,9 +34,10 @@
 - [Atmosphere honesty boundary](atmosphere-honesty-boundary.md) — generated discovery may fill quiet surfaces but must never impersonate people, engagement, or LIVE activity.
 - [Pace discovery history](pace-discovery-history.md) — generated Pace route ideas need per-user impression history and deterministic exclusions to avoid repeating combinations.
 - [Pace adaptive motivation](pace-adaptive-motivation.md) — begin with a private on-device rival; adapt to real session data and never present it as a real person or leaderboard.
-- [Firebase Admin identity operations](firebase-admin-identity-operations.md) — token verification can work while Admin user deletion fails if the Identity Toolkit API is disabled for the credential project.
 - [Realtime media state boundaries](realtime-media-state-boundaries.md) — accepted calls and live media connections are separate states; reconnects must resync server history and fail closed when audio is unavailable.
 - [LIVE gift delivery](live-gift-delivery.md) — post-commit room broadcasts are authoritative; deduplicate animations by gift record ID and never replay them on reconnect.
 - [Monorepo package install target](monorepo-package-install-target.md) — target one workspace package explicitly when adding an artifact-specific dependency.
 - [Verification badge enforcement](verification-badge-enforcement.md) — expose a badge only from server-confirmed payment or system-admin approval, never client input.
 - [GitHub monorepo EAS reads](github-monorepo-eas-read.md) — the GitHub build dialog may reject a valid nested eas.json; do not regenerate it before verifying the branch and path.
+- [Supabase mobile token freshness](supabase-mobile-token-freshness.md) — mobile API requests must refresh near-expiry Supabase sessions before attaching bearer tokens.
+- [Expo MCP build trigger](expo-mcp-build-trigger.md) — queue nested iOS production builds directly with submission disabled, then verify commit and build metadata.

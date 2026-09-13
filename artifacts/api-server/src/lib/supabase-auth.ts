@@ -1,4 +1,4 @@
-type SupabaseAuthUser = {
+export type SupabaseAuthUser = {
   id: string;
   email?: string;
   email_confirmed_at?: string | null;
@@ -27,4 +27,21 @@ export async function verifySupabaseAccessToken(accessToken: string): Promise<Su
     throw new Error(`Supabase Auth verification failed with status ${response.status}.`);
   }
   return await response.json() as SupabaseAuthUser;
+}
+
+export async function deleteSupabaseAuthUser(userId: string): Promise<void> {
+  if (!userId.trim()) {
+    throw new Error("Supabase user ID is required.");
+  }
+  const { url, serviceRoleKey } = supabaseConfiguration();
+  const response = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    headers: {
+      apikey: serviceRoleKey,
+      authorization: `Bearer ${serviceRoleKey}`,
+    },
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Supabase Auth deletion failed with status ${response.status}.`);
+  }
 }

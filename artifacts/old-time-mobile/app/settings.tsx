@@ -45,6 +45,10 @@ export default function SettingsScreen() {
           onPress: async () => {
             setPending(true);
             try {
+              const { error: refreshError } = await supabase.auth.refreshSession();
+              if (refreshError) {
+                throw new Error('Sign in again before deleting your account.');
+              }
               await deleteAccount();
               try {
                 await signOut();

@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   authChallengesTable, authSessionsTable, chatMessageRequestsTable, chatNotesTable,
@@ -15,43 +15,93 @@ import {
 } from "@workspace/db";
 import { requireChatAuth } from "../lib/chat-auth";
 import { deleteObject } from "../lib/chat-storage";
-import { deleteFirebaseAuthUser, verifyFirebaseIdToken } from "../lib/firebase-auth";
-import { deleteSupabaseProfileByFirebaseUid } from "../lib/supabase-profiles";
+import { deleteSupabaseAuthUser, verifySupabaseAccessToken } from "../lib/supabase-auth";
 
 const router: IRouter = Router();
 const sharedVisibilities = ["public", "followers", "friends", "close_friends"] as const;
+const deletionRetryIntervalMs = 60_000;
 
-function tokenFromBody(body: unknown): string | null {
-  if (!body || typeof body !== "object") return null;
-  const value = (body as Record<string, unknown>).firebaseIdToken
-    ?? (body as Record<string, unknown>).idToken;
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+function bearerToken(req: Parameters<typeof requireChatAuth>[0]): string | null {
+  const header = req.header("authorization");
+  if (!header?.startsWith("Bearer ")) return null;
+  const token = header.slice(7).trim();
+  return token.length >= 32 ? token : null;
 }
 
+function hasRecentIssueTime(token: string, maxAgeMs = 10 * 60 * 1000): boolean {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as { iat?: unknown };
+    if (typeof payload.iat !== "number") return false;
+    const issuedAt = payload.iat * 1000;
+    return issuedAt <= Date.now() + 30_000 && issuedAt >= Date.now() - maxAgeMs;
+  } catch {
+    return false;
+  }
+}
+
+async function retryPendingSupabaseDeletions(): Promise<void> {
+  const pending = await db
+    .select({ id: usersTable.id, supabaseUid: usersTable.supabaseUid })
+    .from(usersTable)
+    .where(isNotNull(usersTable.deletionPendingAt))
+    .limit(25);
+  await Promise.allSettled(pending.map(async (user) => {
+    if (user.supabaseUid) {
+      await deleteSupabaseAuthUser(user.supabaseUid);
+    }
+    await db
+      .update(usersTable)
+      .set({ supabaseUid: null, deletionPendingAt: null })
+      .where(eq(usersTable.id, user.id));
+  }));
+}
+
+const deletionRetryTimer = setInterval(() => {
+  void retryPendingSupabaseDeletions().catch((error) => {
+    console.error("Pending Supabase account deletion retry failed", error);
+  });
+}, deletionRetryIntervalMs);
+deletionRetryTimer.unref();
+void retryPendingSupabaseDeletions().catch((error) => {
+  console.error("Initial pending Supabase account deletion retry failed", error);
+});
+
 router.delete("/account", async (req, res): Promise<void> => {
-  const userId = await requireChatAuth(req, res);
+  const userId = await requireChatAuth(req, res, { allowDeletionPending: true });
   if (userId === null) return;
   try {
-    const [user] = await db.select({ firebaseUid: usersTable.firebaseUid, phone: usersTable.phone, avatarObjectPath: usersTable.avatarObjectPath })
+    const [user] = await db.select({ supabaseUid: usersTable.supabaseUid, phone: usersTable.phone, avatarObjectPath: usersTable.avatarObjectPath })
       .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-    if (!user?.firebaseUid) {
-      res.status(409).json({ error: "This account cannot be deleted because its Firebase identity is unavailable." });
+    if (!user?.supabaseUid) {
+      res.status(409).json({ error: "This account cannot be deleted because its Supabase identity is unavailable." });
       return;
     }
-    const token = tokenFromBody(req.body);
+    const token = bearerToken(req);
     if (!token) {
-      res.status(400).json({ error: "A fresh Firebase identity token is required." });
+      res.status(401).json({ error: "A valid Supabase session is required." });
       return;
     }
-    let firebaseIdentity;
+    if (token.split(".").length !== 3) {
+      res.status(401).json({ error: "Sign in again with Supabase before deleting your account." });
+      return;
+    }
+    let supabaseIdentity;
     try {
-      firebaseIdentity = await verifyFirebaseIdToken(token);
+      supabaseIdentity = await verifySupabaseAccessToken(token);
     } catch {
-      res.status(401).json({ error: "The Firebase identity token is invalid or expired." });
+      res.status(503).json({ error: "We could not verify your Supabase session right now. Please try again." });
       return;
     }
-    if (firebaseIdentity.uid !== user.firebaseUid) {
-      res.status(403).json({ error: "The Firebase identity does not match the authenticated account." });
+    if (!supabaseIdentity) {
+      res.status(401).json({ error: "Your Supabase session is invalid or expired. Please sign in again." });
+      return;
+    }
+    if (supabaseIdentity.id !== user.supabaseUid) {
+      res.status(403).json({ error: "The Supabase identity does not match the authenticated account." });
+      return;
+    }
+    if (!hasRecentIssueTime(token)) {
+      res.status(401).json({ error: "Refresh your sign-in session before deleting your account." });
       return;
     }
 
@@ -76,10 +126,9 @@ router.delete("/account", async (req, res): Promise<void> => {
       ...sharedPosts.flatMap((row) => row.media?.map((media) => media.objectPath) ?? []),
       ...sharedStories.flatMap((row) => row.media?.objectPath ? [row.media.objectPath] : []),
     ]);
-    await Promise.all([...paths].filter((path) => !retained.has(path)).map(deleteObject));
-
-    // Remove private data first, but preserve the authenticated identity and
-    // current sessions until external deletion succeeds so failures are retryable.
+    // Keep the Supabase UID until the provider confirms deletion. If that
+    // external call fails, the same verified Supabase identity can retry this
+    // idempotent cleanup against the tombstoned local account.
     await db.transaction(async (tx) => {
       const postIds = privatePosts.map((row) => row.id);
       const storyIds = privateStories.map((row) => row.id);
@@ -138,16 +187,30 @@ router.delete("/account", async (req, res): Promise<void> => {
       await tx.delete(currentEventWalletsTable).where(eq(currentEventWalletsTable.userId, userId));
       await tx.delete(discoveryCreatorClaimsTable).where(eq(discoveryCreatorClaimsTable.claimantId, userId));
       await tx.delete(pushTokensTable).where(eq(pushTokensTable.userId, userId));
-    });
-
-    await deleteSupabaseProfileByFirebaseUid(user.firebaseUid);
-    await deleteFirebaseAuthUser(user.firebaseUid);
-
-    await db.transaction(async (tx) => {
       await tx.delete(authSessionsTable).where(eq(authSessionsTable.userId, userId));
       await tx.delete(authChallengesTable).where(eq(authChallengesTable.phone, user.phone));
-      await tx.update(usersTable).set({ phone: `deleted:${userId}`, phoneDiscoveryHash: null, phoneVerified: false, firebaseUid: null, email: null, name: "Deleted user", username: `deleted-${userId}`, bio: "", avatarObjectPath: null, birthday: null, contactPermission: "nobody", online: false, lastSeenVisible: false }).where(eq(usersTable.id, userId));
+      await tx.update(usersTable).set({ phone: `deleted:${userId}`, phoneDiscoveryHash: null, phoneVerified: false, email: null, name: "Deleted user", username: `deleted-${userId}`, bio: "", avatarObjectPath: null, birthday: null, contactPermission: "nobody", online: false, lastSeenVisible: false, deletionPendingAt: Date.now() }).where(eq(usersTable.id, userId));
     });
+
+    const objectCleanup = await Promise.allSettled(
+      [...paths].filter((path) => !retained.has(path)).map(deleteObject),
+    );
+    const failedObjectCount = objectCleanup.filter((result) => result.status === "rejected").length;
+    if (failedObjectCount > 0) {
+      req.log.warn({ userId, failedObjectCount }, "Some deleted-account media could not be removed");
+    }
+
+    try {
+      await deleteSupabaseAuthUser(user.supabaseUid);
+      await db
+        .update(usersTable)
+        .set({ supabaseUid: null, deletionPendingAt: null })
+        .where(eq(usersTable.id, userId));
+    } catch (error) {
+      req.log.warn({ err: error, userId }, "Supabase account deletion queued for retry");
+      res.status(202).end();
+      return;
+    }
     res.status(204).end();
   } catch (error) {
     req.log.error({ err: error, userId }, "Account deletion failed");

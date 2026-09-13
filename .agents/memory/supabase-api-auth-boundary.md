@@ -1,17 +1,12 @@
 ---
 name: Supabase API auth boundary
-description: The mobile app's Supabase session is distinct from the API server's legacy Old Time session token.
+description: Supabase identities map to local Old Time users, including durable handling for destructive account deletion.
 ---
 
-The mobile app authenticates with Supabase (or Firebase), while protected Old Time API routes use either a verified Supabase JWT or a server-issued session token. Supabase access tokens may be verified server-side and mapped to an existing Old Time user by `supabase_uid` or confirmed email, but they must not be treated as Old Time session tokens.
+The mobile app authenticates with Supabase, while Old Time keeps a numeric local user as the owner of relational app data. Verify Supabase access tokens server-side, map them to exactly one local user, and never trust a caller-supplied identity.
 
-**Birthday / age is not part of this boundary.** Profile birthday is an optional private field on the Old Time user row. Auth and session bridging must never require or reject based on birthday or minimum age.
+Permanent account deletion must commit a durable pending state together with the local tombstone, reject ordinary authenticated operations while pending, and retry Supabase Admin deletion idempotently until provider confirmation.
 
-**Why:** Map requests and other protected routes need a clear auth check without reintroducing profile-field gates that block legitimate signed-in users.
+**Why:** A valid Supabase session still needs a stable numeric Old Time owner. Destructive deletion can otherwise leave a provider identity active after local data is removed, or remove the provider identity before local cleanup can finish.
 
-**How to apply:**
-- Keep public place discovery available without a session.
-- Keep pins and other private data behind `requireChatAuth`.
-- Bridge Supabase identities by stable `supabase_uid` (or single confirmed-email link); do not gate on birthday.
-- Never expose the Supabase service-role key to the mobile client.
-- `public.profiles` writes go only through the API (service role); clients must not upsert profiles directly.
+**How to apply:** Resolve identities by the Supabase UID or a unique confirmed email and use an internal non-public phone placeholder when needed. For deletion, require a freshly issued Supabase JWT, tombstone locally first, block pending users from normal APIs, and clear the external identity link only after Admin deletion succeeds.

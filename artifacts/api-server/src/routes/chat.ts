@@ -8,8 +8,6 @@ import {
   CreateMessageBody,
   CreateMessageParams,
   CreateMessageResponse,
-  FirebaseSignInBody,
-  FirebaseSignInResponse,
   GetDirectChatParams,
   GetDirectChatResponse,
   GetInboxParams,
@@ -78,9 +76,6 @@ import {
   fileForObjectPath,
   MAX_UPLOAD_BYTES,
 } from "../lib/chat-storage";
-import { isValidBirthday } from "../lib/age-gate";
-import { verifyFirebaseIdToken } from "../lib/firebase-auth";
-import { syncFirebaseProfile } from "../lib/supabase-profiles";
 
 const router: IRouter = Router();
 
@@ -99,31 +94,17 @@ const MAX_IP_REQUESTS_PER_WINDOW = 20;
 const MAX_OTP_ATTEMPTS = 5;
 const MESSAGE_VIEW_EXPIRY_MS = 60_000;
 
-function firebaseAuthFailure(error: unknown): { status: 401 | 503; message: string } {
-  const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
-    ? error.code
-    : "";
-  if (
-    code === "auth/id-token-expired"
-    || code === "auth/argument-error"
-    || code === "auth/invalid-id-token"
-    || code === "auth/project-not-found"
-  ) {
-    return { status: 401, message: "The Firebase identity token is invalid or expired. Sign in again." };
-  }
-  return { status: 503, message: "Firebase sign-in is temporarily unavailable. Please try again shortly." };
-}
-
 function now(): number {
   return Date.now();
 }
 
 function parseUser(user: ChatUser, viewerId = user.id) {
   const revealPresence = viewerId === user.id || user.lastSeenVisible;
+  const hasInternalPhone = user.phone.startsWith("supabase:");
   return {
     id: user.id,
-    phone: viewerId === user.id && !user.phone.startsWith("firebase:") ? user.phone : "",
-    hasRegisteredPhone: !user.phone.startsWith("firebase:"),
+    phone: viewerId === user.id && !hasInternalPhone ? user.phone : "",
+    hasRegisteredPhone: !hasInternalPhone,
     phoneVerified: viewerId === user.id ? user.phoneVerified : false,
     phoneDiscoveryPermission: viewerId === user.id ? user.phoneDiscoveryPermission : "nobody",
     name: user.name,
@@ -509,81 +490,6 @@ router.post("/auth/request-otp", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/auth/firebase", async (req, res): Promise<void> => {
-  const parsed = FirebaseSignInBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "A valid Firebase ID token is required." });
-    return;
-  }
-
-  try {
-    const identity = await verifyFirebaseIdToken(parsed.data.idToken);
-    const email = identity.email?.trim().toLowerCase();
-    if (!email) {
-      res.status(400).json({ error: "Sign in with an account that has an email address." });
-      return;
-    }
-
-    try {
-      await syncFirebaseProfile({
-        uid: identity.uid,
-        email,
-        name: typeof identity.name === "string" ? identity.name : undefined,
-      });
-    } catch (error) {
-      req.log.warn(
-        { err: error },
-        "Supabase profile synchronization deferred during Firebase sign-in",
-      );
-    }
-    const timestamp = now();
-    let [user] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.firebaseUid, identity.uid))
-      .limit(1);
-
-    if (!user) {
-      const internalPhone = `firebase:${identity.uid}`;
-      const emailName = email.split("@")[0]?.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
-      const [created] = await db
-        .insert(usersTable)
-        .values({
-          phone: internalPhone,
-          firebaseUid: identity.uid,
-          email,
-          name: typeof identity.name === "string" && identity.name.trim()
-            ? identity.name.trim().slice(0, 80)
-            : emailName?.slice(0, 80) || "Old Time User",
-          username: defaultUsernameForPhone(internalPhone),
-          online: false,
-          lastSeen: timestamp,
-        })
-        .returning();
-      user = created;
-    } else if (user.email !== email) {
-      const [updated] = await db
-        .update(usersTable)
-        .set({ email })
-        .where(eq(usersTable.id, user.id))
-        .returning();
-      user = updated;
-    }
-
-    const [activeUser] = await db
-      .update(usersTable)
-      .set({ online: true, lastSeen: timestamp })
-      .where(eq(usersTable.id, user.id))
-      .returning();
-    const authToken = await createAuthToken(activeUser.id);
-    res.json(FirebaseSignInResponse.parse({ ...parseUser(activeUser), authToken }));
-  } catch (error) {
-    req.log.error({ err: error }, "Firebase sign-in failed");
-    const failure = firebaseAuthFailure(error);
-    res.status(failure.status).json({ error: failure.message });
-  }
-});
-
 router.post("/auth/verify-otp", async (req, res): Promise<void> => {
   const parsed = VerifyOtpBody.safeParse(req.body);
   if (!parsed.success) {
@@ -788,22 +694,43 @@ router.put("/users/:userId/presence-privacy", async (req, res): Promise<void> =>
 });
 
 router.put("/users/:userId/profile", async (req, res): Promise<void> => {
-  const userId = Number(req.params.userId);
+  const rawUserId = req.params.userId;
+  let userId = /^\d+$/.test(rawUserId) ? Number(rawUserId) : NaN;
+  if (rawUserId === "NaN") {
+    const authenticatedUserId = await requireChatAuth(req, res);
+    if (authenticatedUserId === null) return;
+    userId = authenticatedUserId;
+  } else if (!Number.isInteger(userId) && /^[0-9a-f-]{36}$/i.test(rawUserId)) {
+    const authenticatedUserId = await requireChatAuth(req, res);
+    if (authenticatedUserId === null) return;
+    const [linkedUser] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.supabaseUid, rawUserId))
+      .limit(1);
+    if (!linkedUser) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+    if (linkedUser.id !== authenticatedUserId) {
+      res.status(403).json({ error: "Bearer token identity does not match the profile." });
+      return;
+    }
+    userId = linkedUser.id;
+  }
   const body = req.body ?? {};
   const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : undefined;
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
   const bio = typeof body.bio === "string" ? body.bio.trim() : undefined;
-  const birthdayInput = typeof body.birthday === "string" ? body.birthday.trim() : undefined;
-  // Birthday is optional. Only accept a clean YYYY-MM-DD past/present date.
-  let birthday: string | undefined = undefined;
-  if (birthdayInput) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(birthdayInput) && isValidBirthday(birthdayInput)) {
-      birthday = birthdayInput;
-    } else if (birthdayInput.length > 0) {
-      res.status(400).json({ error: "Enter a real birthday as YYYY-MM-DD that is not in the future, or leave it blank." });
-      return;
-    }
-  }
+  const birthdayInput = typeof body.birthday === "string" ? body.birthday : undefined;
+  const birthday = birthdayInput
+    ? /^\d{4}-\d{2}-\d{2}$/.test(birthdayInput.trim())
+      ? birthdayInput
+      : (() => {
+          const parsed = new Date(birthdayInput.trim());
+          return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 10);
+        })()
+    : undefined;
   const contactPermission = body.contactPermission;
   const phoneNumber = body.phoneNumber;
   const phoneDiscoveryPermission = body.phoneDiscoveryPermission;
@@ -857,7 +784,7 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
   }
   let normalizedPhone: string | null | undefined;
   if (phoneNumber !== undefined) {
-    if (!currentUser.firebaseUid) {
+    if (!currentUser.supabaseUid) {
       res.status(403).json({ error: "Only email or Google accounts can change a registered phone number here." });
       return;
     }
@@ -898,7 +825,7 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
       ...(chatPresence !== undefined ? { chatPresence } : {}),
       ...(phoneDiscoveryPermission !== undefined ? { phoneDiscoveryPermission } : {}),
       ...(normalizedPhone === null ? {
-        phone: `firebase:${currentUser.firebaseUid}`,
+        phone: `supabase:${currentUser.supabaseUid}`,
         phoneDiscoveryHash: null,
         phoneVerified: false,
       } : normalizedPhone !== undefined && normalizedPhone !== currentUser.phone ? {
@@ -921,20 +848,6 @@ router.put("/users/:userId/profile", async (req, res): Promise<void> => {
         eq(uploadSlotsTable.userId, userId),
         eq(uploadSlotsTable.status, "committing"),
       ));
-  }
-  if (updated.firebaseUid && updated.email) {
-    try {
-      await syncFirebaseProfile({
-        uid: updated.firebaseUid,
-        email: updated.email,
-        name: updated.name,
-        username: updated.username,
-      });
-    } catch (error) {
-      req.log.error({ err: error, userId: updated.id }, "Supabase profile synchronization failed");
-      res.status(503).json({ error: "Your profile was saved, but account setup could not be completed. Please try again." });
-      return;
-    }
   }
   res.json(parseUser(updated));
 });
