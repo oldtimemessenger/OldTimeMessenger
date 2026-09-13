@@ -210,7 +210,7 @@ type OldTimeContextValue = Store & {
   sendMessage: (chatId: string, text: string) => Promise<void>;
   createPost: (input: { imageUri: string; mediaType: MediaType; caption: string; location: string; hubIds?: string[]; name?: string; contentType?: string; size?: number }) => Promise<string | undefined>;
   createStory: (input: { imageUri?: string; mediaType?: Exclude<MediaType, 'quote'>; caption: string; visibility?: 'public' | 'friends' | 'followers' | 'close_friends' | 'private'; name?: string; contentType?: string; size?: number; width?: number; height?: number; duration?: number }) => Promise<void>;
-  updateProfile: (input: { name: string; username: string; bio: string }) => Promise<void>;
+  updateProfile: (input: { name: string; username: string; bio: string; birthday?: string }) => Promise<void>;
   updateProfileAvatar: (input: { uri: string; contentType?: string; size?: number }) => Promise<void>;
 };
 
@@ -538,8 +538,9 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
       }
       await apiCreateStory({ content: caption, visibility, media: null }, getToken);
     },
-    updateProfile: async ({ name, username, bio }) => {
-      if (!isSignedIn || !userId) throw new Error('Sign in required');
+    updateProfile: async ({ name, username, bio, birthday }) => {
+      const localUserId = store.currentUserId;
+      if (!isSignedIn || !localUserId) throw new Error('Sign in required');
       const normalizedName = name.trim();
       const normalizedUsername = username.trim().replace(/^@+/, '').toLowerCase();
       const normalizedBio = bio.trim();
@@ -548,15 +549,17 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
         throw new Error('Username must be 3–24 characters using letters, numbers, or underscores.');
       }
       if (normalizedBio.length > 150) throw new Error('Your bio must be 150 characters or fewer.');
-      await apiUpdateUserProfile(Number(userId), {
+      await apiUpdateUserProfile(Number(localUserId), {
         name: normalizedName,
         username: normalizedUsername,
         bio: normalizedBio,
+        ...(birthday ? { birthday } : {}),
       });
       await refreshFromServer();
     },
     updateProfileAvatar: async ({ uri, contentType, size }) => {
-      if (!isSignedIn || !userId) throw new Error('Sign in required');
+      const localUserId = store.currentUserId;
+      if (!isSignedIn || !localUserId) throw new Error('Sign in required');
       const objectPath = await uploadMedia({
         uri,
         mediaType: 'image',
@@ -566,7 +569,7 @@ export function OldTimeProvider({ children }: { children: ReactNode }) {
         getToken,
       });
       try {
-        await apiUpdateProfileAvatar({ userId, objectPath, getToken });
+        await apiUpdateProfileAvatar({ userId: localUserId, objectPath, getToken });
       } catch (error) {
         await cleanupMediaUpload(objectPath, getToken);
         throw error;

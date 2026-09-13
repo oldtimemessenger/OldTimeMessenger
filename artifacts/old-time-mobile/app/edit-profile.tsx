@@ -29,30 +29,9 @@ export default function EditProfileScreen() {
 
   const save = async () => {
     if (saving) return;
-    const trimmedBirthday = birthday.trim();
-    // Only send birthday when it is a complete, plausible YYYY-MM-DD. Partial input must not block name/bio/avatar.
-    let birthdayPayload: string | undefined = undefined;
-    if (trimmedBirthday) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedBirthday)) {
-        Alert.alert('Invalid birthday', 'Use YYYY-MM-DD, or leave the field blank.');
-        return;
-      }
-      const [y, m, d] = trimmedBirthday.split('-').map(Number);
-      const date = new Date(Date.UTC(y, m - 1, d));
-      if (
-        date.getUTCFullYear() !== y ||
-        date.getUTCMonth() !== m - 1 ||
-        date.getUTCDate() !== d ||
-        date.getTime() > Date.now()
-      ) {
-        Alert.alert('Invalid birthday', 'Enter a real birthday that is not in the future, or leave it blank.');
-        return;
-      }
-      birthdayPayload = trimmedBirthday;
-    }
     setSaving(true);
     try {
-      await updateProfile({ name, username, bio, birthday: birthdayPayload });
+      await updateProfile({ name, username, bio, birthday: birthday.trim() || undefined });
       router.back();
     } catch (error) {
       Alert.alert('Could not save profile', error instanceof Error ? error.message : 'Please try again.');
