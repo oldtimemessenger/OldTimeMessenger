@@ -128,7 +128,10 @@ export async function sendEmailCode(email: string, shouldCreateUser: boolean) {
   assertSupabaseConfigured();
   return supabase.auth.signInWithOtp({
     email: email.trim(),
-    options: { shouldCreateUser },
+    options: {
+      shouldCreateUser,
+      emailRedirectTo: getAuthRedirectUri(),
+    },
   });
 }
 
