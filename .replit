@@ -24,7 +24,6 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.production]
-FIREBASE_PROJECT_ID = "oldtime-a23af"
 SUPABASE_URL = "https://kcwawiqtfmravkljfswu.supabase.co"
 EXPO_PUBLIC_API_URL = "https://old-time-messenger--kingvercetti59.replit.app"
 EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjd2F3aXF0Zm1yYXZrbGpmc3d1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTQxMDEsImV4cCI6MjA5ODI3MDEwMX0.n9B31s-MygTLenbsErEG2JPTKIpDjsAsIa_NEJ1_mDU"
@@ -43,7 +42,6 @@ REVENUECAT_TEST_STORE_APP_ID = "app054dcb5a1e"
 EXPO_APPLE_TEAM_ID = "FC6ZRKNS2N"
 
 [userenv.development]
-FIREBASE_PROJECT_ID = "oldtime-a23af"
 SUPABASE_URL = "https://kcwawiqtfmravkljfswu.supabase.co"
 EXPO_PUBLIC_API_URL = "https://old-time-messenger--kingvercetti59.replit.app"
 EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjd2F3aXF0Zm1yYXZrbGpmc3d1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2OTQxMDEsImV4cCI6MjA5ODI3MDEwMX0.n9B31s-MygTLenbsErEG2JPTKIpDjsAsIa_NEJ1_mDU"
