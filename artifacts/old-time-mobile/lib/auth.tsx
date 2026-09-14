@@ -8,7 +8,9 @@ import type { Session } from '@supabase/supabase-js';
 import * as ApiClient from '@/lib/api-client-react';
 import { configureApi } from './api';
 import supabase, { SUPABASE_AUTH_CONFIGURED } from './supabase';
+import { describeMissingAccessToken, getMissingPublicEnv, setAccessTokenFailure } from './auth-diagnostics';
 
+export { describeMissingAccessToken, getMissingPublicEnv };
 export { SUPABASE_AUTH_CONFIGURED, supabase };
 
 WebBrowser.maybeCompleteAuthSession();
@@ -26,9 +28,18 @@ export const OAUTH_PROVIDERS = {
   apple: configuredOAuthProviders.has('apple'),
   google: configuredOAuthProviders.has('google'),
 };
+
+const inFlightCodeExchanges = new Map<string, Promise<void>>();
+const consumedAuthorizationCodes = new Set<string>();
+
 export function assertSupabaseConfigured() {
   if (!SUPABASE_AUTH_CONFIGURED) {
-    throw new Error('Supabase Auth is not configured for this build. Set EXPO_PUBLIC_SUPABASE_URL and a public Supabase key.');
+    const missing = getMissingPublicEnv().filter((name) => name.includes('SUPABASE'));
+    throw new Error(
+      missing.length
+        ? `Supabase Auth is not configured for this build. Missing ${missing.join(', ')}.`
+        : 'Supabase Auth is not configured for this build. Set EXPO_PUBLIC_SUPABASE_URL and a public Supabase key.',
+    );
   }
 }
 
@@ -96,6 +107,45 @@ async function waitForPersistedAccessToken(attempts = 8): Promise<string> {
   throw lastError ?? new Error('The sign-in response was incomplete. Please try again.');
 }
 
+async function exchangeAuthorizationCode(code: string): Promise<void> {
+  const existing = inFlightCodeExchanges.get(code);
+  if (existing) {
+    await existing;
+    return;
+  }
+
+  if (consumedAuthorizationCodes.has(code)) {
+    await waitForPersistedAccessToken();
+    return;
+  }
+
+  const exchange = (async () => {
+    const exchanged = await supabase.auth.exchangeCodeForSession(code);
+    if (exchanged.error) {
+      const alreadyRedeemed =
+        /code verifier|already used|invalid.*code|expired/i.test(exchanged.error.message);
+      if (alreadyRedeemed) {
+        await waitForPersistedAccessToken();
+        return;
+      }
+      throw new Error(`OAuth callback exchange failed: ${exchanged.error.message}`);
+    }
+    consumedAuthorizationCodes.add(code);
+    if (consumedAuthorizationCodes.size > 32) {
+      const oldest = consumedAuthorizationCodes.values().next().value;
+      if (oldest) consumedAuthorizationCodes.delete(oldest);
+    }
+    await waitForPersistedAccessToken();
+  })();
+
+  inFlightCodeExchanges.set(code, exchange);
+  try {
+    await exchange;
+  } finally {
+    inFlightCodeExchanges.delete(code);
+  }
+}
+
 export async function completeAuthCallback(callbackUrl: string): Promise<'oauth' | 'recovery'> {
   assertSupabaseConfigured();
   const params = callbackParams(callbackUrl);
@@ -105,9 +155,7 @@ export async function completeAuthCallback(callbackUrl: string): Promise<'oauth'
     throw new Error(`OAuth provider error${code}: ${detail || 'The provider did not complete sign-in.'}`);
   }
   if (params.code) {
-    const exchanged = await supabase.auth.exchangeCodeForSession(params.code);
-    if (exchanged.error) throw new Error(`OAuth callback exchange failed: ${exchanged.error.message}`);
-    await waitForPersistedAccessToken();
+    await exchangeAuthorizationCode(params.code);
     return params.type === 'recovery' ? 'recovery' : 'oauth';
   }
   if (params.accessToken && params.refreshToken) {
@@ -280,6 +328,7 @@ type AuthContextValue = {
   isSignedIn: boolean;
   userId: string | null;
   session: Session | null;
+  configurationError: string | null;
   getToken: (forceRefresh?: boolean) => Promise<string | null>;
   signOut: () => Promise<void>;
 };
@@ -288,22 +337,43 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 let refreshSessionPromise: Promise<string | null> | null = null;
 
 async function getFreshAccessToken(forceRefresh = false): Promise<string | null> {
-  if (!SUPABASE_AUTH_CONFIGURED) return null;
+  if (!SUPABASE_AUTH_CONFIGURED) {
+    setAccessTokenFailure('unconfigured');
+    console.warn(describeMissingAccessToken());
+    return null;
+  }
 
   const current = await supabase.auth.getSession();
   const session = current.data.session;
   const token = sessionAccessToken(session);
   const expiresAt = session?.expires_at ?? 0;
   const stillFresh = Boolean(token) && expiresAt > Math.floor(Date.now() / 1000) + 60;
-  if (!forceRefresh && stillFresh) return token;
+  if (!forceRefresh && stillFresh) {
+    setAccessTokenFailure(null);
+    return token;
+  }
+
+  if (!session && !forceRefresh) {
+    setAccessTokenFailure('no_session');
+    return null;
+  }
 
   if (!refreshSessionPromise) {
     refreshSessionPromise = supabase.auth.refreshSession()
       .then(({ data, error }) => {
-        if (error || !data.session) return sessionAccessToken(session);
+        if (error || !data.session) {
+          setAccessTokenFailure(token ? 'refresh_failed' : 'no_session');
+          if (error) console.warn('Sign in required: session refresh failed.', error.message);
+          return sessionAccessToken(session);
+        }
+        setAccessTokenFailure(null);
         return sessionAccessToken(data.session);
       })
-      .catch(() => sessionAccessToken(session))
+      .catch((error) => {
+        setAccessTokenFailure(token ? 'refresh_failed' : 'no_session');
+        console.warn('Sign in required: session refresh failed.', error);
+        return sessionAccessToken(session);
+      })
       .finally(() => {
         refreshSessionPromise = null;
       });
@@ -318,6 +388,16 @@ if (SUPABASE_AUTH_CONFIGURED) {
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const configurationError = useMemo(() => {
+    const missing = getMissingPublicEnv();
+    return missing.length ? `This build is missing ${missing.join(', ')}.` : null;
+  }, []);
+
+  useEffect(() => {
+    if (configurationError) {
+      console.error(`[Old Time] ${configurationError}`);
+    }
+  }, [configurationError]);
 
   useEffect(() => {
     if (!SUPABASE_AUTH_CONFIGURED) {
@@ -384,13 +464,14 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     isSignedIn: Boolean(session?.user && sessionAccessToken(session)),
     userId: session?.user.id ?? null,
     session,
+    configurationError,
     getToken: getFreshAccessToken,
     signOut: async () => {
       if (!SUPABASE_AUTH_CONFIGURED) return;
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
     },
-  }), [isLoaded, session]);
+  }), [configurationError, isLoaded, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
