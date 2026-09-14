@@ -5,6 +5,7 @@ import {
   setUnauthorizedHandler as setWorkspaceUnauthorizedHandler,
 } from '@workspace/api-client-react';
 import * as FileSystem from 'expo-file-system/legacy';
+import { describeMissingAccessToken } from '@/lib/auth-diagnostics';
 
 const configuredUrl = process.env.EXPO_PUBLIC_API_URL;
 const devDomain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -52,6 +53,27 @@ function absoluteApiUrl(value: string): string {
   return `${API_BASE_URL}${value.startsWith('/') ? value : `/${value}`}`;
 }
 
+function uploadUrlUsesExternalAuth(uploadURL: string): boolean {
+  const absolute = absoluteApiUrl(uploadURL);
+  try {
+    const url = new URL(absolute);
+    if (/supabase\.(co|in)(?::\d+)?$/i.test(url.hostname) || url.hostname.includes('storage.googleapis.com')) {
+      return true;
+    }
+    if (
+      url.searchParams.has('token') ||
+      url.searchParams.has('X-Amz-Signature') ||
+      url.searchParams.has('X-Goog-Signature')
+    ) {
+      return true;
+    }
+    const apiOrigin = new URL(API_BASE_URL).origin;
+    return url.origin !== apiOrigin;
+  } catch {
+    return false;
+  }
+}
+
 async function authenticatedFetch(path: string, getToken: AuthTokenGetter, init?: RequestInit) {
   if (!API_CONFIGURED) {
     throw new Error('Old Time API is not configured for this build. Set EXPO_PUBLIC_API_URL or EXPO_PUBLIC_DOMAIN.');
@@ -60,7 +82,7 @@ async function authenticatedFetch(path: string, getToken: AuthTokenGetter, init?
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const token = await getToken(attempt > 0);
     if (!token) {
-      throw new Error('Sign in required');
+      throw new Error(describeMissingAccessToken());
     }
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
@@ -107,19 +129,25 @@ export async function uploadMedia(input: UploadMediaInput): Promise<string> {
     const prepared = (await response.json()) as UploadMediaResponse;
     objectPath = prepared.objectPath;
 
+    const destination = absoluteApiUrl(prepared.uploadURL);
+    const skipAppBearer = uploadUrlUsesExternalAuth(prepared.uploadURL);
+
     let upload: Awaited<ReturnType<typeof FileSystem.uploadAsync>> | null = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const token = await input.getToken(attempt > 0);
-      if (!token) throw new Error('Sign in required');
-      upload = await FileSystem.uploadAsync(absoluteApiUrl(prepared.uploadURL), input.uri, {
+      const headers: Record<string, string> = {
+        'Content-Type': input.contentType,
+      };
+      if (!skipAppBearer) {
+        const token = await input.getToken(attempt > 0);
+        if (!token) throw new Error(describeMissingAccessToken());
+        headers.Authorization = `Bearer ${token}`;
+      }
+      upload = await FileSystem.uploadAsync(destination, input.uri, {
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         httpMethod: 'PUT',
-        headers: {
-          'Content-Type': input.contentType,
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
       });
-      if (upload.status !== 401 || attempt === 1) break;
+      if (skipAppBearer || upload.status !== 401 || attempt === 1) break;
     }
     if (!upload) throw new Error('The media upload did not start.');
     if (upload.status < 200 || upload.status >= 300) {
